@@ -113,9 +113,41 @@ export const handler: Handlers['AIRecognize'] = async (req, { logger, state }) =
     }
 
     // 调用 AI 识别服务（如果无配置会返回模拟数据）
+    logger.info('调用 AI 识别服务', { provider: aiConfig?.provider, model: aiConfig?.model })
     const result = await recognizeWithConfig(images, type, aiConfig)
 
-    logger.info('AI 识别完成', { userId, type, title: result.title })
+    // 详细记录识别结果，帮助调试
+    const resultStr = JSON.stringify(result)
+    logger.info('AI 识别完成 - 原始结果长度', { 
+      userId, 
+      type, 
+      resultLength: resultStr.length,
+      resultKeys: Object.keys(result)
+    })
+    
+    // 分段记录结果（避免日志截断）
+    if (resultStr.length > 0) {
+      logger.info('AI 识别完成 - 结果内容1', { 
+        content: resultStr.substring(0, 500)
+      })
+      if (resultStr.length > 500) {
+        logger.info('AI 识别完成 - 结果内容2', { 
+          content: resultStr.substring(500, 1000)
+        })
+      }
+    }
+    
+    logger.info('AI 识别完成 - 关键字段', { 
+      userId, 
+      type, 
+      title: result.title || '(无)',
+      projectName: result.projectName || '(无)',
+      totalAmount: result.totalAmount || 0,
+      invoiceDate: result.invoiceDate || '(无)',
+      itemsCount: result.items?.length || 0,
+      invoiceCode: result.invoiceCode || '(无)',
+      invoiceNumber: result.invoiceNumber || '(无)'
+    })
 
     // 记录 token 使用情况
     if (result._tokenUsage) {

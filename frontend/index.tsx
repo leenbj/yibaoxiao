@@ -1287,6 +1287,17 @@ const CreateReportView = ({ settings, expenses, loans, onAction, onBack }: any) 
         manualItems: [] as ExpenseItem[] // Extracted items
     });
 
+    // 多发票合并报销选项
+    const [mergeInvoices, setMergeInvoices] = useState(true); // 默认合并
+    const [invoiceDetails, setInvoiceDetails] = useState<Array<{
+        id: string;
+        projectName: string;
+        amount: number;
+        invoiceDate: string;
+        invoiceNumber?: string;
+        selected: boolean; // 是否选中参与报销
+    }>>([]);
+
     const pendingExpenses = expenses.filter((e: any) => e.status === 'pending');
 
     const handleUpload = async (e: any, type: 'invoice' | 'approval' | 'voucher') => {
@@ -1334,7 +1345,7 @@ const CreateReportView = ({ settings, expenses, loans, onAction, onBack }: any) 
             const invoiceImages = invoiceFiles.map(f => cleanB64(f.data));
             const approvalImages = approvalFiles.map(f => cleanB64(f.data));
 
-            // 1. 识别电子发票
+            // 1. 识别电子发票 - 支持多张发票
             console.log('[AI] 发送发票识别请求', { imageCount: invoiceImages.length });
             const invoiceResponse = await apiRequest('/api/ai/recognize', {
                 method: 'POST',
@@ -1344,8 +1355,28 @@ const CreateReportView = ({ settings, expenses, loans, onAction, onBack }: any) 
                     mimeType: 'image/jpeg',
                 }),
             }) as any;
-            console.log('[AI] 发票识别响应', invoiceResponse);
-            const invoiceData = invoiceResponse.result || {};
+            console.log('[AI] 发票识别原始响应', JSON.stringify(invoiceResponse, null, 2));
+            let invoiceData = invoiceResponse.result || {};
+            
+            // 检查返回的是否是数组（多张发票的情况）
+            const isArray = Array.isArray(invoiceData);
+            console.log('[AI] 发票识别数据类型', { isArray, dataType: typeof invoiceData });
+            
+            if (isArray) {
+                console.log('[AI] 检测到多张发票数组格式，发票数量:', invoiceData.length);
+                // 如果是数组，转换为 { invoices: [...] } 格式
+                invoiceData = { invoices: invoiceData };
+            }
+            
+            console.log('[AI] 发票识别数据', {
+                hasInvoices: !!invoiceData.invoices,
+                invoicesCount: invoiceData.invoices?.length,
+                projectName: invoiceData.projectName,
+                title: invoiceData.title,
+                totalAmount: invoiceData.totalAmount,
+                items: invoiceData.items,
+                invoiceDate: invoiceData.invoiceDate
+            });
             setAiInvoiceResult(invoiceData);
 
             // 2. 如果有审批单，识别审批单
@@ -1363,37 +1394,116 @@ const CreateReportView = ({ settings, expenses, loans, onAction, onBack }: any) 
                 setAiApprovalResult(approvalData);
             }
 
-            // 3. 构建报销事由：发票项目名称（活动事项）
-            let reimbursementTitle = invoiceData.projectName || invoiceData.title || '';
+            // 3. 处理发票的识别结果 - 每张上传的发票图片对应一条记录
+            const invoiceList: Array<{
+                id: string;
+                projectName: string;
+                amount: number;
+                invoiceDate: string;
+                invoiceNumber?: string;
+                selected: boolean;
+            }> = [];
+
+            // 格式化日期函数
+            const formatDate = (dateStr: string | undefined): string => {
+                if (!dateStr) return new Date().toISOString().split('T')[0];
+                // 如果已经是 ISO 格式，直接返回日期部分
+                if (dateStr.includes('T')) return dateStr.split('T')[0];
+                // 如果是 YYYY-MM-DD 格式，直接返回
+                if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
+                // 尝试解析其他格式
+                try {
+                    return new Date(dateStr).toISOString().split('T')[0];
+                } catch {
+                    return new Date().toISOString().split('T')[0];
+                }
+            };
+
+            // 获取金额，确保是数字
+            const getAmount = (val: any): number => {
+                if (typeof val === 'number') return val;
+                if (typeof val === 'string') {
+                    const num = parseFloat(val.replace(/[,，]/g, ''));
+                    return isNaN(num) ? 0 : num;
+                }
+                return 0;
+            };
+
+            // 检查是否有多张发票的结果（invoices 数组）- 这是 AI 返回多发票的情况
+            if (invoiceData.invoices && Array.isArray(invoiceData.invoices)) {
+                invoiceData.invoices.forEach((inv: any, idx: number) => {
+                    invoiceList.push({
+                        id: `invoice-${Date.now()}-${idx}`,
+                        projectName: inv.projectName || inv.title || `发票${idx + 1}`,
+                        amount: getAmount(inv.totalAmount) || getAmount(inv.amount),
+                        invoiceDate: formatDate(inv.invoiceDate),
+                        invoiceNumber: inv.invoiceNumber || inv.number,
+                        selected: true
+                    });
+                });
+            } else if (invoiceData.items && Array.isArray(invoiceData.items) && invoiceData.items.length > 0) {
+                // 如果有 items 数组，每个 item 作为一条费用明细
+                // 但对于发票来说，通常整张发票是一个整体
+                const singleAmount = getAmount(invoiceData.totalAmount) || 
+                    invoiceData.items.reduce((sum: number, i: any) => sum + getAmount(i.amount), 0);
+                invoiceList.push({
+                    id: `invoice-${Date.now()}-0`,
+                    projectName: invoiceData.projectName || invoiceData.title || invoiceData.items[0]?.name || '发票',
+                    amount: singleAmount,
+                    invoiceDate: formatDate(invoiceData.invoiceDate),
+                    invoiceNumber: invoiceData.invoiceNumber,
+                    selected: true
+                });
+            } else {
+                // 单张发票的基本格式
+                const singleAmount = getAmount(invoiceData.totalAmount);
+                invoiceList.push({
+                    id: `invoice-${Date.now()}-0`,
+                    projectName: invoiceData.projectName || invoiceData.title || '发票',
+                    amount: singleAmount,
+                    invoiceDate: formatDate(invoiceData.invoiceDate),
+                    invoiceNumber: invoiceData.invoiceNumber,
+                    selected: true
+                });
+            }
+            
+            console.log('[AI] 解析发票数据', { 
+                rawInvoiceData: invoiceData, 
+                parsedInvoiceList: invoiceList,
+                firstInvoiceAmount: invoiceList[0]?.amount,
+                firstInvoiceProjectName: invoiceList[0]?.projectName
+            });
+            
+            setInvoiceDetails(invoiceList);
+
+            // 4. 计算总金额
+            const totalInvoiceAmount = invoiceList.reduce((sum, inv) => sum + inv.amount, 0);
+
+            // 5. 构建报销事由
+            let reimbursementTitle = '';
+            if (invoiceList.length === 1) {
+                reimbursementTitle = invoiceList[0].projectName;
+            } else {
+                // 多张发票时，合并项目名称
+                const uniqueNames = [...new Set(invoiceList.map(i => i.projectName))];
+                reimbursementTitle = uniqueNames.slice(0, 3).join('、');
+                if (uniqueNames.length > 3) reimbursementTitle += '等';
+            }
             if (approvalData.eventSummary) {
                 reimbursementTitle = `${reimbursementTitle}（${approvalData.eventSummary}）`;
             }
 
-            // 4. 获取发票金额
-            const invoiceAmount = invoiceData.totalAmount || 
-                (invoiceData.items || []).reduce((sum: number, i: any) => sum + (i.amount || 0), 0);
-
-            // 5. 匹配借款记录
+            // 6. 匹配借款记录 - 只根据审批单号精确匹配
             const potentialLoans = loans.filter((loan: any) => {
-                // 按审批单号匹配
-                if (approvalData.approvalNumber && loan.approvalNumber === approvalData.approvalNumber) {
-                    return true;
-                }
-                // 按金额范围匹配（允许10%误差）
-                if (loan.status !== 'paid' && Math.abs(loan.amount - invoiceAmount) / invoiceAmount < 0.1) {
-                    return true;
-                }
-                // 按事由关键词匹配
-                if (loan.reason && reimbursementTitle && 
-                    (loan.reason.includes(invoiceData.projectName) || 
-                     loan.reason.includes(approvalData.eventSummary))) {
-                    return true;
+                // 只有当审批单号存在且完全匹配时才显示
+                if (approvalData.approvalNumber && loan.approvalNumber) {
+                    return loan.approvalNumber === approvalData.approvalNumber;
                 }
                 return false;
             });
             setMatchedLoans(potentialLoans);
 
-            // 6. 自动选择预算项目（如果审批单中有）
+            // 7. 自动选择预算项目（如果审批单中有）
             let autoSelectedBudgetId = form.budgetProjectId;
             if (approvalData.budgetProject) {
                 const matchedBudget = settings.budgetProjects.find((p: any) => 
@@ -1405,29 +1515,53 @@ const CreateReportView = ({ settings, expenses, loans, onAction, onBack }: any) 
                 }
             }
 
-            // 7. 自动填写表单
+            // 8. 根据合并选项设置表单数据
+            // 构建每条报销事由的格式：发票内容（审批单事项内容）
+            const eventSuffix = approvalData.eventSummary ? `（${approvalData.eventSummary}）` : '';
+            
+            // 如果只有一张发票，直接使用该发票数据；如果有多张，根据合并选项处理
+            const manualItems: ExpenseItem[] = (invoiceList.length === 1 || mergeInvoices)
+                ? [{
+                    id: `extracted-${Date.now()}`,
+                    date: invoiceList[0]?.invoiceDate || new Date().toISOString(),
+                    description: reimbursementTitle || invoiceList[0]?.projectName || '费用报销',
+                    amount: totalInvoiceAmount,
+                    category: invoiceList[0]?.projectName || "其他",
+                    status: 'pending' as const
+                }]
+                : invoiceList.map((inv, idx) => ({
+                    id: `extracted-${Date.now()}-${idx}`,
+                    date: inv.invoiceDate,
+                    // 每条报销事由格式：发票内容（审批单事项内容）
+                    description: `${inv.projectName}${eventSuffix}`,
+                    amount: inv.amount,
+                    category: inv.projectName || "其他",
+                    status: 'pending' as const
+                }));
+
+            // 9. 自动填写表单
             console.log('[AI] 填充数据', { 
                 title: reimbursementTitle, 
-                amount: invoiceAmount,
+                amount: totalInvoiceAmount,
                 approvalNumber: approvalData.approvalNumber,
-                projectName: invoiceData.projectName
+                invoiceCount: invoiceList.length,
+                mergeInvoices,
+                manualItems
             });
+            
+            // 确保标题有值
+            const finalTitle = reimbursementTitle || invoiceList[0]?.projectName || '费用报销';
             
             setForm(prev => ({
                 ...prev,
-                title: reimbursementTitle,
+                title: finalTitle,
                 approvalNumber: approvalData.approvalNumber || invoiceData.approvalNumber || prev.approvalNumber,
                 budgetProjectId: autoSelectedBudgetId,
-                prepaidAmount: approvalData.loanAmount || 0,
-                manualItems: [{
-                    id: `extracted-${Date.now()}`,
-                    date: invoiceData.invoiceDate || new Date().toISOString(),
-                    description: reimbursementTitle,
-                    amount: invoiceAmount,
-                    category: invoiceData.projectName || "其他",
-                    status: 'pending' as const
-                }]
+                prepaidAmount: 0, // 默认不使用借款抵扣
+                manualItems
             }));
+            
+            console.log('[AI] 表单填充完成', { finalTitle, manualItemsCount: manualItems.length });
 
             setStep(2);
 
@@ -1437,6 +1571,121 @@ const CreateReportView = ({ settings, expenses, loans, onAction, onBack }: any) 
         } finally {
             setAnalyzing(false);
         }
+    };
+
+    // 报销单生成中状态
+    const [regenerating, setRegenerating] = useState(false);
+
+    // 当合并选项改变时，重新计算费用明细
+    const handleMergeChange = async (merge: boolean) => {
+        setRegenerating(true);
+        setMergeInvoices(merge);
+        
+        // 模拟短暂延迟，让用户看到"生成中"提示
+        await new Promise(resolve => setTimeout(resolve, 300));
+        
+        if (invoiceDetails.length === 0) {
+            setRegenerating(false);
+            return;
+        }
+
+        const selectedInvoices = invoiceDetails.filter(inv => inv.selected);
+        if (selectedInvoices.length === 0) {
+            setRegenerating(false);
+            return;
+        }
+
+        const totalAmount = selectedInvoices.reduce((sum, inv) => sum + inv.amount, 0);
+        
+        // 构建报销事由
+        let title = '';
+        if (selectedInvoices.length === 1) {
+            title = selectedInvoices[0].projectName;
+        } else {
+            const uniqueNames = [...new Set(selectedInvoices.map(i => i.projectName))];
+            title = uniqueNames.slice(0, 3).join('、');
+            if (uniqueNames.length > 3) title += '等';
+        }
+
+        // 获取审批单事项内容
+        const eventSuffix = aiApprovalResult?.eventSummary ? `（${aiApprovalResult.eventSummary}）` : '';
+        
+        const manualItems: ExpenseItem[] = merge 
+            ? [{
+                id: `extracted-${Date.now()}`,
+                date: selectedInvoices[0]?.invoiceDate || new Date().toISOString(),
+                description: title + eventSuffix,
+                amount: totalAmount,
+                category: selectedInvoices[0]?.projectName || "其他",
+                status: 'pending' as const
+            }]
+            : selectedInvoices.map((inv, idx) => ({
+                id: `extracted-${Date.now()}-${idx}`,
+                date: inv.invoiceDate,
+                // 每条报销事由格式：发票内容（审批单事项内容）
+                description: `${inv.projectName}${eventSuffix}`,
+                amount: inv.amount,
+                category: inv.projectName || "其他",
+                status: 'pending' as const
+            }));
+
+        setForm(prev => ({
+            ...prev,
+            title: merge ? title : prev.title,
+            manualItems
+        }));
+        
+        setRegenerating(false);
+    };
+
+    // 切换单张发票的选中状态
+    const toggleInvoiceSelection = (invoiceId: string) => {
+        const newDetails = invoiceDetails.map(inv => 
+            inv.id === invoiceId ? { ...inv, selected: !inv.selected } : inv
+        );
+        setInvoiceDetails(newDetails);
+        
+        // 重新计算费用明细
+        const selectedInvoices = newDetails.filter(inv => inv.selected);
+        if (selectedInvoices.length === 0) {
+            setForm(prev => ({ ...prev, manualItems: [] }));
+            return;
+        }
+
+        const totalAmount = selectedInvoices.reduce((sum, inv) => sum + inv.amount, 0);
+        
+        let title = '';
+        if (selectedInvoices.length === 1) {
+            title = selectedInvoices[0].projectName;
+        } else {
+            const uniqueNames = [...new Set(selectedInvoices.map(i => i.projectName))];
+            title = uniqueNames.slice(0, 3).join('、');
+            if (uniqueNames.length > 3) title += '等';
+        }
+
+        const manualItems: ExpenseItem[] = mergeInvoices 
+            ? [{
+                id: `extracted-${Date.now()}`,
+                date: selectedInvoices[0]?.invoiceDate || new Date().toISOString(),
+                description: title,
+                amount: totalAmount,
+                category: selectedInvoices[0]?.projectName || "其他",
+                status: 'pending' as const
+            }]
+            : selectedInvoices.map((inv, idx) => ({
+                id: `extracted-${Date.now()}-${idx}`,
+                date: inv.invoiceDate,
+                description: inv.projectName,
+                amount: inv.amount,
+                category: inv.projectName || "其他",
+                status: 'pending' as const
+            }));
+
+        setForm(prev => ({
+            ...prev,
+            title: mergeInvoices ? title : prev.title,
+            manualItems
+        }));
     };
 
     const handleSubmit = (action: 'save' | 'print') => {
@@ -1609,14 +1858,50 @@ const CreateReportView = ({ settings, expenses, loans, onAction, onBack }: any) 
                              <div className="h-4 w-px bg-slate-200"></div>
                              <span className="text-sm font-medium text-slate-700">通用报销单预览 (A4横版)</span>
                          </div>
-                         <div className="flex gap-2">
-                             <button onClick={() => handleSubmit('save')} className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 font-medium text-sm hover:bg-slate-50 flex items-center gap-1.5">
-                                 <Save size={14}/> 保存草稿
-                             </button>
-                             <button onClick={() => handleSubmit('print')} className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white font-medium text-sm shadow-sm hover:bg-indigo-700 flex items-center gap-1.5">
-                                 <Printer size={14}/> 打印报销单
-                             </button>
-                         </div>
+                        <div className="flex gap-2 items-center">
+                            {/* 金额审核状态提示 */}
+                            {invoiceDetails.length > 0 && (() => {
+                                const invoiceTotal = invoiceDetails.filter(inv => inv.selected).reduce((sum, inv) => sum + inv.amount, 0);
+                                const formTotal = form.manualItems.reduce((sum, item) => sum + item.amount, 0);
+                                const isMatch = Math.abs(invoiceTotal - formTotal) < 0.01;
+                                return !isMatch ? (
+                                    <span className="text-xs text-red-600 bg-red-50 px-2 py-1 rounded-full font-medium">
+                                        ⚠ 金额不匹配，差异 ¥{Math.abs(formTotal - invoiceTotal).toFixed(2)}
+                                    </span>
+                                ) : (
+                                    <span className="text-xs text-green-600 bg-green-50 px-2 py-1 rounded-full font-medium">
+                                        ✓ 金额审核通过
+                                    </span>
+                                );
+                            })()}
+                            <button onClick={() => handleSubmit('save')} className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 font-medium text-sm hover:bg-slate-50 flex items-center gap-1.5">
+                                <Save size={14}/> 保存草稿
+                            </button>
+                            {(() => {
+                                const invoiceTotal = invoiceDetails.filter(inv => inv.selected).reduce((sum, inv) => sum + inv.amount, 0);
+                                const formTotal = form.manualItems.reduce((sum, item) => sum + item.amount, 0);
+                                const isMatch = invoiceDetails.length === 0 || Math.abs(invoiceTotal - formTotal) < 0.01;
+                                return (
+                                    <button 
+                                        onClick={() => {
+                                            if (!isMatch) {
+                                                alert('金额审核未通过！\n\n发票总金额与报销单录入金额不匹配，请调整后再打印。');
+                                                return;
+                                            }
+                                            handleSubmit('print');
+                                        }} 
+                                        className={`px-3 py-1.5 rounded-lg font-medium text-sm shadow-sm flex items-center gap-1.5 ${
+                                            isMatch 
+                                                ? 'bg-indigo-600 text-white hover:bg-indigo-700' 
+                                                : 'bg-slate-300 text-slate-500 cursor-not-allowed'
+                                        }`}
+                                        title={isMatch ? '打印报销单' : '金额审核未通过，无法打印'}
+                                    >
+                                        <Printer size={14}/> 打印报销单
+                                    </button>
+                                );
+                            })()}
+                        </div>
                      </div>
 
                      <div className="flex-1 overflow-hidden flex flex-row relative bg-slate-100">
@@ -1633,39 +1918,155 @@ const CreateReportView = ({ settings, expenses, loans, onAction, onBack }: any) 
                          <div className={`bg-white border-r border-slate-200 overflow-y-auto flex-shrink-0 transition-all duration-300 ${formCollapsed ? 'w-0 p-0 overflow-hidden' : 'w-[280px] xl:w-[320px] p-4'}`}>
                              <h3 className="font-bold text-slate-800 mb-3 flex items-center gap-2 text-sm"><Edit2 size={14} className="text-slate-600"/> 填写信息</h3>
                              
-                             <div className="space-y-6">
-                                 <div>
-                                     <label className="text-xs font-bold text-slate-500 uppercase block mb-1">报销事由 (发票内容)</label>
-                                     <input value={form.title} onChange={e => setForm({...form, title: e.target.value})} className="w-full p-2 border border-slate-200 rounded-lg text-sm font-medium focus:border-indigo-500 outline-none" placeholder="例如：采购办公用品" />
-                                     <p className="text-[10px] text-slate-400 mt-1">格式：发票内容（具体事项）</p>
-                                 </div>
+                            <div className="space-y-6">
+                                {/* 报销事由列表 - 多条时显示编号 */}
+                                <div>
+                                    <label className="text-xs font-bold text-slate-500 uppercase block mb-1">
+                                        报销事由 {form.manualItems.length > 1 && `(${form.manualItems.length}条)`}
+                                    </label>
+                                    {form.manualItems.length <= 1 ? (
+                                        // 单条时显示简单输入框
+                                        <>
+                                            <input 
+                                                value={form.title} 
+                                                onChange={e => {
+                                                    setForm({...form, title: e.target.value});
+                                                    // 同时更新 manualItems 中的描述
+                                                    if (form.manualItems.length === 1) {
+                                                        const newItems = [...form.manualItems];
+                                                        newItems[0].description = e.target.value;
+                                                        setForm(prev => ({...prev, manualItems: newItems}));
+                                                    }
+                                                }} 
+                                                className="w-full p-2 border border-slate-200 rounded-lg text-sm font-medium focus:border-indigo-500 outline-none" 
+                                                placeholder="例如：采购办公用品" 
+                                            />
+                                            <p className="text-[10px] text-slate-400 mt-1">格式：发票内容（具体事项）</p>
+                                        </>
+                                    ) : (
+                                        // 多条时显示带编号的列表
+                                        <div className="space-y-2">
+                                            {form.manualItems.map((item, idx) => (
+                                                <div key={item.id} className="flex items-start gap-2">
+                                                    <span className="flex-shrink-0 w-5 h-7 flex items-center justify-center text-xs font-bold text-indigo-600 bg-indigo-50 rounded">
+                                                        {idx + 1}
+                                                    </span>
+                                                    <div className="flex-1">
+                                                        <input 
+                                                            value={item.description} 
+                                                            onChange={e => {
+                                                                const newItems = [...form.manualItems];
+                                                                newItems[idx].description = e.target.value;
+                                                                setForm({...form, manualItems: newItems});
+                                                            }} 
+                                                            className="w-full p-1.5 border border-slate-200 rounded text-xs focus:border-indigo-500 outline-none" 
+                                                        />
+                                                        <div className="flex justify-between mt-0.5">
+                                                            <span className="text-[10px] text-slate-400">¥{item.amount.toFixed(2)}</span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                            <p className="text-[10px] text-slate-400">点击编辑每条报销事由</p>
+                                        </div>
+                                    )}
+                                </div>
 
-                                 <div>
-                                     <label className="text-xs font-bold text-slate-500 uppercase block mb-1">审批单编号</label>
-                                     <input value={form.approvalNumber} onChange={e => setForm({...form, approvalNumber: e.target.value})} className="w-full p-2 border border-slate-200 rounded-lg text-sm font-medium focus:border-indigo-500 outline-none" placeholder="钉钉/飞书审批单号" />
-                                 </div>
+                                <div>
+                                    <label className="text-xs font-bold text-slate-500 uppercase block mb-1">审批单编号</label>
+                                    <input value={form.approvalNumber} onChange={e => setForm({...form, approvalNumber: e.target.value})} className="w-full p-2 border border-slate-200 rounded-lg text-sm font-medium focus:border-indigo-500 outline-none" placeholder="钉钉/飞书审批单号" />
+                                </div>
 
-                                 <div>
-                                     <label className="text-xs font-bold text-slate-500 uppercase block mb-1">预算项目</label>
-                                     <select value={form.budgetProjectId} onChange={e => setForm({...form, budgetProjectId: e.target.value})} className="w-full p-2 border border-slate-200 rounded-lg text-sm font-medium focus:border-indigo-500 outline-none bg-white">
-                                         {settings.budgetProjects.map((p:any) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                                     </select>
-                                 </div>
+                                <div>
+                                    <label className="text-xs font-bold text-slate-500 uppercase block mb-1">预算项目</label>
+                                    <select value={form.budgetProjectId} onChange={e => setForm({...form, budgetProjectId: e.target.value})} className="w-full p-2 border border-slate-200 rounded-lg text-sm font-medium focus:border-indigo-500 outline-none bg-white">
+                                        {settings.budgetProjects.map((p:any) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                                    </select>
+                                    {/* 显示审批单中的预算信息 */}
+                                    {aiApprovalResult?.budgetProject && (
+                                        <p className="text-[10px] text-green-600 mt-1">
+                                            ✓ 已从审批单识别：{aiApprovalResult.budgetProject}
+                                            {aiApprovalResult.budgetCode && ` (${aiApprovalResult.budgetCode})`}
+                                        </p>
+                                    )}
+                                </div>
 
-                                 <div>
-                                     <label className="text-xs font-bold text-slate-500 uppercase block mb-1">收款账户</label>
-                                     <select value={form.paymentAccountId} onChange={e => setForm({...form, paymentAccountId: e.target.value})} className="w-full p-2 border border-slate-200 rounded-lg text-sm font-medium focus:border-indigo-500 outline-none bg-white">
-                                         {settings.paymentAccounts.map((a:any) => <option key={a.id} value={a.id}>{a.bankName} - {a.accountNumber.slice(-4)}</option>)}
-                                     </select>
-                                 </div>
+                                <div>
+                                    <label className="text-xs font-bold text-slate-500 uppercase block mb-1">收款账户</label>
+                                    <select value={form.paymentAccountId} onChange={e => setForm({...form, paymentAccountId: e.target.value})} className="w-full p-2 border border-slate-200 rounded-lg text-sm font-medium focus:border-indigo-500 outline-none bg-white">
+                                        {settings.paymentAccounts.map((a:any) => <option key={a.id} value={a.id}>{a.bankName} - {a.accountNumber.slice(-4)}</option>)}
+                                    </select>
+                                </div>
 
-                                 <div>
-                                     <label className="text-xs font-bold text-slate-500 uppercase block mb-1">预支/借款抵扣</label>
-                                     
-                                     {/* 匹配的借款记录选择 */}
-                                     {matchedLoans.length > 0 && (
-                                        <div className="mb-2">
-                                            <p className="text-xs text-amber-600 mb-1 font-bold">找到可能匹配的借款记录：</p>
+                                 {/* 多发票合并选项 - 只在有多张发票时显示 */}
+                                 {invoiceDetails.length > 1 && (
+                                     <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-3">
+                                         <label className="text-xs font-bold text-indigo-700 uppercase block mb-2">发票报销方式</label>
+                                         <div className="flex gap-2">
+                                             <button
+                                                 onClick={() => handleMergeChange(true)}
+                                                 className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition-all ${
+                                                     mergeInvoices 
+                                                         ? 'bg-indigo-600 text-white shadow-sm' 
+                                                         : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+                                                 }`}
+                                             >
+                                                 合并报销
+                                             </button>
+                                             <button
+                                                 onClick={() => handleMergeChange(false)}
+                                                 className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition-all ${
+                                                     !mergeInvoices 
+                                                         ? 'bg-indigo-600 text-white shadow-sm' 
+                                                         : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+                                                 }`}
+                                             >
+                                                 独立报销
+                                             </button>
+                                         </div>
+                                         <p className="text-[10px] text-indigo-600 mt-2">
+                                             {mergeInvoices 
+                                                 ? '✓ 所有发票金额合并为一笔报销' 
+                                                 : '✓ 每张发票独立一行录入'}
+                                         </p>
+                                         
+                                         {/* 发票明细列表 */}
+                                         <div className="mt-3 space-y-1.5">
+                                             <p className="text-[10px] font-bold text-slate-500">识别到 {invoiceDetails.length} 张发票：</p>
+                                             {invoiceDetails.map((inv) => (
+                                                 <label 
+                                                     key={inv.id} 
+                                                     className={`flex items-center justify-between p-2 rounded cursor-pointer transition-all ${
+                                                         inv.selected 
+                                                             ? 'bg-white border border-indigo-200' 
+                                                             : 'bg-slate-100 border border-transparent opacity-60'
+                                                     }`}
+                                                 >
+                                                     <div className="flex items-center gap-2 flex-1 min-w-0">
+                                                         <input 
+                                                             type="checkbox" 
+                                                             checked={inv.selected} 
+                                                             onChange={() => toggleInvoiceSelection(inv.id)}
+                                                             className="rounded text-indigo-600 focus:ring-indigo-500"
+                                                         />
+                                                         <span className="text-[11px] text-slate-700 truncate">{inv.projectName}</span>
+                                                     </div>
+                                                     <span className="text-[11px] font-bold text-slate-800 ml-2">¥{inv.amount.toFixed(2)}</span>
+                                                 </label>
+                                             ))}
+                                         </div>
+                                     </div>
+                                 )}
+
+                                 {/* 预支/借款抵扣 - 只在匹配到借款记录时显示 */}
+                                 {matchedLoans.length > 0 ? (
+                                     <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                                         <label className="text-xs font-bold text-amber-700 uppercase block mb-2">
+                                             预支借款抵扣 <span className="text-[10px] font-normal text-amber-600">（审批单号匹配成功）</span>
+                                         </label>
+                                         <p className="text-[10px] text-amber-600 mb-2">
+                                             ✓ 找到与审批单号 <span className="font-bold">{form.approvalNumber}</span> 匹配的借款记录
+                                         </p>
                                             <select 
                                                 value={selectedLoanId}
                                                 onChange={(e) => {
@@ -1677,7 +2078,7 @@ const CreateReportView = ({ settings, expenses, loans, onAction, onBack }: any) 
                                                         setForm(prev => ({ ...prev, prepaidAmount: 0 }));
                                                     }
                                                 }}
-                                                className="w-full p-2 border border-amber-300 rounded-lg text-sm bg-amber-50 focus:border-amber-500 outline-none"
+                                             className="w-full p-2 border border-amber-300 rounded-lg text-sm bg-white focus:border-amber-500 outline-none"
                                             >
                                                 <option value="">不使用借款抵扣</option>
                                                 {matchedLoans.map((loan: any) => (
@@ -1686,21 +2087,36 @@ const CreateReportView = ({ settings, expenses, loans, onAction, onBack }: any) 
                                                     </option>
                                                 ))}
                                             </select>
+                                         {selectedLoanId && (
+                                             <div className="mt-2 p-2 bg-white rounded border border-amber-100">
+                                                 <p className="text-xs text-amber-700">
+                                                     预支金额：<span className="font-bold">¥{form.prepaidAmount.toFixed(2)}</span>
+                                                 </p>
+                                                 <p className="text-xs text-slate-600 mt-1">
+                                                     应领款金额 = ¥{currentTotal.toFixed(2)} - ¥{form.prepaidAmount.toFixed(2)} = 
+                                                     <span className="font-bold text-indigo-600"> ¥{(currentTotal - form.prepaidAmount).toFixed(2)}</span>
+                                                 </p>
                                         </div>
                                      )}
-                                     
+                                     </div>
+                                 ) : (
+                                     <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
+                                         <label className="text-xs font-bold text-slate-500 uppercase block mb-1">预支/借款抵扣</label>
+                                         <p className="text-[10px] text-slate-400 mb-2">
+                                             未找到匹配的借款记录（需要审批单号完全一致）
+                                         </p>
                                      <div className="relative">
                                         <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">¥</span>
                                         <input 
                                             type="number" 
                                             value={form.prepaidAmount} 
                                             onChange={e => setForm({...form, prepaidAmount: parseFloat(e.target.value) || 0})} 
-                                            className="w-full pl-6 p-2 border border-slate-200 rounded-lg text-sm font-bold text-orange-600 focus:border-indigo-500 outline-none" 
+                                                className="w-full pl-6 p-2 border border-slate-200 rounded-lg text-sm font-bold text-orange-600 focus:border-indigo-500 outline-none bg-white" 
                                             placeholder="手动输入借款金额"
                                         />
                                      </div>
-                                     <p className="text-[10px] text-slate-400 mt-1">应领款金额 = 报销金额 - 借款金额</p>
                                  </div>
+                                 )}
 
                                  <div className="border-t border-slate-100 pt-4">
                                      <h4 className="font-bold text-sm text-slate-700 mb-2">费用明细</h4>
@@ -1708,7 +2124,9 @@ const CreateReportView = ({ settings, expenses, loans, onAction, onBack }: any) 
                                      {/* Extracted Items */}
                                      {form.manualItems.length > 0 && (
                                          <div className="space-y-2 mb-4">
-                                             <p className="text-xs font-bold text-slate-700">AI 识别项目 ({form.manualItems.length})</p>
+                                             <p className="text-xs font-bold text-slate-700">
+                                                 {mergeInvoices ? 'AI 识别项目（已合并）' : `AI 识别项目 (${form.manualItems.length}笔)`}
+                                             </p>
                                              {form.manualItems.map((item, idx) => (
                                                  <div key={idx} className="flex justify-between items-center bg-slate-100 p-2 rounded text-xs border border-indigo-100">
                                                      <div className="truncate flex-1 mr-2">{item.description}</div>
@@ -1730,29 +2148,115 @@ const CreateReportView = ({ settings, expenses, loans, onAction, onBack }: any) 
                                          </div>
                                      )}
 
-                                     {/* Ledger Items Matching */}
-                                     {pendingExpenses.length > 0 && (
-                                         <div>
-                                            <p className="text-xs font-bold text-slate-500 mb-2">从记账本添加 (未报销)</p>
-                                            <div className="space-y-1 max-h-40 overflow-y-auto">
-                                                {pendingExpenses.map((e:any) => (
-                                                    <label key={e.id} className="flex items-center justify-between p-2 hover:bg-slate-50 rounded cursor-pointer border border-transparent hover:border-slate-100">
-                                                        <div className="flex items-center gap-2 truncate">
-                                                            <input type="checkbox" checked={selectedExpenseIds.includes(e.id)} onChange={(ev) => {
-                                                                if(ev.target.checked) setSelectedExpenseIds([...selectedExpenseIds, e.id]);
-                                                                else setSelectedExpenseIds(selectedExpenseIds.filter(id => id !== e.id));
-                                                            }} className="rounded text-slate-700 focus:ring-indigo-500"/>
-                                                            <span className="text-xs text-slate-600 truncate">{e.description}</span>
-                                                        </div>
-                                                        <span className="text-xs font-bold text-slate-800">¥{e.amount}</span>
-                                                    </label>
+                                    {/* Ledger Items Matching */}
+                                    {pendingExpenses.length > 0 && (
+                                        <div>
+                                           <p className="text-xs font-bold text-slate-500 mb-2">从记账本添加 (未报销)</p>
+                                           <div className="space-y-1 max-h-40 overflow-y-auto">
+                                               {pendingExpenses.map((e:any) => (
+                                                   <label key={e.id} className="flex items-center justify-between p-2 hover:bg-slate-50 rounded cursor-pointer border border-transparent hover:border-slate-100">
+                                                       <div className="flex items-center gap-2 truncate">
+                                                           <input type="checkbox" checked={selectedExpenseIds.includes(e.id)} onChange={(ev) => {
+                                                               if(ev.target.checked) setSelectedExpenseIds([...selectedExpenseIds, e.id]);
+                                                               else setSelectedExpenseIds(selectedExpenseIds.filter(id => id !== e.id));
+                                                           }} className="rounded text-slate-700 focus:ring-indigo-500"/>
+                                                           <span className="text-xs text-slate-600 truncate">{e.description}</span>
+                                                       </div>
+                                                       <span className="text-xs font-bold text-slate-800">¥{e.amount}</span>
+                                                   </label>
+                                               ))}
+                                           </div>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* 金额审核模块 */}
+                                {invoiceDetails.length > 0 && (
+                                    <div className={`border-t border-slate-100 pt-4 ${
+                                        (() => {
+                                            // 计算发票总金额
+                                            const invoiceTotal = invoiceDetails.filter(inv => inv.selected).reduce((sum, inv) => sum + inv.amount, 0);
+                                            // 计算报销单录入总金额
+                                            const formTotal = form.manualItems.reduce((sum, item) => sum + item.amount, 0);
+                                            // 判断是否匹配
+                                            const isMatch = Math.abs(invoiceTotal - formTotal) < 0.01;
+                                            return isMatch ? '' : '';
+                                        })()
+                                    }`}>
+                                        <h4 className="font-bold text-sm text-slate-700 mb-2 flex items-center gap-2">
+                                            <span>💰 金额审核</span>
+                                            {(() => {
+                                                const invoiceTotal = invoiceDetails.filter(inv => inv.selected).reduce((sum, inv) => sum + inv.amount, 0);
+                                                const formTotal = form.manualItems.reduce((sum, item) => sum + item.amount, 0);
+                                                const isMatch = Math.abs(invoiceTotal - formTotal) < 0.01;
+                                                return isMatch 
+                                                    ? <span className="text-[10px] px-2 py-0.5 bg-green-100 text-green-700 rounded-full font-bold">✓ 已通过</span>
+                                                    : <span className="text-[10px] px-2 py-0.5 bg-red-100 text-red-700 rounded-full font-bold">⚠ 不匹配</span>;
+                                            })()}
+                                        </h4>
+                                        
+                                        <div className="space-y-2 text-xs">
+                                            {/* 发票金额明细 */}
+                                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-2">
+                                                <p className="font-bold text-blue-700 mb-1">📄 电子发票金额</p>
+                                                {invoiceDetails.filter(inv => inv.selected).map((inv, idx) => (
+                                                    <div key={inv.id} className="flex justify-between text-blue-600 py-0.5">
+                                                        <span className="truncate flex-1">{idx + 1}. {inv.projectName}</span>
+                                                        <span className="font-mono ml-2">¥{inv.amount.toFixed(2)}</span>
+                                                    </div>
                                                 ))}
+                                                <div className="border-t border-blue-200 mt-1 pt-1 flex justify-between font-bold text-blue-800">
+                                                    <span>发票总计</span>
+                                                    <span className="font-mono">¥{invoiceDetails.filter(inv => inv.selected).reduce((sum, inv) => sum + inv.amount, 0).toFixed(2)}</span>
+                                                </div>
                                             </div>
-                                         </div>
-                                     )}
-                                 </div>
-                             </div>
-                         </div>
+                                            
+                                            {/* 报销单金额明细 */}
+                                            <div className="bg-purple-50 border border-purple-200 rounded-lg p-2">
+                                                <p className="font-bold text-purple-700 mb-1">📋 报销单录入金额</p>
+                                                {form.manualItems.map((item, idx) => (
+                                                    <div key={item.id} className="flex justify-between text-purple-600 py-0.5">
+                                                        <span className="truncate flex-1">{idx + 1}. {item.description?.slice(0, 15)}...</span>
+                                                        <span className="font-mono ml-2">¥{item.amount.toFixed(2)}</span>
+                                                    </div>
+                                                ))}
+                                                <div className="border-t border-purple-200 mt-1 pt-1 flex justify-between font-bold text-purple-800">
+                                                    <span>录入总计</span>
+                                                    <span className="font-mono">¥{form.manualItems.reduce((sum, item) => sum + item.amount, 0).toFixed(2)}</span>
+                                                </div>
+                                            </div>
+                                            
+                                            {/* 差异提示 */}
+                                            {(() => {
+                                                const invoiceTotal = invoiceDetails.filter(inv => inv.selected).reduce((sum, inv) => sum + inv.amount, 0);
+                                                const formTotal = form.manualItems.reduce((sum, item) => sum + item.amount, 0);
+                                                const diff = formTotal - invoiceTotal;
+                                                const isMatch = Math.abs(diff) < 0.01;
+                                                
+                                                if (isMatch) {
+                                                    return (
+                                                        <div className="bg-green-50 border border-green-200 rounded-lg p-2 text-green-700">
+                                                            <p className="font-bold">✅ 金额审核通过</p>
+                                                            <p className="text-[10px] mt-1">发票金额与报销单金额完全匹配，可以生成报销单</p>
+                                                        </div>
+                                                    );
+                                                } else {
+                                                    return (
+                                                        <div className="bg-red-50 border border-red-200 rounded-lg p-2 text-red-700">
+                                                            <p className="font-bold">❌ 金额审核未通过</p>
+                                                            <p className="text-[10px] mt-1">
+                                                                差异金额：<span className="font-bold font-mono">{diff > 0 ? '+' : ''}¥{diff.toFixed(2)}</span>
+                                                            </p>
+                                                            <p className="text-[10px] mt-1">请调整报销金额使其与发票金额一致后再生成报销单</p>
+                                                        </div>
+                                                    );
+                                                }
+                                            })()}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
 
                          {/* Right Panel: Preview - 横版A4占据80%宽度 */}
                          <div ref={previewContainerRef} className="flex-1 bg-slate-100 overflow-auto p-2">
@@ -1785,7 +2289,19 @@ const CreateReportView = ({ settings, expenses, loans, onAction, onBack }: any) 
                               </div>
                               
                               {/* 报销单容器 - 与附件预览位置一致，居中显示 */}
-                              <div className="flex flex-col items-center max-w-4xl mx-auto">
+                              <div className="flex flex-col items-center max-w-4xl mx-auto relative">
+                                  {/* 生成中提示 */}
+                                  {regenerating && (
+                                      <div className="absolute inset-0 bg-white/80 z-30 flex items-center justify-center rounded-lg">
+                                          <div className="flex items-center gap-3 bg-indigo-600 text-white px-6 py-3 rounded-full shadow-lg">
+                                              <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                              </svg>
+                                              <span className="font-medium">正在重新生成报销单...</span>
+                                          </div>
+                                      </div>
+                                  )}
                                   <div 
                                     className="bg-white shadow-[0_4px_20px_rgba(0,0,0,0.15)] border border-slate-200"
                                     style={{ 
@@ -3482,16 +3998,17 @@ const GeneralReimbursementForm = ({ data }: any) => {
         boxSizing: 'border-box',
     };
     
-    // 样式定义 - 完全按照 HTML 模板，缩放至 80%
+    // 样式定义 - 完全按照 HTML 模板，整体缩放至 80%（包括高度）
+    const scale = 0.8; // 缩放比例
+    
     const paperStyle: React.CSSProperties = {
         backgroundColor: 'white',
-        width: 'calc(297mm * 0.8)',  // A4 横版宽度的 80%
-        padding: '12mm 16mm', // 缩放后的内边距
+        width: `calc(297mm * ${scale})`,  // A4 横版宽度的 80%
+        padding: `${12 * scale}mm ${16 * scale}mm`, // 缩放后的内边距
         fontFamily: '"SimSun", "Songti SC", serif',
-        fontSize: '11.2px', // 14px * 0.8
-        lineHeight: '1.4',
+        fontSize: `${14 * scale}px`, // 14px * 0.8
+        lineHeight: '1.2', // 缩小行高
         boxSizing: 'border-box',
-        transform: 'scale(1)', // 保持清晰度，通过调整尺寸实现缩放
     };
 
     const tableStyle: React.CSSProperties = {
@@ -3503,65 +4020,65 @@ const GeneralReimbursementForm = ({ data }: any) => {
 
     const cellStyle: React.CSSProperties = {
         border: '1px solid black',
-        padding: '8px 6px',
+        padding: `${6 * scale}px ${5 * scale}px`, // 缩放后的内边距
         verticalAlign: 'middle',
-        fontSize: '14px',
-        lineHeight: '1.4',
+        fontSize: `${14 * scale}px`, // 缩放字体
+        lineHeight: '1.2',
         overflow: 'hidden',
     };
 
     const titleStyle: React.CSSProperties = {
         fontFamily: '"SimSun", serif',
-        fontSize: '19.2px', // 24px * 0.8
+        fontSize: `${24 * scale}px`, // 24px * 0.8
         textAlign: 'center',
-        marginBottom: '4px',
+        marginBottom: `${4 * scale}px`,
     };
 
     const subtitleStyle: React.CSSProperties = {
         fontFamily: '"SimSun", serif',
-        fontSize: '16px', // 20px * 0.8
+        fontSize: `${20 * scale}px`, // 20px * 0.8
         textAlign: 'center',
-        marginBottom: '16px', // 20px * 0.8
-        letterSpacing: '4px',
+        marginBottom: `${16 * scale}px`, // 20px * 0.8
+        letterSpacing: `${4 * scale}px`,
     };
 
     const headerRowStyle: React.CSSProperties = {
         display: 'flex',
         justifyContent: 'space-between',
-        marginBottom: '3px',
-        fontSize: '12.8px', // 16px * 0.8
+        marginBottom: `${3 * scale}px`,
+        fontSize: `${16 * scale}px`, // 16px * 0.8
     };
 
     const underlineStyle: React.CSSProperties = {
         borderBottom: '1px solid black',
-        padding: '0 10px',
+        padding: `0 ${8 * scale}px`,
         display: 'inline-block',
-        minWidth: '50px',
+        minWidth: `${40 * scale}px`,
         textAlign: 'center',
     };
     
     return (
         <div style={containerStyle} className="general-reimbursement-container">
-            <div style={paperStyle}>
-                {/* 标题区域 */}
-                <div style={titleStyle}>北龙中网（北京）科技有限责任公司</div>
-                <div style={subtitleStyle}>报销单</div>
+        <div style={paperStyle}>
+            {/* 标题区域 */}
+            <div style={titleStyle}>北龙中网（北京）科技有限责任公司</div>
+            <div style={subtitleStyle}>报销单</div>
 
-                {/* 顶部元数据 */}
-                <div style={headerRowStyle}>
-                    <div>
-                        报销日期：
+            {/* 顶部元数据 */}
+            <div style={headerRowStyle}>
+                <div>
+                    报销日期：
                         <span style={{ borderBottom: '1px solid black', padding: '0 8px' }}>{year}</span> 年 
                         <span style={{ borderBottom: '1px solid black', padding: '0 8px' }}>{month}</span> 月 
                         <span style={{ borderBottom: '1px solid black', padding: '0 8px' }}>{day}</span> 日
-                    </div>
-                    <div>
-                        附原始单据 <span style={{ display: 'inline-block', width: '32px', borderBottom: '1px solid black', textAlign: 'center' }}>{data.invoiceCount || data.attachments?.length || ''}</span> 张
-                    </div>
                 </div>
+                <div>
+                        附原始单据 <span style={{ display: 'inline-block', width: '32px', borderBottom: '1px solid black', textAlign: 'center' }}>{data.invoiceCount || data.attachments?.length || ''}</span> 张
+                </div>
+            </div>
 
-                {/* 主表格 */}
-                <table style={tableStyle}>
+            {/* 主表格 */}
+            <table style={tableStyle}>
                 <colgroup>
                     <col style={{ width: '5%' }} />   {/* 序号 */}
                     <col style={{ width: '45%' }} />  {/* 报销事由 */}
@@ -3574,7 +4091,7 @@ const GeneralReimbursementForm = ({ data }: any) => {
                     <tr>
                         <td colSpan={3} style={{ ...cellStyle, textAlign: 'left', borderRight: 'none' }}>
                             <span style={{ fontWeight: 'bold' }}>部门：</span>
-                            <span style={{ marginLeft: '100px' }}>{data.userSnapshot?.department || ''}</span>
+                            <span style={{ marginLeft: `${80 * scale}px` }}>{data.userSnapshot?.department || ''}</span>
                         </td>
                         <td colSpan={2} style={{ ...cellStyle, textAlign: 'left', borderLeft: 'none' }}>
                             <span style={{ fontWeight: 'bold' }}>报销人：</span> {data.userSnapshot?.name || ''}
@@ -3590,26 +4107,38 @@ const GeneralReimbursementForm = ({ data }: any) => {
                         <td style={{ ...cellStyle, textAlign: 'center' }}>预算编码</td>
                     </tr>
 
-                    {/* 第3行：数据行 */}
-                    <tr style={{ height: '40px' }}>
-                        <td style={{ ...cellStyle, textAlign: 'center' }}>1</td>
-                        <td style={cellStyle}>{getExpenseReason()}</td>
-                        <td style={{ ...cellStyle, textAlign: 'center' }}>{(data.totalAmount || 0).toFixed(2)} 元</td>
-                        <td style={cellStyle}>{data.budgetProject?.name || ''}</td>
-                        <td style={cellStyle}>{data.budgetProject?.code || ''}</td>
-                    </tr>
+                    {/* 数据行 - 支持多行，每行都显示预算项目和编码 */}
+                    {data.items && data.items.length > 0 ? (
+                        data.items.map((item: any, index: number) => (
+                            <tr key={index} style={{ height: `${32 * scale}px` }}>
+                                <td style={{ ...cellStyle, textAlign: 'center' }}>{index + 1}</td>
+                                <td style={cellStyle}>{item.description || item.name || ''}</td>
+                                <td style={{ ...cellStyle, textAlign: 'center' }}>{(item.amount || 0).toFixed(2)} 元</td>
+                                <td style={cellStyle}>{data.budgetProject?.name || ''}</td>
+                                <td style={cellStyle}>{data.budgetProject?.code || ''}</td>
+                            </tr>
+                        ))
+                    ) : (
+                        <tr style={{ height: `${32 * scale}px` }}>
+                            <td style={{ ...cellStyle, textAlign: 'center' }}>1</td>
+                            <td style={cellStyle}>{getExpenseReason()}</td>
+                            <td style={{ ...cellStyle, textAlign: 'center' }}>{(data.totalAmount || 0).toFixed(2)} 元</td>
+                            <td style={cellStyle}>{data.budgetProject?.name || ''}</td>
+                            <td style={cellStyle}>{data.budgetProject?.code || ''}</td>
+                        </tr>
+                    )}
 
                     {/* 第4行：提请报销金额 + 预支借款金额 */}
                     <tr>
                         <td colSpan={2} style={cellStyle}>
                             <span style={{ fontWeight: 'bold' }}>提请报销金额：</span>
-                            <span style={{ marginLeft: '5px', fontSize: '13px' }}>※{digitToChinese(data.totalAmount || 0)}</span>
-                            <span style={{ float: 'right', marginRight: '5px', whiteSpace: 'nowrap' }}>￥ <span style={{ textDecoration: 'underline' }}>{(data.totalAmount || 0).toFixed(2)}</span> 元</span>
+                            <span style={{ marginLeft: `${4 * scale}px`, fontSize: `${13 * scale}px` }}>※{digitToChinese(data.totalAmount || 0)}</span>
+                            <span style={{ float: 'right', marginRight: `${4 * scale}px`, whiteSpace: 'nowrap' }}>￥ <span style={{ textDecoration: 'underline' }}>{(data.totalAmount || 0).toFixed(2)}</span> 元</span>
                         </td>
                         <td colSpan={3} style={cellStyle}>
                             <span style={{ fontWeight: 'bold' }}>预支借款金额：</span>
                             <span>{(data.prepaidAmount || 0).toFixed(2)}</span>
-                            <span style={{ float: 'right', marginRight: '10px' }}>￥ <span style={{ textDecoration: 'underline' }}>{digitToChinese(data.prepaidAmount || 0)}</span></span>
+                            <span style={{ float: 'right', marginRight: `${8 * scale}px` }}>￥ <span style={{ textDecoration: 'underline' }}>{digitToChinese(data.prepaidAmount || 0)}</span></span>
                         </td>
                     </tr>
 
@@ -3617,20 +4146,20 @@ const GeneralReimbursementForm = ({ data }: any) => {
                     <tr>
                         <td colSpan={2} style={cellStyle}>
                             <span style={{ fontWeight: 'bold' }}>应领款金额：</span>
-                            <span style={{ marginLeft: '5px', fontSize: '13px' }}>※{digitToChinese(Math.abs(payableAmount))}</span>
-                            <span style={{ float: 'right', marginRight: '5px', whiteSpace: 'nowrap' }}>￥ <span style={{ textDecoration: 'underline' }}>{payableAmount.toFixed(2)}</span> 元</span>
+                            <span style={{ marginLeft: `${4 * scale}px`, fontSize: `${13 * scale}px` }}>※{digitToChinese(Math.abs(payableAmount))}</span>
+                            <span style={{ float: 'right', marginRight: `${4 * scale}px`, whiteSpace: 'nowrap' }}>￥ <span style={{ textDecoration: 'underline' }}>{payableAmount.toFixed(2)}</span> 元</span>
                         </td>
                         <td colSpan={3} style={cellStyle}>
                             <span style={{ fontWeight: 'bold' }}>结算方式：</span>
-                            <span style={{ marginLeft: '20px' }}>□现金</span>
-                            <span style={{ marginLeft: '20px' }}>□支票</span>
-                            <span style={{ marginLeft: '20px' }}>☑电汇</span>
+                            <span style={{ marginLeft: `${16 * scale}px` }}>□现金</span>
+                            <span style={{ marginLeft: `${16 * scale}px` }}>□支票</span>
+                            <span style={{ marginLeft: `${16 * scale}px` }}>☑电汇</span>
                         </td>
                     </tr>
 
                     {/* 第6-8行：收款人信息 + 钉钉审批编号 */}
                     <tr>
-                        <td rowSpan={3} style={{ ...cellStyle, textAlign: 'center', width: '80px' }}>
+                        <td rowSpan={3} style={{ ...cellStyle, textAlign: 'center', width: `${64 * scale}px` }}>
                             收款人
                         </td>
                         <td colSpan={2} style={cellStyle}>
@@ -3639,7 +4168,7 @@ const GeneralReimbursementForm = ({ data }: any) => {
                         <td rowSpan={3} style={{ ...cellStyle, textAlign: 'center', verticalAlign: 'middle' }}>
                             钉钉审批编号
                         </td>
-                        <td rowSpan={3} style={{ ...cellStyle, verticalAlign: 'middle', textAlign: 'center', fontSize: '12px' }}>
+                        <td rowSpan={3} style={{ ...cellStyle, verticalAlign: 'middle', textAlign: 'center', fontSize: `${12 * scale}px` }}>
                             {data.approvalNumber || ''}
                         </td>
                     </tr>
@@ -3657,7 +4186,7 @@ const GeneralReimbursementForm = ({ data }: any) => {
                     {/* 第9行：签字栏 - 嵌套表格 */}
                     <tr>
                         <td colSpan={5} style={{ ...cellStyle, padding: 0 }}>
-                            <table style={{ width: '100%', borderCollapse: 'collapse', border: 'none', height: '60px' }}>
+                            <table style={{ width: '100%', borderCollapse: 'collapse', border: 'none', height: `${48 * scale}px` }}>
                                 <colgroup>
                                     <col style={{ width: '8%' }} />
                                     <col style={{ width: '8%' }} />
@@ -3674,17 +4203,17 @@ const GeneralReimbursementForm = ({ data }: any) => {
                                 </colgroup>
                                 <tbody>
                                     <tr style={{ height: '100%' }}>
-                                        <td style={{ border: 'none', borderRight: '1px solid black', textAlign: 'center', padding: '4px', fontSize: '12px' }}>董事长<br/>签字</td>
+                                        <td style={{ border: 'none', borderRight: '1px solid black', textAlign: 'center', padding: `${3 * scale}px`, fontSize: `${12 * scale}px` }}>董事长<br/>签字</td>
                                         <td style={{ border: 'none', borderRight: '1px solid black' }}></td>
-                                        <td style={{ border: 'none', borderRight: '1px solid black', textAlign: 'center', padding: '4px', fontSize: '12px' }}>总 经理<br/>签字</td>
+                                        <td style={{ border: 'none', borderRight: '1px solid black', textAlign: 'center', padding: `${3 * scale}px`, fontSize: `${12 * scale}px` }}>总 经理<br/>签字</td>
                                         <td style={{ border: 'none', borderRight: '1px solid black' }}></td>
-                                        <td style={{ border: 'none', borderRight: '1px solid black', textAlign: 'center', padding: '4px', fontSize: '12px' }}>常务副总/副总<br/>经理签字</td>
+                                        <td style={{ border: 'none', borderRight: '1px solid black', textAlign: 'center', padding: `${3 * scale}px`, fontSize: `${12 * scale}px` }}>常务副总/副总<br/>经理签字</td>
                                         <td style={{ border: 'none', borderRight: '1px solid black' }}></td>
-                                        <td style={{ border: 'none', borderRight: '1px solid black', textAlign: 'center', padding: '4px', fontSize: '12px' }}>总监/高级经<br/>理签字</td>
+                                        <td style={{ border: 'none', borderRight: '1px solid black', textAlign: 'center', padding: `${3 * scale}px`, fontSize: `${12 * scale}px` }}>总监/高级经<br/>理签字</td>
                                         <td style={{ border: 'none', borderRight: '1px solid black' }}></td>
-                                        <td style={{ border: 'none', borderRight: '1px solid black', textAlign: 'center', padding: '4px', fontSize: '12px' }}>项目负责<br/>人签字</td>
+                                        <td style={{ border: 'none', borderRight: '1px solid black', textAlign: 'center', padding: `${3 * scale}px`, fontSize: `${12 * scale}px` }}>项目负责<br/>人签字</td>
                                         <td style={{ border: 'none', borderRight: '1px solid black' }}></td>
-                                        <td style={{ border: 'none', borderRight: '1px solid black', textAlign: 'center', padding: '4px', fontSize: '12px' }}>领款人<br/>签字</td>
+                                        <td style={{ border: 'none', borderRight: '1px solid black', textAlign: 'center', padding: `${3 * scale}px`, fontSize: `${12 * scale}px` }}>领款人<br/>签字</td>
                                         <td style={{ border: 'none' }}></td>
                                     </tr>
                                 </tbody>
@@ -3698,14 +4227,14 @@ const GeneralReimbursementForm = ({ data }: any) => {
                             所属产品线：
                         </td>
                     </tr>
-                    </tbody>
-                </table>
+                </tbody>
+            </table>
 
-                {/* 底部页脚 */}
-                <div style={{ ...headerRowStyle, marginTop: '4px', padding: '0 8px' }}>
-                    <div style={{ width: '33%' }}>财务负责人：</div>
-                    <div style={{ width: '33%', textAlign: 'center' }}>审核：</div>
-                    <div style={{ width: '33%', textAlign: 'right', paddingRight: '40px' }}>出纳：</div>
+            {/* 底部页脚 */}
+                <div style={{ ...headerRowStyle, marginTop: `${3 * scale}px`, padding: `0 ${6 * scale}px` }}>
+                <div style={{ width: '33%' }}>财务负责人：</div>
+                <div style={{ width: '33%', textAlign: 'center' }}>审核：</div>
+                    <div style={{ width: '33%', textAlign: 'right', paddingRight: `${32 * scale}px` }}>出纳：</div>
                 </div>
             </div>
         </div>

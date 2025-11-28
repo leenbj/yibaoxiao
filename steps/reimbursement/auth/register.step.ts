@@ -116,3 +116,4 @@ export const handler: Handlers['AuthRegister'] = async (req, { state, logger }) 
 
 
 
+

@@ -173,9 +173,12 @@ export async function recognizeWithConfig(
   try {
     let result: AIRecognitionResult
     
+    console.log('[AI] 开始调用 AI 服务', { provider, model, imageCount: images.length })
+    
     switch (provider) {
       case 'gemini':
         result = await recognizeWithGemini(images, prompt, apiKey, apiUrl, model)
+        console.log('[AI] Gemini 返回结果:', JSON.stringify(result).substring(0, 800))
         break
       case 'deepseek':
       case 'minimax':
@@ -264,22 +267,44 @@ async function recognizeWithGemini(
   const text = result.candidates?.[0]?.content?.parts?.[0]?.text
 
   if (text) {
+    console.log('[AI] Gemini 原始响应文本长度:', text.length)
+    console.log('[AI] Gemini 原始响应文本前500字符:', text.substring(0, 500))
     try {
       // 尝试直接解析
-      return JSON.parse(text)
-    } catch {
+      const parsed = JSON.parse(text)
+      console.log('[AI] Gemini 解析成功，关键字段:', {
+        projectName: parsed.projectName,
+        totalAmount: parsed.totalAmount,
+        invoiceDate: parsed.invoiceDate,
+        title: parsed.title,
+        itemsCount: parsed.items?.length || 0
+      })
+      return parsed
+    } catch (parseError) {
+      console.log('[AI] 直接解析失败，尝试提取 JSON:', parseError)
       // 尝试提取 JSON
       const jsonMatch = text.match(/\{[\s\S]*\}/)
       if (jsonMatch) {
         try {
-          return JSON.parse(jsonMatch[0])
-        } catch {
-          console.error('[AI] Gemini 响应解析失败:', text)
+          const parsed = JSON.parse(jsonMatch[0])
+          console.log('[AI] Gemini JSON 提取成功，关键字段:', {
+            projectName: parsed.projectName,
+            totalAmount: parsed.totalAmount,
+            invoiceDate: parsed.invoiceDate,
+            title: parsed.title,
+            itemsCount: parsed.items?.length || 0
+          })
+          return parsed
+        } catch (e) {
+          console.error('[AI] Gemini 响应解析失败:', text.substring(0, 500))
         }
       }
     }
+  } else {
+    console.error('[AI] Gemini 响应无文本内容，完整响应:', JSON.stringify(result).substring(0, 500))
   }
 
+  console.log('[AI] 返回模拟数据')
   return getMockResult('invoice')
 }
 
