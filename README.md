@@ -294,14 +294,24 @@ docker-compose up -d
 docker-compose logs -f backend
 ```
 
-等待看到 `✓ [SUCCESS] Build completed` 后，服务即可访问。
+等待看到以下信息表示启动成功：
+```
+[2/4] 同步数据库表结构...
+[3/4] 初始化超级管理员...
+管理员初始化完成, ID: user_xxx
+[4/4] 启动 Motia 服务...
+🚀 Server ready and listening on port 3000
+```
 
 **首次启动需要 3-5 分钟**（Motia 运行时构建），后续重启只需几秒钟。
 
 ### 访问系统
 
-- 访问地址：`http://服务器IP`
-- 管理员账号：配置文件中设置的 `ADMIN_EMAIL`
+- 访问地址：`http://服务器IP`（或 `http://服务器IP:81` 如果 80 端口被占用）
+- **管理员账号**：`.env` 文件中配置的 `ADMIN_EMAIL`（默认：`admin@example.com`）
+- **管理员密码**：`.env` 文件中配置的 `ADMIN_PASSWORD`（默认：`admin123456`）
+
+> ⚠️ **安全提示**：首次登录后请立即修改默认密码！
 
 ### 常用命令
 
