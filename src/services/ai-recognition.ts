@@ -150,7 +150,7 @@ const DEFAULT_CONFIGS: Record<string, { url: string; model: string }> = {
  */
 export async function recognizeWithConfig(
   images: string[],
-  type: 'invoice' | 'approval' | 'travel',
+  type: 'invoice' | 'approval' | 'travel' | 'ticket' | 'hotel' | 'taxi',
   config: AIConfig | null
 ): Promise<AIRecognitionResult> {
   // 如果没有配置，返回模拟数据
@@ -535,7 +535,7 @@ export async function recognizeDocuments(
 /**
  * 根据类型获取识别提示词
  */
-function getPromptForType(type: 'invoice' | 'approval' | 'travel'): string {
+function getPromptForType(type: 'invoice' | 'approval' | 'travel' | 'ticket' | 'hotel' | 'taxi'): string {
   if (type === 'invoice') {
     return `
 请仔细分析这些电子发票/收据图片，完整提取以下信息并返回JSON格式：
@@ -631,13 +631,107 @@ function getPromptForType(type: 'invoice' | 'approval' | 'travel'): string {
 `
   }
 
+  // 火车票/机票识别
+  if (type === 'ticket') {
+    return `
+请仔细分析这些火车票/机票图片，提取以下信息并返回JSON格式。如果有多张票，返回数组格式：
+[
+  {
+    "ticketType": "火车票/飞机票",
+    "ticketNumber": "票号/订单号",
+    "departure": "出发地（精简为城市名）",
+    "destination": "目的地（精简为城市名）",
+    "departureDate": "出发日期，格式YYYY-MM-DD",
+    "departureTime": "出发时间，格式HH:MM",
+    "arrivalDate": "到达日期，格式YYYY-MM-DD",
+    "arrivalTime": "到达时间，格式HH:MM",
+    "dateRange": "日期范围，格式YYYY.MM.DD-YYYY.MM.DD",
+    "passengerName": "乘客姓名",
+    "seatClass": "座位等级（如：二等座、经济舱）",
+    "seatNumber": "座位号",
+    "trainNumber": "车次/航班号",
+    "amount": 票价金额（数字）,
+    "price": 票价金额（数字，与amount相同）
+  }
+]
+
+注意：
+- 如果只有一张票，也要返回数组格式
+- 所有金额必须是数字，不要包含货币符号
+- departure和destination要精简为城市名，如"北京"、"上海"
+- dateRange格式为出发日期-到达日期
+- 如果无法识别某字段，返回空字符串或0
+`
+  }
+
+  // 住宿发票识别
+  if (type === 'hotel') {
+    return `
+请仔细分析这些住宿/酒店发票图片，提取以下信息并返回JSON格式。如果有多张发票，返回数组格式：
+[
+  {
+    "hotelName": "酒店名称",
+    "city": "所在城市",
+    "location": "详细地址",
+    "checkInDate": "入住日期，格式YYYY-MM-DD",
+    "checkOutDate": "离店日期，格式YYYY-MM-DD",
+    "days": 住宿天数（数字）,
+    "nights": 住宿晚数（数字）,
+    "roomType": "房型",
+    "guestName": "住客姓名",
+    "invoiceNumber": "发票号码",
+    "invoiceDate": "开票日期，格式YYYY-MM-DD",
+    "amount": 总金额（数字）,
+    "totalAmount": 总金额（数字，与amount相同）,
+    "dailyRate": 每日房价（数字）
+  }
+]
+
+注意：
+- 如果只有一张发票，也要返回数组格式
+- 所有金额必须是数字，不要包含货币符号
+- days/nights计算方式：离店日期-入住日期
+- 如果无法识别某字段，返回空字符串或0
+`
+  }
+
+  // 打车发票/行程单识别
+  if (type === 'taxi') {
+    return `
+请仔细分析这些打车发票/行程单图片，提取以下信息并返回JSON格式。如果有多条记录，返回数组格式：
+[
+  {
+    "date": "乘车日期，格式YYYYMMDD或YYYY-MM-DD",
+    "invoiceDate": "发票日期，格式YYYY-MM-DD",
+    "startPoint": "上车地点（精简，如：酒店、机场、火车站）",
+    "endPoint": "下车地点（精简，如：公司、会展中心）",
+    "route": "起终点（格式：起点-终点，如：酒店-机场）",
+    "amount": 金额（数字）,
+    "distance": "行程距离（如有）",
+    "waitTime": "等待时间（如有）",
+    "invoiceNumber": "发票号码（如有）",
+    "carNumber": "车牌号（如有）",
+    "platform": "平台名称（如：滴滴、高德、出租车）"
+  }
+]
+
+注意：
+- 如果只有一条记录，也要返回数组格式
+- 所有金额必须是数字，不要包含货币符号
+- startPoint和endPoint要精简，去掉详细地址，只保留关键地点名称
+- route格式为"起点-终点"
+- 如果无法识别某字段，返回空字符串或0
+- 日期格式可以是YYYYMMDD或YYYY-MM-DD
+`
+  }
+
   return '请识别图片内容并返回JSON格式。'
 }
 
 /**
  * 获取模拟识别结果
  */
-function getMockResult(type: 'invoice' | 'approval' | 'travel'): AIRecognitionResult {
+function getMockResult(type: 'invoice' | 'approval' | 'travel' | 'ticket' | 'hotel' | 'taxi'): AIRecognitionResult {
   const now = new Date().toISOString().split('T')[0]
 
   if (type === 'invoice') {
@@ -719,6 +813,80 @@ function getMockResult(type: 'invoice' | 'approval' | 'travel'): AIRecognitionRe
       ],
       totalAmount: 2350,
     }
+  }
+
+  // 火车票/机票模拟数据
+  if (type === 'ticket') {
+    return {
+      tickets: [
+        {
+          ticketType: '火车票',
+          ticketNumber: 'G1234',
+          departure: '北京',
+          destination: '上海',
+          departureDate: now,
+          departureTime: '08:00',
+          arrivalDate: now,
+          arrivalTime: '12:30',
+          dateRange: `${now.replace(/-/g, '.')}-${now.replace(/-/g, '.')}`,
+          passengerName: '王波',
+          seatClass: '二等座',
+          trainNumber: 'G1234',
+          amount: 553,
+          price: 553,
+        }
+      ],
+    } as any
+  }
+
+  // 住宿发票模拟数据
+  if (type === 'hotel') {
+    return {
+      hotels: [
+        {
+          hotelName: '北京国际酒店',
+          city: '北京',
+          location: '北京市朝阳区建国路88号',
+          checkInDate: now,
+          checkOutDate: now,
+          days: 2,
+          nights: 2,
+          roomType: '标准间',
+          guestName: '王波',
+          invoiceNumber: 'HT12345678',
+          invoiceDate: now,
+          amount: 800,
+          totalAmount: 800,
+          dailyRate: 400,
+        }
+      ],
+    } as any
+  }
+
+  // 打车发票模拟数据
+  if (type === 'taxi') {
+    return {
+      details: [
+        {
+          date: now.replace(/-/g, ''),
+          invoiceDate: now,
+          startPoint: '酒店',
+          endPoint: '机场',
+          route: '酒店-机场',
+          amount: 148.42,
+          platform: '滴滴',
+        },
+        {
+          date: now.replace(/-/g, ''),
+          invoiceDate: now,
+          startPoint: '机场',
+          endPoint: '会展中心',
+          route: '机场-会展中心',
+          amount: 56.00,
+          platform: '出租车',
+        }
+      ],
+    } as any
   }
 
   return {

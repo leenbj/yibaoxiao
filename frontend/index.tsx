@@ -51,7 +51,8 @@ import {
   Loader,
   PanelLeftClose,
   PanelLeft,
-  AlertTriangle
+  AlertTriangle,
+  Search
 } from "lucide-react";
 
 // --- Types ---
@@ -627,9 +628,10 @@ const MainApp = ({ user, onLogout }: { user: AppUser, onLogout: () => void }) =>
     }
       
       // Update linked expense statuses (if matched from ledger)
-      const linkedIds = report.items.map(i => i.id);
-      if(linkedIds.length > 0) {
-          updateExpensesStatus(linkedIds, expenseStatus);
+      // 优先使用 aiRecognitionData 中存储的关联记账本 ID
+      const linkedExpenseIds = (report as any).aiRecognitionData?.linkedExpenseIds || [];
+      if(linkedExpenseIds.length > 0) {
+          updateExpensesStatus(linkedExpenseIds, expenseStatus);
       }
 
       if(action === 'print') {
@@ -703,9 +705,14 @@ const MainApp = ({ user, onLogout }: { user: AppUser, onLogout: () => void }) =>
   const completeReimbursement = async (id: string, type: 'report' | 'loan') => {
       if(type === 'report') {
           setReports(prev => prev.map(r => r.id === id ? { ...r, status: 'paid' } : r));
-          const report = reports.find(r => r.id === id);
+          const report = reports.find((r: any) => r.id === id);
           if(report) {
-              updateExpensesStatus(report.items.map(i => i.id), 'done');
+              // 优先使用 aiRecognitionData 中存储的关联记账本 ID
+              const linkedExpenseIds = (report as any).aiRecognitionData?.linkedExpenseIds || [];
+              if (linkedExpenseIds.length > 0) {
+                  // 更新关联的记账本事项为"已报销"
+                  updateExpensesStatus(linkedExpenseIds, 'done');
+              }
           }
         
         // 同步状态到后端
@@ -761,8 +768,8 @@ const MainApp = ({ user, onLogout }: { user: AppUser, onLogout: () => void }) =>
             {!sidebarCollapsed && <div className="py-4 px-2"><p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">业务申请</p></div>}
             {sidebarCollapsed && <div className="py-2 border-t border-slate-100 my-2"></div>}
             <SidebarItem collapsed={sidebarCollapsed} active={view === "create"} icon={<FileText size={18}/>} label="通用报销" onClick={() => setView("create")} />
-            <SidebarItem collapsed={sidebarCollapsed} active={view === "create-travel"} icon={<Plane size={18}/>} label="差旅报销" onClick={() => setView("create-travel")} />
             <SidebarItem collapsed={sidebarCollapsed} active={view === "loan"} icon={<Wallet size={18}/>} label="借款申请" onClick={() => setView("loan")} />
+            <SidebarItem collapsed={sidebarCollapsed} active={view === "create-travel"} icon={<Plane size={18}/>} label="差旅报销" onClick={() => setView("create-travel")} />
             <SidebarItem collapsed={sidebarCollapsed} active={view === "history"} icon={<Clock size={18}/>} label="历史记录" onClick={() => setView("history")} />
             
             {!sidebarCollapsed && <div className="py-4 px-2"><p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">管理</p></div>}
@@ -862,7 +869,7 @@ const MainApp = ({ user, onLogout }: { user: AppUser, onLogout: () => void }) =>
                 {view === "dashboard" && <OverviewView expenses={expenses} reports={reports} loans={loans} onNavigate={setView} />}
                 {view === "ledger" && <LedgerView expenses={expenses} setExpenses={setExpenses} />}
                 {view === "record" && <RecordView onSave={addExpense} onBack={() => setView("dashboard")} />}
-                {view === "create" && <CreateReportView settings={settings} expenses={expenses} loans={loans} onAction={handleReportAction} onBack={() => setView("dashboard")} />}
+                {view === "create" && <CreateReportView settings={settings} expenses={expenses} setExpenses={setExpenses} loans={loans} onAction={handleReportAction} onBack={() => setView("dashboard")} />}
                 {view === "create-travel" && <CreateTravelReportView settings={settings} loans={loans} onAction={handleReportAction} onBack={() => setView("dashboard")} />}
                 {view === "loan" && <LoanView settings={settings} onAction={handleLoanAction} onBack={() => setView("dashboard")} />}
                 {view === "history" && <HistoryView reports={reports} loans={loans} onDelete={deleteRecord} onComplete={completeReimbursement} onSelect={(id: string, type: string) => { setSelectedId(id); setView(type === 'report' ? "report-detail" : "loan-detail"); }} />}
@@ -909,6 +916,82 @@ const TabButton = ({ active, icon, label, onClick }: any) => (
 );
 
 // --- Visual Helpers for Charts ---
+// 折线图组件 - 小细线版本
+const LineChartComponent = ({ data, labels }: { data: number[], labels: string[] }) => {
+    const max = Math.max(...data, 1);
+    const min = Math.min(...data, 0);
+    const range = max - min || 1;
+    const chartHeight = 100;
+    
+    // 计算每个点的位置
+    const points = data.map((val, i) => {
+        const x = (i / (data.length - 1 || 1)) * 100;
+        const y = chartHeight - ((val - min) / range) * chartHeight;
+        return { x, y, val };
+    });
+    
+    // 生成 SVG 路径
+    const linePath = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
+    const areaPath = `${linePath} L ${points[points.length - 1]?.x || 0} ${chartHeight} L 0 ${chartHeight} Z`;
+    
+    return (
+        <div className="relative h-32">
+            {/* Y 轴刻度 */}
+            <div className="absolute left-0 top-0 bottom-5 w-10 flex flex-col justify-between text-[9px] text-slate-400">
+                <span>¥{max.toLocaleString()}</span>
+                <span>¥{min.toLocaleString()}</span>
+            </div>
+            
+            {/* 图表区域 */}
+            <div className="ml-10 h-24 relative">
+                <svg viewBox={`0 0 100 ${chartHeight}`} className="w-full h-full" preserveAspectRatio="none">
+                    {/* 网格线 */}
+                    <line x1="0" y1="0" x2="100" y2="0" stroke="#f1f5f9" strokeWidth="0.3"/>
+                    <line x1="0" y1={chartHeight/2} x2="100" y2={chartHeight/2} stroke="#f1f5f9" strokeWidth="0.3" strokeDasharray="2,2"/>
+                    <line x1="0" y1={chartHeight} x2="100" y2={chartHeight} stroke="#f1f5f9" strokeWidth="0.3"/>
+                    
+                    {/* 填充区域 */}
+                    <path d={areaPath} fill="url(#gradient-line)" opacity="0.15"/>
+                    
+                    {/* 折线 - 细线 */}
+                    <path d={linePath} fill="none" stroke="#6366f1" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round"/>
+                    
+                    {/* 渐变定义 */}
+                    <defs>
+                        <linearGradient id="gradient-line" x1="0%" y1="0%" x2="0%" y2="100%">
+                            <stop offset="0%" stopColor="#6366f1" stopOpacity="0.3"/>
+                            <stop offset="100%" stopColor="#6366f1" stopOpacity="0"/>
+                        </linearGradient>
+                    </defs>
+                </svg>
+                
+                {/* 数据点 - 小圆点 */}
+                {points.map((p, i) => (
+                    <div 
+                        key={i}
+                        className="absolute w-1.5 h-1.5 bg-indigo-500 rounded-full transform -translate-x-1/2 -translate-y-1/2 group cursor-pointer hover:scale-150 transition-transform"
+                        style={{ 
+                            left: `${p.x}%`, 
+                            top: `${(p.y / chartHeight) * 100}%`
+                        }}
+                    >
+                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 opacity-0 group-hover:opacity-100 bg-slate-800 text-white text-[10px] px-1.5 py-0.5 rounded transition-opacity pointer-events-none whitespace-nowrap z-10">
+                            ¥{p.val.toLocaleString()}
+                        </div>
+                    </div>
+                ))}
+            </div>
+            
+            {/* X 轴标签 */}
+            <div className="ml-10 flex justify-between text-[9px] text-slate-400 mt-0.5">
+                {labels.map((label, i) => (
+                    <span key={i} className="text-center" style={{ width: `${100 / labels.length}%` }}>{label}</span>
+                ))}
+            </div>
+        </div>
+    );
+};
+
 const BarChartComponent = ({ data, color, labels }: { data: number[], color: string, labels: string[] }) => {
     const max = Math.max(...data, 1);
     return (
@@ -951,20 +1034,39 @@ const OverviewView = ({ expenses, reports, loans, onNavigate }: any) => {
     // 3. Total Receivable
     const totalReceivable = totalPending - activeLoanAmount;
 
-    // Chart Data Mocking based on timeRange
+    // Chart Data based on real reports data
     const getChartData = () => {
-        if (timeRange === '3m') return { 
-            data: [2800, 4500, 3200], 
-            labels: ['12月', '1月', '2月'] 
-        };
-        if (timeRange === '6m') return { 
-            data: [1500, 2000, 450, 2800, 4500, 3200], 
-            labels: ['9月', '10月', '11月', '12月', '1月', '2月'] 
-        };
-        return { 
-            data: [1200, 2100, 800, 1600, 900, 3200, 1500, 2000, 450, 2800, 4500, 3200], 
-            labels: ['3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月', '1月', '2月'] 
-        };
+        const now = new Date();
+        const monthNames = ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'];
+        
+        // 确定时间范围
+        let monthCount = 6;
+        if (timeRange === '3m') monthCount = 3;
+        if (timeRange === '1y') monthCount = 12;
+        
+        // 生成月份标签和数据
+        const labels: string[] = [];
+        const data: number[] = [];
+        
+        for (let i = monthCount - 1; i >= 0; i--) {
+            const targetDate = new Date(now.getFullYear(), now.getMonth() - i, 1);
+            const targetMonth = targetDate.getMonth();
+            const targetYear = targetDate.getFullYear();
+            
+            labels.push(monthNames[targetMonth]);
+            
+            // 计算该月的报销金额
+            const monthTotal = reports.filter((r: any) => {
+                const reportDate = new Date(r.createdDate);
+                return reportDate.getMonth() === targetMonth && 
+                       reportDate.getFullYear() === targetYear &&
+                       (r.status === 'submitted' || r.status === 'paid');
+            }).reduce((sum: number, r: any) => sum + (r.totalAmount || 0), 0);
+            
+            data.push(monthTotal);
+        }
+        
+        return { data, labels };
     };
     const chartData = getChartData();
 
@@ -1005,22 +1107,105 @@ const OverviewView = ({ expenses, reports, loans, onNavigate }: any) => {
             </div>
 
             {/* Annual Chart */}
-            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-                <div className="flex justify-between items-center mb-6">
-                    <h3 className="font-bold text-slate-800">报销金额统计</h3>
-                    <div className="flex bg-slate-100 rounded-lg p-1">
+            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+                <div className="flex justify-between items-center mb-3">
+                    <h3 className="font-bold text-slate-800 text-sm">报销金额统计</h3>
+                    <div className="flex bg-slate-100 rounded-lg p-0.5">
                         {['3m', '6m', '1y'].map((t) => (
                             <button 
                                 key={t} 
                                 onClick={() => setTimeRange(t as any)}
-                                className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${timeRange === t ? 'bg-white text-slate-700 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                                className={`px-2 py-0.5 text-[10px] font-bold rounded transition-all ${timeRange === t ? 'bg-white text-slate-700 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
                             >
                                 {{'3m': '近3月', '6m': '近半年', '1y': '全年'}[t]}
                             </button>
                         ))}
                     </div>
                 </div>
-                <BarChartComponent data={chartData.data} labels={chartData.labels} color="bg-slate-1000"/>
+                <LineChartComponent data={chartData.data} labels={chartData.labels}/>
+            </div>
+
+            {/* 记账本和报销历史 */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* 记账本最新记录 */}
+                <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+                    <div className="flex justify-between items-center mb-3">
+                        <h3 className="font-bold text-slate-800 text-sm flex items-center gap-1.5">
+                            <Briefcase size={14} className="text-slate-600"/>
+                            记账本
+                        </h3>
+                        <button 
+                            onClick={() => onNavigate('ledger')}
+                            className="text-[10px] text-indigo-600 hover:text-indigo-700 font-medium"
+                        >
+                            查看全部 →
+                        </button>
+                    </div>
+                    <div className="space-y-2">
+                        {expenses.length === 0 ? (
+                            <p className="text-xs text-slate-400 text-center py-4">暂无记录</p>
+                        ) : (
+                            expenses.slice(0, 4).map((e: any) => (
+                                <div key={e.id} className="flex items-center justify-between p-2 bg-slate-50 rounded-lg">
+                                    <div className="flex-1 min-w-0">
+                                        <p className="text-xs font-medium text-slate-700 truncate">{e.description}</p>
+                                        <p className="text-[10px] text-slate-400">{formatDateTime(e.date)}</p>
+                                    </div>
+                                    <div className="flex items-center gap-2 ml-2">
+                                        <span className="text-xs font-semibold text-slate-700">¥{e.amount.toFixed(2)}</span>
+                                        <span className={`text-[9px] px-1.5 py-0.5 rounded ${
+                                            e.status === 'done' ? 'bg-green-100 text-green-600' :
+                                            e.status === 'processing' ? 'bg-blue-100 text-blue-600' :
+                                            'bg-slate-100 text-slate-500'
+                                        }`}>
+                                            {e.status === 'done' ? '已报销' : e.status === 'processing' ? '报销中' : '未报销'}
+                                        </span>
+                                    </div>
+                                </div>
+                            ))
+                        )}
+                    </div>
+                </div>
+
+                {/* 报销历史最新记录 */}
+                <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+                    <div className="flex justify-between items-center mb-3">
+                        <h3 className="font-bold text-slate-800 text-sm flex items-center gap-1.5">
+                            <FileText size={14} className="text-slate-600"/>
+                            报销历史
+                        </h3>
+                        <button 
+                            onClick={() => onNavigate('history')}
+                            className="text-[10px] text-indigo-600 hover:text-indigo-700 font-medium"
+                        >
+                            查看全部 →
+                        </button>
+                    </div>
+                    <div className="space-y-2">
+                        {reports.length === 0 ? (
+                            <p className="text-xs text-slate-400 text-center py-4">暂无报销记录</p>
+                        ) : (
+                            reports.slice(0, 4).map((r: any) => (
+                                <div key={r.id} className="flex items-center justify-between p-2 bg-slate-50 rounded-lg">
+                                    <div className="flex-1 min-w-0">
+                                        <p className="text-xs font-medium text-slate-700 truncate">{r.title || '费用报销'}</p>
+                                        <p className="text-[10px] text-slate-400">{formatDate(r.createdDate)}</p>
+                                    </div>
+                                    <div className="flex items-center gap-2 ml-2">
+                                        <span className="text-xs font-semibold text-slate-700">¥{(r.totalAmount || 0).toFixed(2)}</span>
+                                        <span className={`text-[9px] px-1.5 py-0.5 rounded ${
+                                            r.status === 'paid' ? 'bg-green-100 text-green-600' :
+                                            r.status === 'submitted' ? 'bg-blue-100 text-blue-600' :
+                                            'bg-yellow-100 text-yellow-600'
+                                        }`}>
+                                            {r.status === 'paid' ? '已完成' : r.status === 'submitted' ? '报销中' : '未打印'}
+                                        </span>
+                                    </div>
+                                </div>
+                            ))
+                        )}
+                    </div>
+                </div>
             </div>
         </div>
     );
@@ -1066,12 +1251,12 @@ const LedgerView = ({ expenses, setExpenses }: any) => {
     };
 
     return (
-        <div className="space-y-4 h-full flex flex-col">
+        <div className="space-y-3 h-full flex flex-col">
             <div className="flex justify-between items-center">
-                <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2"><Briefcase className="text-slate-700"/> 记账本</h2>
+                <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Briefcase size={18} className="text-slate-600"/> 记账本</h2>
                 {selectedIds.length > 0 && (
-                    <button onClick={handleDelete} className="bg-red-50 text-red-600 px-4 py-2 rounded-lg font-bold text-sm flex items-center gap-2 hover:bg-red-100">
-                        <Trash2 size={16}/> 删除 ({selectedIds.length})
+                    <button onClick={handleDelete} className="bg-red-50 text-red-600 px-3 py-1.5 rounded-lg font-medium text-xs flex items-center gap-1.5 hover:bg-red-100">
+                        <Trash2 size={14}/> 删除 ({selectedIds.length})
                     </button>
                 )}
             </div>
@@ -1079,47 +1264,47 @@ const LedgerView = ({ expenses, setExpenses }: any) => {
             <div className="bg-white border border-slate-200 rounded-xl flex-1 overflow-hidden flex flex-col shadow-sm">
                 <div className="overflow-y-auto flex-1">
                     <table className="w-full text-left border-collapse">
-                        <thead className="bg-slate-50 sticky top-0 z-10 text-xs font-bold text-slate-500 uppercase tracking-wider">
+                        <thead className="bg-slate-50 sticky top-0 z-10 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
                             <tr>
-                                <th className="p-4 w-12 text-center">
-                                    <input type="checkbox" onChange={(e) => setSelectedIds(e.target.checked ? expenses.map((e:any) => e.id) : [])} checked={selectedIds.length === expenses.length && expenses.length > 0} />
+                                <th className="px-3 py-2.5 w-10 text-center">
+                                    <input type="checkbox" className="w-3.5 h-3.5" onChange={(e) => setSelectedIds(e.target.checked ? expenses.map((e:any) => e.id) : [])} checked={selectedIds.length === expenses.length && expenses.length > 0} />
                                 </th>
-                                <th className="p-4 w-32">日期</th>
-                                <th className="p-4">描述</th>
-                                <th className="p-4 w-24">分类</th>
-                                <th className="p-4 text-right w-32">金额</th>
-                                <th className="p-4 text-center w-32">状态</th>
+                                <th className="px-3 py-2.5 w-28">日期</th>
+                                <th className="px-3 py-2.5">描述</th>
+                                <th className="px-3 py-2.5 w-20">分类</th>
+                                <th className="px-3 py-2.5 text-right w-24">金额</th>
+                                <th className="px-3 py-2.5 text-center w-24">状态</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
                             {expenses.length === 0 && (
-                                <tr><td colSpan={6} className="p-12 text-center text-slate-400">暂无记录</td></tr>
+                                <tr><td colSpan={6} className="p-8 text-center text-slate-400 text-sm">暂无记录</td></tr>
                             )}
                             {expenses.map((e: any) => (
                                 <tr key={e.id} className="hover:bg-slate-50 transition-colors group">
-                                    <td className="p-4 text-center">
-                                        <input type="checkbox" checked={selectedIds.includes(e.id)} onChange={() => toggleSelect(e.id)} />
+                                    <td className="px-3 py-2 text-center">
+                                        <input type="checkbox" className="w-3.5 h-3.5" checked={selectedIds.includes(e.id)} onChange={() => toggleSelect(e.id)} />
                                     </td>
-                                    <td className="p-4 font-mono text-sm text-slate-500">{formatDateTime(e.date)}</td>
-                                    <td className="p-4">
-                                        <div className="text-lg font-bold text-slate-800">{e.description}</div>
-                                        {e.remarks && <div className="text-sm text-slate-400 mt-1 truncate max-w-xs">{e.remarks}</div>}
+                                    <td className="px-3 py-2 font-mono text-xs text-slate-500">{formatDateTime(e.date)}</td>
+                                    <td className="px-3 py-2">
+                                        <div className="text-sm font-medium text-slate-700 leading-tight">{e.description}</div>
+                                        {e.remarks && <div className="text-xs text-slate-400 mt-0.5 truncate max-w-xs">{e.remarks}</div>}
                                     </td>
-                                    <td className="p-4 text-sm"><span className="bg-slate-100 px-2 py-1 rounded text-xs text-slate-600">{e.category}</span></td>
-                                    <td className="p-4 text-right text-base font-bold text-slate-800">¥{e.amount.toFixed(2)}</td>
-                                    <td className="p-4 text-center">
+                                    <td className="px-3 py-2"><span className="bg-slate-100 px-1.5 py-0.5 rounded text-[10px] font-medium text-slate-600">{e.category}</span></td>
+                                    <td className="px-3 py-2 text-right text-sm font-semibold text-slate-800">¥{e.amount.toFixed(2)}</td>
+                                    <td className="px-3 py-2 text-center">
                                         <div className="relative inline-block">
                                             <select 
                                                 value={e.status} 
                                                 onChange={(ev) => updateStatus(e.id, ev.target.value as ExpenseStatus)}
-                                                className={`appearance-none pl-3 pr-8 py-1.5 rounded-lg text-sm font-bold border outline-none cursor-pointer transition-colors ${getStatusStyle(e.status)}`}
+                                                className={`appearance-none pl-2 pr-6 py-1 rounded-md text-xs font-medium border outline-none cursor-pointer transition-colors ${getStatusStyle(e.status)}`}
                                             >
                                                 <option value="pending">未报销</option>
                                                 <option value="processing">报销中</option>
                                                 <option value="done">已报销</option>
                                             </select>
-                                            <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none opacity-50">
-                                                <ChevronRight size={14} className="rotate-90" />
+                                            <div className="absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none opacity-50">
+                                                <ChevronRight size={12} className="rotate-90" />
                                             </div>
                                         </div>
                                     </td>
@@ -1246,7 +1431,7 @@ const RecordView = ({ onSave, onBack }: any) => {
     );
 };
 
-const CreateReportView = ({ settings, expenses, loans, onAction, onBack }: any) => {
+const CreateReportView = ({ settings, expenses, setExpenses, loans, onAction, onBack }: any) => {
     const [step, setStep] = useState(1);
     const [analyzing, setAnalyzing] = useState(false);
     const [previewScale, setPreviewScale] = useState(0.8);  // 默认80%缩放
@@ -1563,6 +1748,43 @@ const CreateReportView = ({ settings, expenses, loans, onAction, onBack }: any) 
             
             console.log('[AI] 表单填充完成', { finalTitle, manualItemsCount: manualItems.length });
 
+            // 10. AI 自动匹配记账本事项
+            const matchedExpenseIds: string[] = [];
+            if (pendingExpenses.length > 0) {
+                // 根据报销事由/发票内容匹配记账本中的事项
+                const searchTerms = [
+                    finalTitle,
+                    ...invoiceList.map((inv: any) => inv.projectName || ''),
+                    approvalData.eventSummary || '',
+                ].filter(Boolean).map(t => t.toLowerCase());
+                
+                console.log('[AI] 记账本匹配关键词:', searchTerms);
+                
+                pendingExpenses.forEach((expense: any) => {
+                    const expDesc = (expense.description || '').toLowerCase();
+                    const expCategory = (expense.category || '').toLowerCase();
+                    
+                    // 检查是否有匹配
+                    const isMatch = searchTerms.some(term => 
+                        expDesc.includes(term) || 
+                        term.includes(expDesc) ||
+                        expCategory.includes(term) ||
+                        term.includes(expCategory)
+                    );
+                    
+                    if (isMatch) {
+                        matchedExpenseIds.push(expense.id);
+                        console.log('[AI] 匹配到记账本事项:', expense.description, expense.amount);
+                    }
+                });
+                
+                // 自动选中匹配的记账本事项
+                if (matchedExpenseIds.length > 0) {
+                    setSelectedExpenseIds(matchedExpenseIds);
+                    console.log('[AI] 自动选中记账本事项数量:', matchedExpenseIds.length);
+                }
+            }
+
             setStep(2);
 
         } catch (e) {
@@ -1689,9 +1911,8 @@ const CreateReportView = ({ settings, expenses, loans, onAction, onBack }: any) 
     };
 
     const handleSubmit = (action: 'save' | 'print') => {
-        // Merge manual items and selected ledger items
-        const ledgerItems = pendingExpenses.filter((e: any) => selectedExpenseIds.includes(e.id));
-        const allItems = [...form.manualItems, ...ledgerItems];
+        // 只使用发票识别的费用项目，不再将记账本事项作为报销项目
+        const allItems = form.manualItems;
 
         if (allItems.length === 0) return alert("请至少包含一笔费用");
         if (!form.title) return alert("请输入报销事由");
@@ -1705,6 +1926,13 @@ const CreateReportView = ({ settings, expenses, loans, onAction, onBack }: any) 
 
         // 如果选择了借款记录，记录关联
         const linkedLoanId = selectedLoanId || undefined;
+
+        // 更新选中的记账本事项状态为"报销中"
+        if (selectedExpenseIds.length > 0) {
+            setExpenses((prev: any[]) => prev.map(e => 
+                selectedExpenseIds.includes(e.id) ? { ...e, status: 'processing' } : e
+            ));
+        }
 
         const report: Report = {
             id: Date.now().toString(),
@@ -1725,14 +1953,16 @@ const CreateReportView = ({ settings, expenses, loans, onAction, onBack }: any) 
             aiRecognitionData: {
                 invoice: aiInvoiceResult,
                 approval: aiApprovalResult,
-                linkedLoanId
+                linkedLoanId,
+                linkedExpenseIds: selectedExpenseIds // 记录关联的记账本事项 ID，用于状态联动
             }
         };
         onAction(report, action);
     };
 
     // Calculate dynamic total for preview
-    const currentTotal = [...form.manualItems, ...pendingExpenses.filter((e:any) => selectedExpenseIds.includes(e.id))].reduce((s,i) => s+i.amount, 0);
+    // 只计算发票识别的费用项目总额，不包含记账本事项
+    const currentTotal = form.manualItems.reduce((s,i) => s+i.amount, 0);
     const allAttachments = [...invoiceFiles, ...approvalFiles, ...voucherFiles];
 
     return (
@@ -2148,24 +2378,73 @@ const CreateReportView = ({ settings, expenses, loans, onAction, onBack }: any) 
                                          </div>
                                      )}
 
-                                    {/* Ledger Items Matching */}
+                                    {/* Ledger Items Status Linking - 关联记账本状态 */}
                                     {pendingExpenses.length > 0 && (
-                                        <div>
-                                           <p className="text-xs font-bold text-slate-500 mb-2">从记账本添加 (未报销)</p>
-                                           <div className="space-y-1 max-h-40 overflow-y-auto">
-                                               {pendingExpenses.map((e:any) => (
-                                                   <label key={e.id} className="flex items-center justify-between p-2 hover:bg-slate-50 rounded cursor-pointer border border-transparent hover:border-slate-100">
-                                                       <div className="flex items-center gap-2 truncate">
-                                                           <input type="checkbox" checked={selectedExpenseIds.includes(e.id)} onChange={(ev) => {
-                                                               if(ev.target.checked) setSelectedExpenseIds([...selectedExpenseIds, e.id]);
-                                                               else setSelectedExpenseIds(selectedExpenseIds.filter(id => id !== e.id));
-                                                           }} className="rounded text-slate-700 focus:ring-indigo-500"/>
-                                                           <span className="text-xs text-slate-600 truncate">{e.description}</span>
-                                                       </div>
-                                                       <span className="text-xs font-bold text-slate-800">¥{e.amount}</span>
-                                                   </label>
-                                               ))}
-                                           </div>
+                                        <div className="border-t border-slate-100 pt-3">
+                                            <p className="text-xs font-bold text-slate-500 mb-1 flex items-center gap-1">
+                                                <Briefcase size={12}/> 关联记账本
+                                            </p>
+                                            <p className="text-[10px] text-slate-400 mb-2">
+                                                选中的事项将在报销完成后自动标记为"已报销"
+                                            </p>
+                                            
+                                            {/* AI 推荐匹配的事项 */}
+                                            {selectedExpenseIds.length > 0 && (
+                                                <div className="mb-2">
+                                                    <p className="text-[10px] text-green-600 font-medium mb-1 flex items-center gap-1">
+                                                        <span className="w-1.5 h-1.5 bg-green-500 rounded-full"></span>
+                                                        AI 自动匹配 ({selectedExpenseIds.length}项)
+                                                    </p>
+                                                    <div className="space-y-0.5 bg-green-50/50 rounded-lg p-1.5">
+                                                        {pendingExpenses.filter((e:any) => selectedExpenseIds.includes(e.id)).map((e:any) => (
+                                                            <label key={e.id} className="flex items-center justify-between p-1.5 hover:bg-green-100/50 rounded cursor-pointer">
+                                                                <div className="flex items-center gap-1.5 truncate">
+                                                                    <input 
+                                                                        type="checkbox" 
+                                                                        checked={true} 
+                                                                        onChange={() => setSelectedExpenseIds(selectedExpenseIds.filter(id => id !== e.id))} 
+                                                                        className="rounded text-green-600 focus:ring-green-500 w-3 h-3"
+                                                                    />
+                                                                    <span className="text-[11px] text-slate-700 truncate">{e.description}</span>
+                                                                </div>
+                                                                <span className="text-[11px] font-semibold text-green-700">¥{e.amount.toFixed(2)}</span>
+                                                            </label>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+                                            
+                                            {/* 手动选择区域 */}
+                                            {pendingExpenses.filter((e:any) => !selectedExpenseIds.includes(e.id)).length > 0 && (
+                                                <div>
+                                                    <p className="text-[10px] text-slate-400 mb-1">
+                                                        手动选择 ({pendingExpenses.filter((e:any) => !selectedExpenseIds.includes(e.id)).length}项未报销)
+                                                    </p>
+                                                    <div className="space-y-0.5 max-h-24 overflow-y-auto border border-slate-100 rounded-lg p-1.5">
+                                                        {pendingExpenses.filter((e:any) => !selectedExpenseIds.includes(e.id)).map((e:any) => (
+                                                            <label key={e.id} className="flex items-center justify-between p-1.5 hover:bg-slate-50 rounded cursor-pointer">
+                                                                <div className="flex items-center gap-1.5 truncate">
+                                                                    <input 
+                                                                        type="checkbox" 
+                                                                        checked={false} 
+                                                                        onChange={() => setSelectedExpenseIds([...selectedExpenseIds, e.id])} 
+                                                                        className="rounded text-slate-600 focus:ring-slate-500 w-3 h-3"
+                                                                    />
+                                                                    <span className="text-[11px] text-slate-600 truncate">{e.description}</span>
+                                                                </div>
+                                                                <span className="text-[11px] font-medium text-slate-700">¥{e.amount.toFixed(2)}</span>
+                                                            </label>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+                                            
+                                            {/* 选中汇总 */}
+                                            {selectedExpenseIds.length > 0 && (
+                                                <div className="mt-2 text-[10px] text-green-700 bg-green-50 rounded px-2 py-1">
+                                                    已关联 {selectedExpenseIds.length} 项记账本事项，提交后将变为"报销中"
+                                                </div>
+                                            )}
                                         </div>
                                     )}
                                 </div>
@@ -2315,7 +2594,7 @@ const CreateReportView = ({ settings, expenses, loans, onAction, onBack }: any) 
                                         title: form.title,
                                         createdDate: new Date().toISOString(),
                                         userSnapshot: settings.currentUser,
-                                        items: [...form.manualItems, ...pendingExpenses.filter((e:any) => selectedExpenseIds.includes(e.id))],
+                                        items: form.manualItems, // 只使用发票识别的费用项目，不包含记账本事项
                                         totalAmount: currentTotal,
                                         prepaidAmount: form.prepaidAmount,
                                         payableAmount: currentTotal - form.prepaidAmount,
@@ -2354,11 +2633,15 @@ const LoanView = ({ settings, onAction, onBack }: any) => {
     const [step, setStep] = useState(1);
     const [analyzing, setAnalyzing] = useState(false);
     const [approvalFiles, setApprovalFiles] = useState<Attachment[]>([]);
+    const [formCollapsed, setFormCollapsed] = useState(false);
+    const [previewScale, setPreviewScale] = useState(0.6);
+    const previewContainerRef = useRef<HTMLDivElement>(null);
 
     const [amount, setAmount] = useState<number>(0);
     const [reason, setReason] = useState("");
     const [approvalNumber, setApprovalNumber] = useState("");
     const [paymentAccountId, setPaymentAccountId] = useState(settings.paymentAccounts.find((a:any) => a.isDefault)?.id || "");
+    const [budgetProjectId, setBudgetProjectId] = useState("");
     const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
 
     const handleUpload = async (e: any) => {
@@ -2401,14 +2684,19 @@ const LoanView = ({ settings, onAction, onBack }: any) => {
             }) as any;
             
             const data = response.result || {};
+            console.log('[AI] 审批单识别结果:', data);
             
-            // 使用新的识别结果字段
-            if(data.eventDetail || data.eventSummary) {
-                setReason(data.eventDetail || data.eventSummary || '');
+            // 提取借款事由 - 精简为一句话
+            if(data.eventSummary) {
+                setReason(data.eventSummary);
+            } else if(data.eventDetail) {
+                // 如果只有详细说明，截取前50个字符作为事由
+                setReason(data.eventDetail.substring(0, 50));
             } else if(data.reason) {
                 setReason(data.reason);
             }
             
+            // 提取借款金额
             if(data.loanAmount) {
                 setAmount(data.loanAmount);
             } else if(data.expenseAmount) {
@@ -2417,7 +2705,20 @@ const LoanView = ({ settings, onAction, onBack }: any) => {
                 setAmount(data.amount);
             }
             
+            // 提取审批编号
             if(data.approvalNumber) setApprovalNumber(data.approvalNumber);
+            
+            // 自动匹配预算项目
+            if (data.budgetProject || data.budgetCode) {
+                const matchedBudget = settings.budgetProjects.find((p: any) => 
+                    p.name.includes(data.budgetProject) || 
+                    p.code === data.budgetCode ||
+                    data.budgetProject?.includes(p.name)
+                );
+                if (matchedBudget) {
+                    setBudgetProjectId(matchedBudget.id);
+                }
+            }
             
             setStep(2);
         } catch (e) {
@@ -2429,7 +2730,7 @@ const LoanView = ({ settings, onAction, onBack }: any) => {
     };
 
     const handleSubmit = (action: 'save' | 'print') => {
-        if(!amount || !reason) return alert("请填写完整");
+        if(!amount || !reason) return alert("请填写完整借款金额和事由");
         const loan: LoanRecord = {
             id: Date.now().toString(),
             amount: amount,
@@ -2440,164 +2741,274 @@ const LoanView = ({ settings, onAction, onBack }: any) => {
             payeeInfo: settings.paymentAccounts.find((a:any) => a.id === paymentAccountId) || settings.paymentAccounts[0],
             userSnapshot: settings.currentUser,
             attachments: approvalFiles,
-            approvalNumber
+            approvalNumber,
+            budgetProject: settings.budgetProjects.find((p:any) => p.id === budgetProjectId),
         };
         onAction(loan, action);
     };
 
     return (
-        <div className={`mx-auto h-full flex flex-col ${step === 2 ? 'w-full max-w-none' : 'max-w-4xl'}`}>
-             {step === 1 && (
-                 <div className="flex-1 overflow-y-auto">
-                    <div className="flex items-center gap-4 mb-6">
-                        <button onClick={onBack} className="p-2 hover:bg-slate-100 rounded-full text-slate-500"><ChevronRight className="rotate-180"/></button>
-                        <h2 className="text-2xl font-bold text-slate-800">借款申请</h2>
-                    </div>
+        <div className={`mx-auto h-full flex flex-col ${step === 2 ? 'w-full max-w-none' : 'max-w-5xl'}`}>
+            {/* Header */}
+            {step === 1 && (
+                <div className="flex items-center gap-4 mb-6">
+                    <button onClick={onBack} className="p-2 hover:bg-slate-100 rounded-full text-slate-500"><ChevronRight className="rotate-180"/></button>
+                    <h2 className="text-2xl font-bold text-slate-800">借款申请</h2>
+                </div>
+            )}
 
-                    <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm text-center">
-                        <div className="mb-8">
-                             <h3 className="text-lg font-bold text-slate-700 mb-2">上传电子审批单</h3>
-                             <p className="text-slate-400 text-sm">系统将自动提取金额、事由和审批编号</p>
-                        </div>
-                        
-                        <div className="max-w-md mx-auto mb-8">
-                            <div className="bg-slate-50 rounded-2xl border-2 border-dashed border-indigo-200 p-8 flex flex-col items-center justify-center min-h-[200px] hover:bg-slate-100/20 transition-colors relative">
+            {/* Step 1: Upload */}
+            {step === 1 && (
+                <div className="flex-1 overflow-y-auto pb-20">
+                    <div className="grid md:grid-cols-1 gap-6">
+                        {/* 审批单上传 - 必须 */}
+                        <div className="col-span-1">
+                            <h3 className="font-bold text-slate-700 mb-2 flex items-center gap-2">
+                                <FileCheck size={20} className="text-amber-500"/> 电子审批单 <span className="bg-amber-100 text-amber-600 text-[10px] px-2 py-0.5 rounded-full font-bold">强制上传</span>
+                            </h3>
+                            <div className="bg-white rounded-2xl border-2 border-dashed border-amber-200 p-6 flex flex-col items-center justify-center min-h-[200px] hover:bg-amber-50/20 transition-colors relative">
                                 <input type="file" multiple accept=".pdf,image/*" className="absolute inset-0 opacity-0 cursor-pointer" onChange={handleUpload} />
                                 {approvalFiles.length > 0 ? (
                                     <div className="flex flex-wrap gap-4 justify-center w-full z-10 pointer-events-none">
                                         {approvalFiles.map((f, i) => (
                                             <div key={i} className="relative group pointer-events-auto">
-                                                <div className="w-24 h-32 bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden flex flex-col">
-                                                    <div className="flex-1 flex items-center justify-center bg-slate-100">
-                                                        <FileText className="text-slate-400"/>
-                                                    </div>
-                                                    <div className="px-2 py-1 text-[10px] truncate text-slate-500">{f.name}</div>
+                                                <div className="w-20 h-20 bg-slate-100 rounded-lg border border-slate-200 overflow-hidden flex items-center justify-center">
+                                                    <FileText className="text-slate-400"/>
                                                 </div>
-                                                <button onClick={(e) => { e.stopPropagation(); removeFile(i); }} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 shadow-md hover:bg-red-600 transition-colors"><X size={12}/></button>
+                                                <div className="text-[10px] mt-1 truncate max-w-[80px] text-slate-500">{f.name}</div>
+                                                <button onClick={(e) => { e.stopPropagation(); removeFile(i); }} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 opacity-100 transition-opacity z-20"><X size={10}/></button>
                                             </div>
                                         ))}
-                                        <div className="flex items-center justify-center w-24 h-32 bg-white rounded-lg border-2 border-dashed border-slate-300 text-slate-300">
+                                        <div className="flex items-center justify-center w-20 h-20 bg-slate-50 rounded-lg border border-slate-200 text-slate-400">
                                             <Plus size={24}/>
                                         </div>
                                     </div>
                                 ) : (
                                     <div className="text-center text-slate-400 pointer-events-none">
-                                        <div className="w-16 h-16 bg-slate-100 text-slate-600 rounded-full flex items-center justify-center mx-auto mb-4">
-                                            <Upload size={32}/>
-                                        </div>
-                                        <p className="font-bold text-sm text-slate-600">点击上传文件</p>
+                                        <Upload size={32} className="mx-auto mb-2 text-amber-300"/>
+                                        <p className="font-bold text-sm text-slate-600">上传电子审批单</p>
+                                        <p className="text-xs">系统将自动提取金额、事由和审批编号</p>
                                         <p className="text-xs mt-1">支持 PDF / 图片</p>
                                     </div>
                                 )}
                             </div>
                         </div>
-
-                        <button 
-                            onClick={startAnalysis} 
-                            disabled={approvalFiles.length === 0 || analyzing}
-                            className={`w-full max-w-md mx-auto py-4 rounded-xl font-bold shadow-lg transition-all flex items-center justify-center gap-2 text-lg ${approvalFiles.length > 0 ? 'bg-amber-500 text-white shadow-amber-200 hover:bg-amber-600' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`}
-                        >
-                            {analyzing ? <><Loader2 className="animate-spin"/> 正在提取审批信息...</> : "开始识别与填单"}
-                        </button>
                     </div>
-                 </div>
-             )}
+                    
+                    <button 
+                        onClick={startAnalysis} 
+                        disabled={approvalFiles.length === 0 || analyzing}
+                        className={`w-full mt-8 py-4 rounded-xl font-bold shadow-lg transition-all flex items-center justify-center gap-2 text-lg ${approvalFiles.length > 0 ? 'bg-amber-500 text-white shadow-amber-200 hover:bg-amber-600' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`}
+                    >
+                        {analyzing ? <><Loader2 className="animate-spin"/> AI 正在分析审批单...</> : "开始识别与填单"}
+                    </button>
+                </div>
+            )}
 
-             {step === 2 && (
-                 <div className="flex flex-col h-full bg-slate-200 -m-4 md:-m-8">
-                     {/* Toolbar */}
-                     <div className="bg-white border-b border-slate-200 px-8 py-4 flex justify-between items-center shadow-sm z-10 sticky top-0">
-                         <div className="flex items-center gap-4">
-                             <button onClick={() => setStep(1)} className="text-slate-500 hover:text-slate-800 flex items-center gap-1 font-bold text-sm">
-                                <ChevronRight className="rotate-180" size={16}/> 返回重传
-                             </button>
-                             <div className="h-4 w-px bg-slate-300"></div>
-                             <span className="text-sm font-bold text-slate-700">借款单预览 (A4横版)</span>
-                         </div>
-                         <div className="flex gap-3">
-                             <button onClick={() => handleSubmit('save')} className="px-4 py-2 rounded-lg border border-slate-200 text-slate-600 font-bold text-sm hover:bg-slate-50 flex items-center gap-2">
-                                 <Save size={16}/> 保存草稿
-                             </button>
-                             <button onClick={() => handleSubmit('print')} className="px-4 py-2 rounded-lg bg-amber-500 text-white font-bold text-sm shadow-md shadow-amber-200 hover:bg-amber-600 flex items-center gap-2">
-                                 <Printer size={16}/> 打印借款单
-                             </button>
-                         </div>
-                     </div>
-
-                     <div className="flex-1 overflow-hidden flex flex-col md:flex-row">
-                         {/* Left Panel: Form Controls */}
-                         <div className="w-full md:w-[350px] bg-white border-r border-slate-200 overflow-y-auto p-6 flex-shrink-0 z-10">
-                             <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2"><Edit2 size={16} className="text-amber-500"/> 确认借款信息</h3>
-                             <div className="space-y-6">
-                                 <div>
-                                     <label className="text-xs font-bold text-slate-500 uppercase block mb-1">借款金额</label>
-                                     <div className="relative">
-                                         <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">¥</span>
-                                         <input 
+            {/* Step 2: Form & Preview */}
+            {step === 2 && (
+                <div className="absolute inset-0 flex flex-col bg-slate-100 z-30">
+                    {/* Toolbar */}
+                    <div className="bg-white border-b border-slate-200 px-4 py-2.5 flex justify-between items-center shadow-sm flex-shrink-0">
+                        <div className="flex items-center gap-3">
+                            <button onClick={() => setStep(1)} className="text-slate-500 hover:text-slate-800 flex items-center gap-1 font-medium text-sm">
+                                <ChevronLeft size={16}/> 返回重传
+                            </button>
+                            <div className="h-4 w-px bg-slate-200"></div>
+                            <span className="text-sm font-medium text-slate-700">借款单预览 (双联)</span>
+                        </div>
+                        <div className="flex gap-2">
+                            <button onClick={() => handleSubmit('save')} className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 font-medium text-sm hover:bg-slate-50 flex items-center gap-1.5">
+                                <Save size={14}/> 保存草稿
+                            </button>
+                            <button onClick={() => handleSubmit('print')} className="px-3 py-1.5 rounded-lg bg-amber-500 text-white font-medium text-sm shadow-md shadow-amber-200 hover:bg-amber-600 flex items-center gap-1.5">
+                                <Printer size={14}/> 打印借款单
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div className="flex-1 overflow-hidden flex flex-row relative bg-slate-100">
+                        {/* 收缩/展开按钮 */}
+                        <button
+                            onClick={() => setFormCollapsed(!formCollapsed)}
+                            className={`absolute top-1/2 -translate-y-1/2 w-6 h-6 bg-white border border-slate-200 rounded-full shadow-md flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-50 transition-all z-40 ${formCollapsed ? 'left-0' : 'left-[276px] xl:left-[316px]'}`}
+                        >
+                            {formCollapsed ? <ChevronRight size={14}/> : <ChevronLeft size={14}/>}
+                        </button>
+                        
+                        {/* Left Panel: Form Controls */}
+                        <div className={`bg-white border-r border-slate-200 overflow-y-auto flex-shrink-0 transition-all duration-300 ${formCollapsed ? 'w-0 p-0 overflow-hidden' : 'w-[280px] xl:w-[320px] p-4'}`}>
+                            <h3 className="font-bold text-slate-800 mb-3 flex items-center gap-2 text-sm">
+                                <Edit2 size={14} className="text-amber-500"/> 确认借款信息
+                            </h3>
+                            
+                            <div className="space-y-4">
+                                {/* 借款金额 */}
+                                <div>
+                                    <label className="text-xs font-bold text-slate-500 uppercase block mb-1">借款金额</label>
+                                    <div className="relative">
+                                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">¥</span>
+                                        <input 
                                             type="number" 
                                             value={amount} 
                                             onChange={e => setAmount(parseFloat(e.target.value) || 0)} 
-                                            className="w-full pl-6 p-2 border border-slate-200 rounded-lg font-bold text-lg text-amber-600 focus:border-amber-500 outline-none" 
+                                            className="w-full pl-7 p-2 border border-slate-200 rounded-lg font-bold text-lg text-amber-600 focus:border-amber-500 outline-none" 
                                         />
-                                     </div>
-                                     <p className="text-xs text-slate-400 mt-1 bg-slate-50 p-1 rounded">大写：{digitToChinese(amount)}</p>
-                                 </div>
-                                 
-                                 <div>
-                                     <label className="text-xs font-bold text-slate-500 uppercase block mb-1">借款事由</label>
-                                     <textarea value={reason} onChange={e => setReason(e.target.value)} className="w-full p-2 border border-slate-200 rounded-lg text-sm font-medium focus:border-amber-500 outline-none" rows={3}/>
-                                 </div>
+                                    </div>
+                                    <p className="text-[10px] text-slate-400 mt-1 bg-slate-50 p-1 rounded">大写：{digitToChinese(amount)}</p>
+                                </div>
+                                
+                                {/* 借款事由 */}
+                                <div>
+                                    <label className="text-xs font-bold text-slate-500 uppercase block mb-1">借款事由</label>
+                                    <textarea 
+                                        value={reason} 
+                                        onChange={e => setReason(e.target.value)} 
+                                        className="w-full p-2 border border-slate-200 rounded-lg text-sm focus:border-amber-500 outline-none resize-none" 
+                                        rows={2}
+                                        placeholder="AI已自动提取，可手动修改"
+                                    />
+                                </div>
 
-                                 <div>
-                                     <label className="text-xs font-bold text-slate-500 uppercase block mb-1">审批单编号</label>
-                                     <input value={approvalNumber} onChange={e => setApprovalNumber(e.target.value)} className="w-full p-2 border border-slate-200 rounded-lg text-sm font-medium focus:border-amber-500 outline-none"/>
-                                 </div>
+                                {/* 审批单编号 */}
+                                <div>
+                                    <label className="text-xs font-bold text-slate-500 uppercase block mb-1">审批单编号</label>
+                                    <input 
+                                        value={approvalNumber} 
+                                        onChange={e => setApprovalNumber(e.target.value)} 
+                                        className="w-full p-2 border border-slate-200 rounded-lg text-sm focus:border-amber-500 outline-none"
+                                        placeholder="AI已自动提取"
+                                    />
+                                </div>
 
-                                 <div>
-                                     <label className="text-xs font-bold text-slate-500 uppercase block mb-1">收款人账户</label>
-                                     <select value={paymentAccountId} onChange={e => setPaymentAccountId(e.target.value)} className="w-full p-2 border border-slate-200 rounded-lg text-sm font-medium focus:border-amber-500 outline-none bg-white">
-                                         {settings.paymentAccounts.map((a:any) => <option key={a.id} value={a.id}>{a.accountName} - {a.bankName}</option>)}
-                                     </select>
-                                     <div className="text-[10px] text-slate-400 mt-2 p-2 bg-slate-50 rounded">
-                                         账号: {settings.paymentAccounts.find((a:any) => a.id === paymentAccountId)?.accountNumber}
-                                     </div>
-                                 </div>
+                                {/* 收款人账户 */}
+                                <div>
+                                    <label className="text-xs font-bold text-slate-500 uppercase block mb-1">收款人账户</label>
+                                    <select 
+                                        value={paymentAccountId} 
+                                        onChange={e => setPaymentAccountId(e.target.value)} 
+                                        className="w-full p-2 border border-slate-200 rounded-lg text-sm focus:border-amber-500 outline-none bg-white"
+                                    >
+                                        {settings.paymentAccounts.map((a:any) => (
+                                            <option key={a.id} value={a.id}>{a.accountName} - {a.bankName}</option>
+                                        ))}
+                                    </select>
+                                    <div className="text-[10px] text-slate-400 mt-1 p-1.5 bg-slate-50 rounded">
+                                        账号: {settings.paymentAccounts.find((a:any) => a.id === paymentAccountId)?.accountNumber}
+                                    </div>
+                                </div>
 
-                                 <div>
-                                     <label className="text-xs font-bold text-slate-500 uppercase block mb-1">申请日期</label>
-                                     <input type="date" value={date} onChange={e => setDate(e.target.value)} className="w-full p-2 border border-slate-200 rounded-lg text-sm font-medium focus:border-amber-500 outline-none"/>
-                                 </div>
-                             </div>
-                         </div>
+                                {/* 预算项目 */}
+                                <div>
+                                    <label className="text-xs font-bold text-slate-500 uppercase block mb-1">预算项目</label>
+                                    <select 
+                                        value={budgetProjectId} 
+                                        onChange={e => setBudgetProjectId(e.target.value)} 
+                                        className="w-full p-2 border border-slate-200 rounded-lg text-sm focus:border-amber-500 outline-none bg-white"
+                                    >
+                                        <option value="">请选择预算项目</option>
+                                        {settings.budgetProjects.map((p:any) => (
+                                            <option key={p.id} value={p.id}>{p.name} ({p.code})</option>
+                                        ))}
+                                    </select>
+                                </div>
 
-                         {/* Right Panel: Preview */}
-                         <div className="flex-1 bg-slate-200 overflow-y-auto p-8 flex justify-center items-start">
-                              <div className="bg-white shadow-[0_20px_60px_-15px_rgba(0,0,0,0.3)] transition-transform origin-top flex-shrink-0" style={{ width: '297mm', minHeight: '210mm', padding: '15mm' }}>
-                                   <LoanForm 
+                                {/* 申请日期 */}
+                                <div>
+                                    <label className="text-xs font-bold text-slate-500 uppercase block mb-1">申请日期</label>
+                                    <input 
+                                        type="date" 
+                                        value={date} 
+                                        onChange={e => setDate(e.target.value)} 
+                                        className="w-full p-2 border border-slate-200 rounded-lg text-sm focus:border-amber-500 outline-none"
+                                    />
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Right Panel: Preview */}
+                        <div ref={previewContainerRef} className="flex-1 bg-slate-100 overflow-auto p-2">
+                            {/* 缩放控制 */}
+                            <div className="sticky top-0 z-20 mb-2 flex justify-center">
+                                <div className="bg-white rounded-full shadow-md px-3 py-1.5 flex items-center gap-2 text-xs">
+                                    <button onClick={() => setPreviewScale(Math.max(0.3, previewScale - 0.05))} className="w-6 h-6 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center">−</button>
+                                    <span className="text-slate-600 min-w-[50px] text-center font-medium">{Math.round(previewScale * 100)}%</span>
+                                    <button onClick={() => setPreviewScale(Math.min(1.2, previewScale + 0.05))} className="w-6 h-6 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center">+</button>
+                                </div>
+                            </div>
+                            
+                            {/* 借款单预览 - 双联分开显示 */}
+                            <div className="flex flex-col items-center">
+                                {/* 第一联：财务留存联 */}
+                                <div 
+                                    className="bg-white shadow-lg border border-slate-200 mb-8"
+                                    style={{ 
+                                        transform: `scale(${previewScale})`,
+                                        transformOrigin: 'top center',
+                                    }}
+                                >
+                                    <LoanFormSheet 
                                         data={{
                                             amount,
                                             reason,
                                             date,
                                             approvalNumber,
                                             userSnapshot: settings.currentUser,
-                                            payeeInfo: settings.paymentAccounts.find((a:any) => a.id === paymentAccountId)
+                                            payeeInfo: settings.paymentAccounts.find((a:any) => a.id === paymentAccountId),
+                                            budgetProject: settings.budgetProjects.find((p:any) => p.id === budgetProjectId),
                                         }}
-                                   />
-                                   
-                                   {/* Attachments Preview Page */}
-                                  <div className="border-t-4 border-slate-200 mt-12 pt-8 print:hidden">
-                                      <p className="text-center text-slate-400 text-sm mb-4">- 附件/审批单预览 (打印时在下一页) -</p>
-                                      <div className="flex flex-col gap-4 items-center">
-                                          {approvalFiles.map((f, i) => (
-                                              <img key={i} src={f.data} className="w-full border border-slate-100 object-contain" />
-                                          ))}
-                                      </div>
-                                  </div>
-                              </div>
-                         </div>
-                     </div>
-                 </div>
-             )}
+                                        sheetNumber={1}
+                                        sheetName="第一联：财务留存联"
+                                        showNote={false}
+                                    />
+                                </div>
+                                
+                                {/* 第二联：员工留存联 */}
+                                <div 
+                                    className="bg-white shadow-lg border border-slate-200 mb-8"
+                                    style={{ 
+                                        transform: `scale(${previewScale})`,
+                                        transformOrigin: 'top center',
+                                    }}
+                                >
+                                    <LoanFormSheet 
+                                        data={{
+                                            amount,
+                                            reason,
+                                            date,
+                                            approvalNumber,
+                                            userSnapshot: settings.currentUser,
+                                            payeeInfo: settings.paymentAccounts.find((a:any) => a.id === paymentAccountId),
+                                            budgetProject: settings.budgetProjects.find((p:any) => p.id === budgetProjectId),
+                                        }}
+                                        sheetNumber={2}
+                                        sheetName="第二联：员工留存联"
+                                        showNote={true}
+                                    />
+                                </div>
+                                
+                                {/* 附件展示 - 竖版 A4 */}
+                                {approvalFiles.map((attachment, idx) => (
+                                    <div 
+                                        key={`approval-${idx}`}
+                                        className="mb-8"
+                                        style={{ 
+                                            transform: `scale(${previewScale})`,
+                                            transformOrigin: 'top center',
+                                        }}
+                                    >
+                                        <A4SingleAttachment 
+                                            attachment={attachment}
+                                            title="审批单"
+                                            index={idx}
+                                        />
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
@@ -3885,28 +4296,6 @@ const UsageStats = ({ settings }: { settings: any }) => {
                         </div>
                     )}
 
-                    {/* 定价参考 */}
-                    <div className="bg-gradient-to-r from-slate-50 to-indigo-50 rounded-xl p-6">
-                        <h4 className="font-bold text-slate-700 mb-4 flex items-center gap-2">
-                            <Info size={18} className="text-slate-600" />
-                            模型定价参考 (元/百万tokens)
-                        </h4>
-                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
-                            {Object.entries(MODEL_PRICING).map(([key, info]) => (
-                                <div key={key} className={`p-3 rounded-lg border ${info.isFree ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-slate-200'}`}>
-                                    <div className="font-medium text-sm text-slate-700">{info.name}</div>
-                                    {info.isFree ? (
-                                        <div className="text-emerald-600 font-bold mt-1">免费</div>
-                                    ) : (
-                                        <div className="text-xs text-slate-500 mt-1">
-                                            输入 ¥{info.inputPrice} / 输出 ¥{info.outputPrice}
-                                        </div>
-                                    )}
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-
                     {/* 最近使用记录 */}
                     {stats.recentUsages && stats.recentUsages.length > 0 && (
                         <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
@@ -4241,147 +4630,765 @@ const GeneralReimbursementForm = ({ data }: any) => {
     )
 };
 
-const LoanForm = ({ data }: any) => {
+// 借款单单联组件 - 用于独立显示每一联
+const LoanFormSheet = ({ data, sheetNumber, sheetName, showNote }: { data: any, sheetNumber: number, sheetName: string, showNote: boolean }) => {
+    const currentDate = data.date ? new Date(data.date) : new Date();
+    const year = currentDate.getFullYear();
+    const month = currentDate.getMonth() + 1;
+    const day = currentDate.getDate();
+    
+    const amount = data.amount || 0;
+    const amountChinese = digitToChinese(amount);
+    
+    // A4 横版样式 (297mm x 210mm)
+    const sheetStyle: React.CSSProperties = {
+        width: '297mm',
+        height: '210mm',
+        backgroundColor: 'white',
+        padding: '15mm 20mm',
+        boxSizing: 'border-box',
+        fontFamily: '"SimSun", "Songti SC", serif',
+        pageBreakAfter: sheetNumber === 1 ? 'always' : 'auto',
+    };
+    
+    const underlineStyle: React.CSSProperties = {
+        borderBottom: '1px solid black',
+        padding: '0 10px',
+        display: 'inline-block',
+        textAlign: 'center',
+        minWidth: '40px',
+    };
+    
     return (
-        <div className="w-full h-full bg-white text-slate-900 font-serif p-8 relative">
-            <h1 className="text-2xl font-bold text-center mb-8 border-b-2 border-slate-800 pb-2">借款申请单</h1>
-            
-            <div className="flex justify-between mb-4 text-sm">
-                <div>申请人：{data.userSnapshot.name}</div>
-                <div>部门：{data.userSnapshot.department}</div>
-                <div>申请日期：{formatDate(data.date)}</div>
-            </div>
-
-            <div className="border border-slate-800 p-6 text-sm flex flex-col gap-6">
-                <div className="flex items-center gap-4">
-                    <span className="font-bold w-24">借款金额：</span>
-                    <span className="text-xl font-bold border-b border-slate-800 flex-1">{data.amount.toFixed(2)}</span>
-                    <span className="font-bold">人民币（大写）：</span>
-                    <span className="text-xl font-bold border-b border-slate-800 flex-1">{digitToChinese(data.amount)}</span>
+        <div style={sheetStyle} className="loan-sheet">
+            {/* 标题区 */}
+            <div style={{ marginBottom: '8px' }}>
+                <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+                    <h1 style={{ fontSize: '20px', fontWeight: 'bold', letterSpacing: '2px', marginBottom: '8px' }}>
+                        北龙中网（北京）科技有限责任公司
+                    </h1>
+                    <h2 style={{ fontSize: '24px', fontWeight: 'bold', letterSpacing: '1em' }}>借款单</h2>
                 </div>
                 
-                <div className="flex gap-4">
-                     <span className="font-bold w-24">借款事由：</span>
-                     <p className="flex-1 border border-slate-300 p-2 min-h-[80px]">{data.reason}</p>
-                </div>
-
-                <div className="flex gap-4">
-                    <span className="font-bold w-24">收款账户：</span>
-                    <div className="flex-1">
-                        <p>{data.payeeInfo?.bankName}</p>
-                        <p className="font-mono">{data.payeeInfo?.accountNumber}</p>
-                        <p>{data.payeeInfo?.accountName}</p>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', fontSize: '16px' }}>
+                    <div style={{ display: 'flex', alignItems: 'flex-end' }}>
+                        <span style={{ marginRight: '8px' }}>借款日期：</span>
+                        <span style={{ ...underlineStyle, width: '64px' }}>{year}</span>
+                        <span style={{ marginRight: '4px' }}>年</span>
+                        <span style={{ ...underlineStyle, width: '40px' }}>{month}</span>
+                        <span style={{ marginRight: '4px' }}>月</span>
+                        <span style={{ ...underlineStyle, width: '40px' }}>{day}</span>
+                        <span>日</span>
                     </div>
+                    <div>{sheetName}</div>
                 </div>
-
-                {data.approvalNumber && (
-                    <div className="flex gap-4">
-                        <span className="font-bold w-24">审批编号：</span>
-                        <span>{data.approvalNumber}</span>
-                    </div>
-                )}
-            </div>
-
-            <div className="mt-12 flex justify-between text-sm px-4">
-                <div>申请人签名：__________</div>
-                <div>部门经理：__________</div>
-                <div>财务审批：__________</div>
-                <div>批准：__________</div>
-            </div>
-        </div>
-    )
-};
-
-const TravelReimbursementForm = ({ data }: any) => {
-    return (
-        <div className="w-full h-full bg-white p-8 font-serif text-slate-900">
-             <h1 className="text-2xl font-bold text-center mb-8 border-b-2 border-slate-900 pb-4">差旅费报销单</h1>
-             <div className="flex justify-between mb-4 text-sm">
-                <div>姓名：{data.userSnapshot.name}</div>
-                <div>部门：{data.userSnapshot.department}</div>
-                <div>出差事由：{data.tripReason}</div>
-                <div>日期：{formatDate(data.createdDate)}</div>
             </div>
             
-            {/* Trip Legs */}
-             <table className="w-full border-collapse border border-slate-900 text-xs mb-6">
-                <thead>
-                    <tr className="bg-slate-50">
-                        <th className="border border-slate-900 p-1">起止日期</th>
-                        <th className="border border-slate-900 p-1">起讫地点</th>
-                        <th className="border border-slate-900 p-1">交通费</th>
-                        <th className="border border-slate-900 p-1">住宿费</th>
-                        <th className="border border-slate-900 p-1">市内交通</th>
-                        <th className="border border-slate-900 p-1">伙食补助</th>
-                        <th className="border border-slate-900 p-1">杂费</th>
-                        <th className="border border-slate-900 p-1">小计</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {data.tripLegs?.map((leg: any, i: number) => (
-                        <tr key={i}>
-                            <td className="border border-slate-900 p-1 text-center">{leg.dateRange}</td>
-                            <td className="border border-slate-900 p-1 text-center">{leg.route}</td>
-                            <td className="border border-slate-900 p-1 text-right">{leg.transportFee || '-'}</td>
-                            <td className="border border-slate-900 p-1 text-right">{leg.hotelFee || '-'}</td>
-                            <td className="border border-slate-900 p-1 text-right">{leg.cityTrafficFee || '-'}</td>
-                            <td className="border border-slate-900 p-1 text-right">{leg.mealFee || '-'}</td>
-                            <td className="border border-slate-900 p-1 text-right">{leg.otherFee || '-'}</td>
-                            <td className="border border-slate-900 p-1 text-right font-bold">{leg.subTotal}</td>
-                        </tr>
-                    ))}
-                    {/* Totals row */}
-                     <tr className="bg-slate-50 font-bold">
-                        <td colSpan={2} className="border border-slate-900 p-1 text-center">合计</td>
-                        <td className="border border-slate-900 p-1 text-right">{data.tripLegs?.reduce((a:any,b:any)=>a+(b.transportFee||0),0)}</td>
-                        <td className="border border-slate-900 p-1 text-right">{data.tripLegs?.reduce((a:any,b:any)=>a+(b.hotelFee||0),0)}</td>
-                         <td className="border border-slate-900 p-1 text-right">{data.tripLegs?.reduce((a:any,b:any)=>a+(b.cityTrafficFee||0),0)}</td>
-                        <td className="border border-slate-900 p-1 text-right">{data.tripLegs?.reduce((a:any,b:any)=>a+(b.mealFee||0),0)}</td>
-                        <td className="border border-slate-900 p-1 text-right">{data.tripLegs?.reduce((a:any,b:any)=>a+(b.otherFee||0),0)}</td>
-                        <td className="border border-slate-900 p-1 text-right">{data.totalAmount}</td>
-                    </tr>
-                </tbody>
-             </table>
-
-             {/* Bottom Info */}
-             <div className="flex border border-slate-900 p-2 text-sm mb-8">
-                 <div className="flex-1">
-                     <div className="mb-1"><span className="font-bold">金额大写：</span> {digitToChinese(data.totalAmount)}</div>
-                     {data.prepaidAmount > 0 && <div><span className="font-bold">预借金额：</span> ¥{data.prepaidAmount} (应补/退: ¥{data.payableAmount})</div>}
-                 </div>
-                 <div className="w-1/3 border-l border-slate-900 pl-4">
-                     <div><span className="font-bold">预算项目：</span> {data.budgetProject?.name}</div>
-                     <div><span className="font-bold">支付账户：</span> {data.paymentAccount?.bankName}</div>
-                 </div>
-             </div>
-
-             <div className="flex justify-between text-sm mt-12 px-4">
-                <div>报销人签名：__________</div>
-                <div>部门经理：__________</div>
-                <div>财务审核：__________</div>
-                <div>批准：__________</div>
-             </div>
+            {/* 表格主体 */}
+            <div style={{ border: '1px solid black', fontSize: '14px' }}>
+                {/* 第1行：部门和借款人 */}
+                <div style={{ display: 'flex', borderBottom: '1px solid black' }}>
+                    <div style={{ width: '60%', borderRight: '1px solid black', padding: '4px 8px', display: 'flex', alignItems: 'center' }}>
+                        <span style={{ fontWeight: 'bold', marginRight: '8px' }}>部门：</span> {data.userSnapshot?.department || ''}
+                    </div>
+                    <div style={{ width: '40%', padding: '4px 8px', display: 'flex', alignItems: 'center' }}>
+                        <span style={{ fontWeight: 'bold', marginRight: '8px' }}>借款人：</span> {data.userSnapshot?.name || ''}
+                    </div>
+                </div>
+                
+                {/* 第2行：借款事由 */}
+                <div style={{ display: 'flex', borderBottom: '1px solid black' }}>
+                    <div style={{ width: '100%', padding: '4px 8px', display: 'flex', alignItems: 'center', height: '32px' }}>
+                        <span style={{ fontWeight: 'bold', whiteSpace: 'nowrap', marginRight: '8px' }}>借款事由：</span>
+                        <span style={{ flexGrow: 1, borderBottom: '1px solid black', lineHeight: '1.4' }}>{data.reason || ''}</span>
+                    </div>
+                </div>
+                
+                {/* 第3行：支付方式 */}
+                <div style={{ display: 'flex', borderBottom: '1px solid black' }}>
+                    <div style={{ width: '100%', padding: '4px 8px', display: 'flex', alignItems: 'center' }}>
+                        <span style={{ fontWeight: 'bold', marginRight: '24px' }}>借款支付方式：</span>
+                        <div style={{ display: 'flex', gap: '32px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center' }}>
+                                <span style={{ display: 'inline-block', width: '14px', height: '14px', border: '1px solid black', marginRight: '4px', textAlign: 'center', lineHeight: '12px', fontSize: '12px' }}></span>现金
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center' }}>
+                                <span style={{ display: 'inline-block', width: '14px', height: '14px', border: '1px solid black', marginRight: '4px', textAlign: 'center', lineHeight: '12px', fontSize: '12px' }}></span>支票
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center' }}>
+                                <span style={{ display: 'inline-block', width: '14px', height: '14px', border: '1px solid black', marginRight: '4px', textAlign: 'center', lineHeight: '12px', fontSize: '12px' }}>✓</span>电汇
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                {/* 第4行：借款金额 */}
+                <div style={{ display: 'flex', borderBottom: '1px solid black' }}>
+                    <div style={{ width: '100%', padding: '4px 8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', flexGrow: 1 }}>
+                            <span style={{ fontWeight: 'bold', marginRight: '8px' }}>借款金额：</span>
+                            <span style={{ marginRight: '8px', fontSize: '18px' }}>※</span>
+                            <span style={{ flexGrow: 1, borderBottom: '1px solid black', textAlign: 'center', letterSpacing: '0.2em', fontWeight: 500, lineHeight: '1.4' }}>
+                                {amountChinese}
+                            </span>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', marginLeft: '16px', width: '25%' }}>
+                            <span style={{ marginRight: '8px', fontWeight: 'bold' }}>￥</span>
+                            <span style={{ flexGrow: 1, borderBottom: '1px solid black', textAlign: 'right', paddingRight: '8px', lineHeight: '1.4' }}>
+                                {amount.toFixed(2)}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+                
+                {/* 第5行：收款人信息 + 审批编号 */}
+                <div style={{ display: 'flex', borderBottom: '1px solid black', height: '112px' }}>
+                    {/* 收款人标签 */}
+                    <div style={{ width: '64px', borderRight: '1px solid black', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '4px', textAlign: 'center', fontWeight: 'bold' }}>
+                        收<br/>款<br/>人
+                    </div>
+                    
+                    {/* 收款人详细信息 */}
+                    <div style={{ flexGrow: 1, display: 'flex', flexDirection: 'column', borderRight: '1px solid black' }}>
+                        <div style={{ height: '33.33%', borderBottom: '1px solid black', display: 'flex', alignItems: 'center', padding: '0 8px', overflow: 'hidden' }}>
+                            <span style={{ fontWeight: 'bold', marginRight: '8px', whiteSpace: 'nowrap' }}>单位名称（姓名）：</span>
+                            <span style={{ whiteSpace: 'nowrap' }}>{data.payeeInfo?.accountName || ''}</span>
+                        </div>
+                        <div style={{ height: '33.33%', borderBottom: '1px solid black', display: 'flex', alignItems: 'center', padding: '0 8px', overflow: 'hidden' }}>
+                            <span style={{ fontWeight: 'bold', marginRight: '8px', whiteSpace: 'nowrap' }}>开户行：</span>
+                            <span style={{ fontSize: '14px', whiteSpace: 'nowrap' }}>{data.payeeInfo?.bankName || ''}</span>
+                        </div>
+                        <div style={{ height: '33.33%', display: 'flex', alignItems: 'center', padding: '0 8px', overflow: 'hidden' }}>
+                            <span style={{ fontWeight: 'bold', marginRight: '8px', whiteSpace: 'nowrap' }}>单位账号（银行卡号）：</span>
+                            <span style={{ whiteSpace: 'nowrap' }}>{data.payeeInfo?.accountNumber || ''}</span>
+                        </div>
+                    </div>
+                    
+                    {/* 钉钉审批编号 */}
+                    <div style={{ width: '30%', display: 'flex', flexDirection: 'column' }}>
+                        <div style={{ flexGrow: 1, display: 'flex' }}>
+                            <div style={{ width: '48px', borderRight: '1px solid black', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '4px', textAlign: 'center', fontSize: '14px', fontWeight: 'bold', lineHeight: '1.4' }}>
+                                钉钉<br/>审批<br/>编号
+                            </div>
+                            <div style={{ flexGrow: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '4px', fontSize: '12px', wordBreak: 'break-all', textAlign: 'center' }}>
+                                {data.approvalNumber || ''}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                {/* 第6行：签字栏 */}
+                <div style={{ display: 'flex', borderBottom: '1px solid black', height: '48px', fontSize: '14px' }}>
+                    {/* 董事长 */}
+                    <div style={{ flex: 1, borderRight: '1px solid black', display: 'flex' }}>
+                        <div style={{ width: '40px', borderRight: '1px solid black', display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '4px', lineHeight: '1.4', fontSize: '12px' }}>董事长<br/>签字</div>
+                        <div style={{ flexGrow: 1 }}></div>
+                    </div>
+                    {/* 总经理 */}
+                    <div style={{ flex: 1, borderRight: '1px solid black', display: 'flex' }}>
+                        <div style={{ width: '40px', borderRight: '1px solid black', display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '4px', lineHeight: '1.4', fontSize: '12px' }}>总经理<br/>签字</div>
+                        <div style={{ flexGrow: 1 }}></div>
+                    </div>
+                    {/* 常务副总 */}
+                    <div style={{ flex: 1, borderRight: '1px solid black', display: 'flex' }}>
+                        <div style={{ width: '56px', borderRight: '1px solid black', display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '0', lineHeight: '1.2', fontSize: '10px' }}>常务副总/<br/>副总经理<br/>签字</div>
+                        <div style={{ flexGrow: 1 }}></div>
+                    </div>
+                    {/* 总监 */}
+                    <div style={{ flex: 0.8, borderRight: '1px solid black', display: 'flex' }}>
+                        <div style={{ width: '40px', borderRight: '1px solid black', display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '4px', lineHeight: '1.4', fontSize: '12px' }}>总监<br/>签字</div>
+                        <div style={{ flexGrow: 1 }}></div>
+                    </div>
+                    {/* 项目负责人 */}
+                    <div style={{ flex: 1, borderRight: '1px solid black', display: 'flex' }}>
+                        <div style={{ width: '48px', borderRight: '1px solid black', display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '0', lineHeight: '1.2', fontSize: '12px' }}>项目负<br/>责人签字</div>
+                        <div style={{ flexGrow: 1 }}></div>
+                    </div>
+                    {/* 领款人 */}
+                    <div style={{ flex: 0.8, display: 'flex' }}>
+                        <div style={{ width: '40px', borderRight: '1px solid black', display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '4px', lineHeight: '1.4', fontSize: '12px' }}>领款人<br/>签字</div>
+                        <div style={{ flexGrow: 1 }}></div>
+                    </div>
+                </div>
+                
+                {/* 第7行：产品线/预算 */}
+                <div style={{ display: 'flex', height: '32px', alignItems: 'center', padding: '0 8px', justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex', alignItems: 'center' }}>
+                        <span style={{ marginRight: '8px' }}>所属产品线：</span>
+                        <span style={{ width: '48px' }}></span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center' }}>
+                        <span style={{ marginRight: '8px' }}>预算项目：</span>
+                        <span>{data.budgetProject?.name || ''}</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', fontSize: '14px' }}>
+                        <span style={{ marginRight: '4px' }}>预算编码：</span>
+                        <span>{data.budgetProject?.code || ''}</span>
+                    </div>
+                </div>
+            </div>
+            
+            {/* 底部签字行 */}
+            <div style={{ display: 'flex', marginTop: '4px', justifyContent: 'space-between', padding: '0 8px', fontSize: '16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center' }}><span style={{ marginRight: '8px' }}>财务负责人：</span><span style={{ width: '96px' }}></span></div>
+                <div style={{ display: 'flex', alignItems: 'center' }}><span style={{ marginRight: '8px' }}>审核：</span><span style={{ width: '96px' }}></span></div>
+                <div style={{ display: 'flex', alignItems: 'center' }}><span style={{ marginRight: '8px' }}>出纳：</span><span style={{ width: '96px' }}></span></div>
+            </div>
+            
+            {/* 备注行（仅第二联显示） */}
+            {showNote && (
+                <div style={{ marginTop: '8px', padding: '0 8px', fontSize: '14px' }}>
+                    <span style={{ fontWeight: 'bold' }}>备注：</span>借款时员工保留此联，报销时需将此联退回财务
+                </div>
+            )}
         </div>
     );
 };
 
-// Add CreateTravelReportView
+// 借款单组件 - 双联格式（财务留存联 + 员工留存联）
+const LoanForm = ({ data }: any) => {
+    const currentDate = data.date ? new Date(data.date) : new Date();
+    const year = currentDate.getFullYear();
+    const month = currentDate.getMonth() + 1;
+    const day = currentDate.getDate();
+    
+    const amount = data.amount || 0;
+    const amountChinese = digitToChinese(amount);
+    
+    // 单联样式 - A4 横版 (297mm x 210mm)
+    const sheetStyle: React.CSSProperties = {
+        width: '297mm',
+        height: '210mm',
+        backgroundColor: 'white',
+        padding: '15mm 20mm',
+        boxSizing: 'border-box',
+        fontFamily: '"SimSun", "Songti SC", serif',
+        marginBottom: '20px',
+        pageBreakAfter: 'always',
+    };
+    
+    const cellStyle: React.CSSProperties = {
+        border: '1px solid black',
+        padding: '4px 8px',
+    };
+    
+    const underlineStyle: React.CSSProperties = {
+        borderBottom: '1px solid black',
+        padding: '0 10px',
+        display: 'inline-block',
+        textAlign: 'center',
+        minWidth: '40px',
+    };
+    
+    // 渲染单联
+    const renderSheet = (sheetNumber: number, sheetName: string, showNote: boolean) => (
+        <div 
+            style={{
+                ...sheetStyle,
+                marginBottom: sheetNumber === 2 ? 0 : '20px',
+                pageBreakAfter: sheetNumber === 1 ? 'always' : 'auto',
+            }} 
+            className="loan-sheet"
+        >
+            {/* 标题区 */}
+            <div style={{ marginBottom: '8px' }}>
+                <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+                    <h1 style={{ fontSize: '20px', fontWeight: 'bold', letterSpacing: '2px', marginBottom: '8px' }}>
+                        北龙中网（北京）科技有限责任公司
+                    </h1>
+                    <h2 style={{ fontSize: '24px', fontWeight: 'bold', letterSpacing: '1em' }}>借款单</h2>
+                </div>
+                
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', fontSize: '16px' }}>
+                    <div style={{ display: 'flex', alignItems: 'flex-end' }}>
+                        <span style={{ marginRight: '8px' }}>借款日期：</span>
+                        <span style={{ ...underlineStyle, width: '64px' }}>{year}</span>
+                        <span style={{ marginRight: '4px' }}>年</span>
+                        <span style={{ ...underlineStyle, width: '40px' }}>{month}</span>
+                        <span style={{ marginRight: '4px' }}>月</span>
+                        <span style={{ ...underlineStyle, width: '40px' }}>{day}</span>
+                        <span>日</span>
+                    </div>
+                    <div>{sheetName}</div>
+                </div>
+            </div>
+            
+            {/* 表格主体 */}
+            <div style={{ border: '1px solid black', fontSize: '14px' }}>
+                {/* 第1行：部门和借款人 */}
+                <div style={{ display: 'flex', borderBottom: '1px solid black' }}>
+                    <div style={{ width: '60%', borderRight: '1px solid black', padding: '4px 8px', display: 'flex', alignItems: 'center' }}>
+                        <span style={{ fontWeight: 'bold', marginRight: '8px' }}>部门：</span> {data.userSnapshot?.department || ''}
+                    </div>
+                    <div style={{ width: '40%', padding: '4px 8px', display: 'flex', alignItems: 'center' }}>
+                        <span style={{ fontWeight: 'bold', marginRight: '8px' }}>借款人：</span> {data.userSnapshot?.name || ''}
+                    </div>
+                </div>
+                
+                {/* 第2行：借款事由 */}
+                <div style={{ display: 'flex', borderBottom: '1px solid black' }}>
+                    <div style={{ width: '100%', padding: '4px 8px', display: 'flex', alignItems: 'center', height: '32px' }}>
+                        <span style={{ fontWeight: 'bold', whiteSpace: 'nowrap', marginRight: '8px' }}>借款事由：</span>
+                        <span style={{ flexGrow: 1, borderBottom: '1px solid black', lineHeight: '1.4' }}>{data.reason || ''}</span>
+                    </div>
+                </div>
+                
+                {/* 第3行：支付方式 */}
+                <div style={{ display: 'flex', borderBottom: '1px solid black' }}>
+                    <div style={{ width: '100%', padding: '4px 8px', display: 'flex', alignItems: 'center' }}>
+                        <span style={{ fontWeight: 'bold', marginRight: '24px' }}>借款支付方式：</span>
+                        <div style={{ display: 'flex', gap: '32px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center' }}>
+                                <span style={{ display: 'inline-block', width: '14px', height: '14px', border: '1px solid black', marginRight: '4px', textAlign: 'center', lineHeight: '12px', fontSize: '12px' }}></span>现金
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center' }}>
+                                <span style={{ display: 'inline-block', width: '14px', height: '14px', border: '1px solid black', marginRight: '4px', textAlign: 'center', lineHeight: '12px', fontSize: '12px' }}></span>支票
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center' }}>
+                                <span style={{ display: 'inline-block', width: '14px', height: '14px', border: '1px solid black', marginRight: '4px', textAlign: 'center', lineHeight: '12px', fontSize: '12px' }}>✓</span>电汇
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                {/* 第4行：借款金额 */}
+                <div style={{ display: 'flex', borderBottom: '1px solid black' }}>
+                    <div style={{ width: '100%', padding: '4px 8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', flexGrow: 1 }}>
+                            <span style={{ fontWeight: 'bold', marginRight: '8px' }}>借款金额：</span>
+                            <span style={{ marginRight: '8px', fontSize: '18px' }}>※</span>
+                            <span style={{ flexGrow: 1, borderBottom: '1px solid black', textAlign: 'center', letterSpacing: '0.2em', fontWeight: 500, lineHeight: '1.4' }}>
+                                {amountChinese}
+                            </span>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', marginLeft: '16px', width: '25%' }}>
+                            <span style={{ marginRight: '8px', fontWeight: 'bold' }}>￥</span>
+                            <span style={{ flexGrow: 1, borderBottom: '1px solid black', textAlign: 'right', paddingRight: '8px', lineHeight: '1.4' }}>
+                                {amount.toFixed(2)}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+                
+                {/* 第5行：收款人信息 + 审批编号 */}
+                <div style={{ display: 'flex', borderBottom: '1px solid black', height: '112px' }}>
+                    {/* 收款人标签 */}
+                    <div style={{ width: '64px', borderRight: '1px solid black', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '4px', textAlign: 'center', fontWeight: 'bold' }}>
+                        收<br/>款<br/>人
+                    </div>
+                    
+                    {/* 收款人详细信息 */}
+                    <div style={{ flexGrow: 1, display: 'flex', flexDirection: 'column', borderRight: '1px solid black' }}>
+                        <div style={{ height: '33.33%', borderBottom: '1px solid black', display: 'flex', alignItems: 'center', padding: '0 8px', overflow: 'hidden' }}>
+                            <span style={{ fontWeight: 'bold', marginRight: '8px', whiteSpace: 'nowrap' }}>单位名称（姓名）：</span>
+                            <span style={{ whiteSpace: 'nowrap' }}>{data.payeeInfo?.accountName || ''}</span>
+                        </div>
+                        <div style={{ height: '33.33%', borderBottom: '1px solid black', display: 'flex', alignItems: 'center', padding: '0 8px', overflow: 'hidden' }}>
+                            <span style={{ fontWeight: 'bold', marginRight: '8px', whiteSpace: 'nowrap' }}>开户行：</span>
+                            <span style={{ fontSize: '14px', whiteSpace: 'nowrap' }}>{data.payeeInfo?.bankName || ''}</span>
+                        </div>
+                        <div style={{ height: '33.33%', display: 'flex', alignItems: 'center', padding: '0 8px', overflow: 'hidden' }}>
+                            <span style={{ fontWeight: 'bold', marginRight: '8px', whiteSpace: 'nowrap' }}>单位账号（银行卡号）：</span>
+                            <span style={{ whiteSpace: 'nowrap' }}>{data.payeeInfo?.accountNumber || ''}</span>
+                        </div>
+                    </div>
+                    
+                    {/* 钉钉审批编号 */}
+                    <div style={{ width: '30%', display: 'flex', flexDirection: 'column' }}>
+                        <div style={{ flexGrow: 1, display: 'flex' }}>
+                            <div style={{ width: '48px', borderRight: '1px solid black', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '4px', textAlign: 'center', fontSize: '14px', fontWeight: 'bold', lineHeight: '1.4' }}>
+                                钉钉<br/>审批<br/>编号
+                            </div>
+                            <div style={{ flexGrow: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '4px', fontSize: '12px', wordBreak: 'break-all', textAlign: 'center' }}>
+                                {data.approvalNumber || ''}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                {/* 第6行：签字栏 */}
+                <div style={{ display: 'flex', borderBottom: '1px solid black', height: '48px', fontSize: '14px' }}>
+                    {/* 董事长 */}
+                    <div style={{ flex: 1, borderRight: '1px solid black', display: 'flex' }}>
+                        <div style={{ width: '40px', borderRight: '1px solid black', display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '4px', lineHeight: '1.4', fontSize: '12px' }}>董事长<br/>签字</div>
+                        <div style={{ flexGrow: 1 }}></div>
+                    </div>
+                    {/* 总经理 */}
+                    <div style={{ flex: 1, borderRight: '1px solid black', display: 'flex' }}>
+                        <div style={{ width: '40px', borderRight: '1px solid black', display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '4px', lineHeight: '1.4', fontSize: '12px' }}>总经理<br/>签字</div>
+                        <div style={{ flexGrow: 1 }}></div>
+                    </div>
+                    {/* 常务副总 */}
+                    <div style={{ flex: 1, borderRight: '1px solid black', display: 'flex' }}>
+                        <div style={{ width: '56px', borderRight: '1px solid black', display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '0', lineHeight: '1.2', fontSize: '10px' }}>常务副总/<br/>副总经理<br/>签字</div>
+                        <div style={{ flexGrow: 1 }}></div>
+                    </div>
+                    {/* 总监 */}
+                    <div style={{ flex: 0.8, borderRight: '1px solid black', display: 'flex' }}>
+                        <div style={{ width: '40px', borderRight: '1px solid black', display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '4px', lineHeight: '1.4', fontSize: '12px' }}>总监<br/>签字</div>
+                        <div style={{ flexGrow: 1 }}></div>
+                    </div>
+                    {/* 项目负责人 */}
+                    <div style={{ flex: 1, borderRight: '1px solid black', display: 'flex' }}>
+                        <div style={{ width: '48px', borderRight: '1px solid black', display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '0', lineHeight: '1.2', fontSize: '12px' }}>项目负<br/>责人签字</div>
+                        <div style={{ flexGrow: 1 }}></div>
+                    </div>
+                    {/* 领款人 */}
+                    <div style={{ flex: 0.8, display: 'flex' }}>
+                        <div style={{ width: '40px', borderRight: '1px solid black', display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '4px', lineHeight: '1.4', fontSize: '12px' }}>领款人<br/>签字</div>
+                        <div style={{ flexGrow: 1 }}></div>
+                    </div>
+                </div>
+                
+                {/* 第7行：产品线/预算 */}
+                <div style={{ display: 'flex', height: '32px', alignItems: 'center', padding: '0 8px', justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex', alignItems: 'center' }}>
+                        <span style={{ marginRight: '8px' }}>所属产品线：</span>
+                        <span style={{ width: '48px' }}></span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center' }}>
+                        <span style={{ marginRight: '8px' }}>预算项目：</span>
+                        <span>{data.budgetProject?.name || ''}</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', fontSize: '14px' }}>
+                        <span style={{ marginRight: '4px' }}>预算编码：</span>
+                        <span>{data.budgetProject?.code || ''}</span>
+                    </div>
+                </div>
+            </div>
+            
+            {/* 底部签字行 */}
+            <div style={{ display: 'flex', marginTop: '4px', justifyContent: 'space-between', padding: '0 8px', fontSize: '16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center' }}><span style={{ marginRight: '8px' }}>财务负责人：</span><span style={{ width: '96px' }}></span></div>
+                <div style={{ display: 'flex', alignItems: 'center' }}><span style={{ marginRight: '8px' }}>审核：</span><span style={{ width: '96px' }}></span></div>
+                <div style={{ display: 'flex', alignItems: 'center' }}><span style={{ marginRight: '8px' }}>出纳：</span><span style={{ width: '96px' }}></span></div>
+            </div>
+            
+            {/* 备注行（仅第二联显示） */}
+            {showNote && (
+                <div style={{ marginTop: '8px', padding: '0 8px', fontSize: '14px' }}>
+                    <span style={{ fontWeight: 'bold' }}>备注：</span>借款时员工保留此联，报销时需将此联退回财务
+                </div>
+            )}
+        </div>
+    );
+    
+    return (
+        <>
+            {/* 第一联：财务留存联 */}
+            {renderSheet(1, '第一联：财务留存联', false)}
+            
+            {/* 第二联：员工留存联 */}
+            {renderSheet(2, '第二联：员工留存联', true)}
+        </>
+    );
+};
+
+// 出租车费明细表组件
+const TaxiExpenseTable = ({ data }: any) => {
+    const currentDate = data.createdDate ? new Date(data.createdDate) : new Date();
+    const dateStr = `${currentDate.getFullYear()}.${currentDate.getMonth() + 1}.${currentDate.getDate()}`;
+    
+    // 计算出租车费总金额
+    const taxiTotal = (data.taxiDetails || []).reduce((sum: number, item: any) => sum + (item.amount || 0), 0);
+    
+    const containerStyle: React.CSSProperties = {
+        width: '210mm',
+        minHeight: '297mm',
+        backgroundColor: 'white',
+        padding: '20mm 15mm',
+        boxSizing: 'border-box',
+        fontFamily: '"SimSun", "Songti SC", serif',
+    };
+    
+    const tableStyle: React.CSSProperties = {
+        width: '100%',
+        borderCollapse: 'collapse',
+        fontSize: '14px',
+        marginBottom: '10px',
+        tableLayout: 'fixed',
+    };
+    
+    const cellStyle: React.CSSProperties = {
+        border: '1px solid black',
+        padding: '6px 4px',
+        textAlign: 'center',
+        verticalAlign: 'middle',
+    };
+    
+    return (
+        <div style={containerStyle} className="taxi-expense-table">
+            <h1 style={{ 
+                textAlign: 'center', 
+                fontSize: '24px', 
+                fontWeight: 'bold', 
+                marginBottom: '30px',
+                fontFamily: '"SimHei", "STHeiti", sans-serif'
+            }}>
+                北龙中网（北京）科技有限责任公司员工出租车费明细表
+            </h1>
+            
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px', fontSize: '16px' }}>
+                <span style={{ marginLeft: '20px' }}>填制日期：{dateStr}</span>
+                <span style={{ marginRight: '20px' }}>附发票 {data.taxiDetails?.length || 0} 张</span>
+            </div>
+            
+            <table style={tableStyle}>
+                <colgroup>
+                    <col style={{ width: '12%' }} />
+                    <col style={{ width: '15%' }} />
+                    <col style={{ width: '45%' }} />
+                    <col style={{ width: '15%' }} />
+                    <col style={{ width: '13%' }} />
+                </colgroup>
+                <thead>
+                    <tr>
+                        <th style={{ ...cellStyle, height: '35px' }}>发票日期</th>
+                        <th style={{ ...cellStyle, height: '35px' }}>外出事由</th>
+                        <th style={{ ...cellStyle, height: '35px' }}>起终点</th>
+                        <th style={{ ...cellStyle, height: '35px' }}>金额</th>
+                        <th style={{ ...cellStyle, height: '35px' }}>员工</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {(data.taxiDetails || []).map((item: any, idx: number) => (
+                        <tr key={idx}>
+                            <td style={cellStyle}>{item.date || ''}</td>
+                            <td style={cellStyle}>{item.reason || data.tripReason || ''}</td>
+                            <td style={cellStyle}>{item.route || ''}</td>
+                            <td style={cellStyle}>{(item.amount || 0).toFixed(2)}</td>
+                            <td style={cellStyle}>{data.userSnapshot?.name || ''}</td>
+                        </tr>
+                    ))}
+                    {/* 总金额行 */}
+                    <tr style={{ fontWeight: 'bold' }}>
+                        <td style={{ ...cellStyle, textAlign: 'center' }}>总金额</td>
+                        <td colSpan={4} style={{ ...cellStyle, textAlign: 'left', paddingLeft: '20px', letterSpacing: '1px' }}>
+                            {digitToChinese(taxiTotal)} ¥ {taxiTotal.toFixed(2)}
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+            
+            <div style={{ marginTop: '10px', fontSize: '16px', fontWeight: 'bold' }}>
+                填表人（签字）：
+            </div>
+        </div>
+    );
+};
+
+// 差旅费报销单组件 - 按照用户提供的模板
+const TravelReimbursementForm = ({ data }: any) => {
+    const currentDate = data.createdDate ? new Date(data.createdDate) : new Date();
+    const year = currentDate.getFullYear();
+    const month = currentDate.getMonth() + 1;
+    const day = currentDate.getDate();
+    
+    // 计算各项合计
+    const tripLegs = data.tripLegs || [];
+    const totalTransport = tripLegs.reduce((sum: number, leg: any) => sum + (leg.transportFee || 0), 0);
+    const totalHotel = tripLegs.reduce((sum: number, leg: any) => sum + (leg.hotelFee || 0), 0);
+    const totalCityTraffic = tripLegs.reduce((sum: number, leg: any) => sum + (leg.cityTrafficFee || 0), 0);
+    const totalMeal = tripLegs.reduce((sum: number, leg: any) => sum + (leg.mealFee || 0), 0);
+    const totalOther = tripLegs.reduce((sum: number, leg: any) => sum + (leg.otherFee || 0), 0);
+    const grandTotal = data.totalAmount || (totalTransport + totalHotel + totalCityTraffic + totalMeal + totalOther);
+    
+    const containerStyle: React.CSSProperties = {
+        width: '210mm',
+        minHeight: '297mm',
+        backgroundColor: 'white',
+        padding: '20mm 15mm',
+        boxSizing: 'border-box',
+        fontFamily: '"SimSun", "Songti SC", serif',
+    };
+    
+    const tableStyle: React.CSSProperties = {
+        width: '100%',
+        borderCollapse: 'collapse',
+        fontSize: '14px',
+        marginBottom: '10px',
+        tableLayout: 'fixed',
+    };
+    
+    const cellStyle: React.CSSProperties = {
+        border: '1px solid black',
+        padding: '6px 4px',
+        textAlign: 'center',
+        verticalAlign: 'middle',
+        wordBreak: 'break-all',
+    };
+    
+    const inputLineStyle: React.CSSProperties = {
+        display: 'inline-block',
+        borderBottom: '1px solid black',
+        minWidth: '30px',
+        textAlign: 'center',
+        padding: '0 4px',
+    };
+    
+    return (
+        <div style={containerStyle} className="travel-reimbursement-form">
+            <h1 style={{ 
+                textAlign: 'center', 
+                fontSize: '24px', 
+                fontWeight: 'bold', 
+                marginBottom: '30px',
+                fontFamily: '"SimHei", "STHeiti", sans-serif'
+            }}>
+                北龙中网（北京）科技有限责任公司差旅费报销单
+            </h1>
+            
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px', fontSize: '16px' }}>
+                <span style={{ marginLeft: '20px' }}>
+                    报销日期：<span style={inputLineStyle}>{year}</span> 年 <span style={inputLineStyle}>{month}</span> 月 <span style={inputLineStyle}>{day}</span> 日
+                </span>
+                <span style={{ marginRight: '20px' }}>附件 {data.invoiceCount || data.attachments?.length || '_____'} 张</span>
+            </div>
+            
+            <table style={tableStyle}>
+                <colgroup>
+                    <col style={{ width: '16%' }} />
+                    <col style={{ width: '11%' }} />
+                    <col style={{ width: '9%' }} />
+                    <col style={{ width: '6%' }} />
+                    <col style={{ width: '5%' }} />
+                    <col style={{ width: '9%' }} />
+                    <col style={{ width: '10%' }} />
+                    <col style={{ width: '8%' }} />
+                    <col style={{ width: '8%' }} />
+                    <col style={{ width: '18%' }} />
+                </colgroup>
+                <tbody>
+                    {/* 第一行：部门信息 */}
+                    <tr>
+                        <td style={{ ...cellStyle, padding: '4px 2px', height: '30px' }}>部门</td>
+                        <td style={{ ...cellStyle, padding: '4px 2px' }}>{data.userSnapshot?.department || ''}</td>
+                        <td style={{ ...cellStyle, padding: '4px 2px' }}>姓名</td>
+                        <td colSpan={2} style={{ ...cellStyle, padding: '4px 2px' }}>{data.userSnapshot?.name || ''}</td>
+                        <td style={{ ...cellStyle, padding: '4px 2px' }}>出差事由</td>
+                        <td colSpan={4} style={{ ...cellStyle, padding: '4px 2px', textAlign: 'left', fontSize: '13px', lineHeight: '1.2', whiteSpace: 'normal' }}>
+                            {data.tripReason || ''}
+                        </td>
+                    </tr>
+                    
+                    {/* 表头行 - 第一部分 */}
+                    <tr>
+                        <th rowSpan={2} style={cellStyle}>日期</th>
+                        <th rowSpan={2} style={cellStyle}>起讫地点</th>
+                        <th rowSpan={2} style={cellStyle}>车船机票</th>
+                        <th colSpan={3} style={cellStyle}>住 宿</th>
+                        <th rowSpan={2} style={cellStyle}>市内交通</th>
+                        <th rowSpan={2} style={cellStyle}>餐费</th>
+                        <th rowSpan={2} style={cellStyle}>其他</th>
+                        <th rowSpan={2} style={cellStyle}>小计</th>
+                    </tr>
+                    <tr>
+                        <th style={cellStyle}>地区</th>
+                        <th style={cellStyle}>天数</th>
+                        <th style={cellStyle}>金额</th>
+                    </tr>
+                    
+                    {/* 数据行 */}
+                    {tripLegs.map((leg: any, idx: number) => (
+                        <tr key={idx}>
+                            <td style={cellStyle}>{leg.dateRange || ''}</td>
+                            <td style={cellStyle}>{leg.route || ''}</td>
+                            <td style={cellStyle}>{leg.transportFee ? leg.transportFee.toFixed(2) : ''}</td>
+                            <td style={cellStyle}>{leg.destination || ''}</td>
+                            <td style={cellStyle}>{leg.hotelDays || ''}</td>
+                            <td style={cellStyle}>{leg.hotelFee ? leg.hotelFee.toFixed(2) : ''}</td>
+                            <td style={cellStyle}>{leg.cityTrafficFee ? leg.cityTrafficFee.toFixed(2) : ''}</td>
+                            <td style={cellStyle}>{leg.mealFee ? leg.mealFee.toFixed(2) : ''}</td>
+                            <td style={cellStyle}>{leg.otherFee ? leg.otherFee.toFixed(2) : ''}</td>
+                            <td style={cellStyle}>¥{(leg.subTotal || 0).toFixed(2)}</td>
+                        </tr>
+                    ))}
+                    
+                    {/* 空行填充 - 确保至少6行 */}
+                    {Array.from({ length: Math.max(0, 6 - tripLegs.length) }).map((_, idx) => (
+                        <tr key={`empty-${idx}`} style={{ height: '30px' }}>
+                            <td style={cellStyle}></td>
+                            <td style={cellStyle}></td>
+                            <td style={cellStyle}></td>
+                            <td style={cellStyle}></td>
+                            <td style={cellStyle}></td>
+                            <td style={cellStyle}></td>
+                            <td style={cellStyle}></td>
+                            <td style={cellStyle}></td>
+                            <td style={cellStyle}></td>
+                            <td style={cellStyle}></td>
+                        </tr>
+                    ))}
+                    
+                    {/* 合计行 */}
+                    <tr>
+                        <td colSpan={2} style={cellStyle}>合计</td>
+                        <td style={cellStyle}>¥{totalTransport.toFixed(2)}</td>
+                        <td colSpan={2} style={cellStyle}></td>
+                        <td style={cellStyle}>¥{totalHotel.toFixed(2)}</td>
+                        <td style={cellStyle}>¥{totalCityTraffic.toFixed(2)}</td>
+                        <td style={cellStyle}>¥{totalMeal.toFixed(2)}</td>
+                        <td style={cellStyle}>¥{totalOther.toFixed(2)}</td>
+                        <td style={cellStyle}>¥{grandTotal.toFixed(2)}</td>
+                    </tr>
+                    
+                    {/* 总计金额大写行 */}
+                    <tr>
+                        <td colSpan={2} style={cellStyle}>总计金额（大写）</td>
+                        <td colSpan={8} style={{ ...cellStyle, textAlign: 'left', paddingLeft: '20px' }}>
+                            {digitToChinese(grandTotal)}
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+            
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '20px', padding: '0 20px', fontSize: '16px' }}>
+                <span>财务审核：</span>
+                <span>报销人签字：</span>
+            </div>
+        </div>
+    );
+};
+
+// Add CreateTravelReportView - 使用与通用报销相同的交互流程
 const CreateTravelReportView = ({ settings, loans, onAction, onBack }: any) => {
-    // Similar state management to CreateReportView
     const [step, setStep] = useState(1);
     const [analyzing, setAnalyzing] = useState(false);
-    const [files, setFiles] = useState<Attachment[]>([]);
+    const [regenerating, setRegenerating] = useState(false);
+    const [formCollapsed, setFormCollapsed] = useState(false);
+    const [previewScale, setPreviewScale] = useState(0.6);
+    const previewContainerRef = useRef<HTMLDivElement>(null);
+    
+    // 分类上传的文件
+    const [ticketFiles, setTicketFiles] = useState<Attachment[]>([]); // 火车票/机票 (必须)
+    const [hotelFiles, setHotelFiles] = useState<Attachment[]>([]); // 住宿发票
+    const [taxiInvoiceFiles, setTaxiInvoiceFiles] = useState<Attachment[]>([]); // 打车发票
+    const [taxiTripFiles, setTaxiTripFiles] = useState<Attachment[]>([]); // 打车行程单
+    const [approvalFiles, setApprovalFiles] = useState<Attachment[]>([]); // 审批单
+    
+    // AI 识别结果
+    const [aiTicketResult, setAiTicketResult] = useState<any>(null);
+    const [aiHotelResult, setAiHotelResult] = useState<any>(null);
+    const [aiTaxiResult, setAiTaxiResult] = useState<any>(null);
+    const [aiApprovalResult, setAiApprovalResult] = useState<any>(null);
+    
+    // 表单数据
     const [form, setForm] = useState({
         tripReason: "",
         approvalNumber: "",
         budgetProjectId: settings.budgetProjects.find((p:any) => p.isDefault)?.id || "",
         paymentAccountId: settings.paymentAccounts.find((a:any) => a.isDefault)?.id || "",
         prepaidAmount: 0,
-        tripLegs: [] as TripLeg[]
+        tripLegs: [] as TripLeg[],
+        taxiDetails: [] as any[], // 出租车费明细
     });
+    
+    // 匹配的借款记录
+    const [matchedLoans, setMatchedLoans] = useState<any[]>([]);
+    const [selectedLoanId, setSelectedLoanId] = useState<string>('');
 
-    const handleUpload = async (e: any) => {
-        // ... (Similar upload logic)
+    // 文件上传处理
+    const handleFileUpload = async (e: any, type: 'ticket' | 'hotel' | 'taxiInvoice' | 'taxiTrip' | 'approval') => {
         if(e.target.files && e.target.files.length > 0) {
             const newFiles = await Promise.all(Array.from(e.target.files as FileList).map(async (f: File) => {
                 let data = "";
@@ -4390,72 +5397,292 @@ const CreateTravelReportView = ({ settings, loans, onAction, onBack }: any) => {
                 } else {
                     data = await fileToBase64(f);
                 }
-                return { data, type: 'other', name: f.name } as Attachment;
+                return { data, type, name: f.name } as Attachment;
             }));
-            setFiles(prev => [...prev, ...newFiles]);
+            
+            switch(type) {
+                case 'ticket': setTicketFiles(prev => [...prev, ...newFiles]); break;
+                case 'hotel': setHotelFiles(prev => [...prev, ...newFiles]); break;
+                case 'taxiInvoice': setTaxiInvoiceFiles(prev => [...prev, ...newFiles]); break;
+                case 'taxiTrip': setTaxiTripFiles(prev => [...prev, ...newFiles]); break;
+                case 'approval': setApprovalFiles(prev => [...prev, ...newFiles]); break;
+            }
+        }
+    };
+    
+    // 删除文件
+    const removeFile = (type: 'ticket' | 'hotel' | 'taxiInvoice' | 'taxiTrip' | 'approval', index: number) => {
+        switch(type) {
+            case 'ticket': setTicketFiles(prev => prev.filter((_, i) => i !== index)); break;
+            case 'hotel': setHotelFiles(prev => prev.filter((_, i) => i !== index)); break;
+            case 'taxiInvoice': setTaxiInvoiceFiles(prev => prev.filter((_, i) => i !== index)); break;
+            case 'taxiTrip': setTaxiTripFiles(prev => prev.filter((_, i) => i !== index)); break;
+            case 'approval': setApprovalFiles(prev => prev.filter((_, i) => i !== index)); break;
         }
     };
 
+    // 开始 AI 识别
     const startAnalysis = async () => {
-         setAnalyzing(true);
-         try {
-             const cleanB64 = (d: string) => d.split(',')[1];
-             const images = files.map(f => cleanB64(f.data));
-
-             // 调用后端 AI 识别 API
-             const response = await apiRequest('/api/ai/recognize', {
-                 method: 'POST',
-                 body: JSON.stringify({
-                     type: 'travel',
-                     images: images,
-                     mimeType: 'image/jpeg',
-                 }),
-             }) as any;
-             
-             const data = response.result || {};
+        // 检查必须上传的文件
+        if (ticketFiles.length === 0) {
+            alert('请上传火车票或机票！这是必须的票据。');
+            return;
+        }
+        
+        setAnalyzing(true);
+        try {
+            const cleanB64 = (d: string) => d.split(',')[1];
             
-            // 使用新的识别结果字段
-            const tripLegs = (data.tripLegs || []).map((leg: any) => ({
-                ...leg,
-                // 确保所有数字字段都有默认值
-                transportFee: leg.transportFee || 0,
-                hotelFee: leg.hotelFee || 0,
-                hotelDays: leg.hotelDays || 0,
-                cityTrafficFee: leg.cityTrafficFee || 0,
-                mealFee: leg.mealFee || 0,
-                otherFee: leg.otherFee || 0,
-                subTotal: leg.subTotal || (
-                    (leg.transportFee || 0) + 
-                    (leg.hotelFee || 0) + 
-                    (leg.cityTrafficFee || 0) + 
-                    (leg.mealFee || 0) + 
-                    (leg.otherFee || 0)
-                ),
-            }));
+            // 1. 识别火车票/机票
+            console.log('[AI] 开始识别火车票/机票');
+            const ticketImages = ticketFiles.map(f => cleanB64(f.data));
+            const ticketResponse = await apiRequest('/api/ai/recognize', {
+                method: 'POST',
+                body: JSON.stringify({ type: 'ticket', images: ticketImages, mimeType: 'image/jpeg' }),
+            }) as any;
+            const ticketData = ticketResponse.result || {};
+            setAiTicketResult(ticketData);
+            console.log('[AI] 火车票/机票识别结果', ticketData);
+            
+            // 2. 识别住宿发票（如果有）
+            let hotelData: any = {};
+            if (hotelFiles.length > 0) {
+                console.log('[AI] 开始识别住宿发票');
+                const hotelImages = hotelFiles.map(f => cleanB64(f.data));
+                const hotelResponse = await apiRequest('/api/ai/recognize', {
+                    method: 'POST',
+                    body: JSON.stringify({ type: 'hotel', images: hotelImages, mimeType: 'image/jpeg' }),
+                }) as any;
+                hotelData = hotelResponse.result || {};
+                setAiHotelResult(hotelData);
+                console.log('[AI] 住宿发票识别结果', hotelData);
+            }
+            
+            // 3. 识别打车发票和行程单（如果有）
+            let taxiData: any = { details: [] };
+            if (taxiInvoiceFiles.length > 0 || taxiTripFiles.length > 0) {
+                console.log('[AI] 开始识别打车发票');
+                const taxiImages = [...taxiInvoiceFiles, ...taxiTripFiles].map(f => cleanB64(f.data));
+                const taxiResponse = await apiRequest('/api/ai/recognize', {
+                    method: 'POST',
+                    body: JSON.stringify({ type: 'taxi', images: taxiImages, mimeType: 'image/jpeg' }),
+                }) as any;
+                const rawTaxiData = taxiResponse.result || { details: [] };
+                console.log('[AI] 打车发票原始识别结果', rawTaxiData);
+                
+                // 处理各种可能的返回格式
+                if (Array.isArray(rawTaxiData)) {
+                    // AI 直接返回数组
+                    taxiData = { details: rawTaxiData };
+                } else if (rawTaxiData.details && Array.isArray(rawTaxiData.details)) {
+                    // AI 返回 { details: [...] } 格式
+                    taxiData = rawTaxiData;
+                } else if (typeof rawTaxiData === 'object' && rawTaxiData.amount !== undefined) {
+                    // AI 返回单个对象
+                    taxiData = { details: [rawTaxiData] };
+                } else {
+                    taxiData = { details: [] };
+                }
+                
+                setAiTaxiResult(taxiData);
+                console.log('[AI] 打车发票处理后结果', taxiData);
+            }
+            
+            // 4. 识别审批单（如果有）
+            let approvalData: any = {};
+            if (approvalFiles.length > 0) {
+                console.log('[AI] 开始识别审批单');
+                const approvalImages = approvalFiles.map(f => cleanB64(f.data));
+                const approvalResponse = await apiRequest('/api/ai/recognize', {
+                    method: 'POST',
+                    body: JSON.stringify({ type: 'approval', images: approvalImages, mimeType: 'image/jpeg' }),
+                }) as any;
+                approvalData = approvalResponse.result || {};
+                setAiApprovalResult(approvalData);
+                console.log('[AI] 审批单识别结果', approvalData);
+            }
+            
+            // 5. 构建差旅行程数据
+            const tickets = Array.isArray(ticketData) ? ticketData : (ticketData.tickets || [ticketData]);
+            const hotels = Array.isArray(hotelData) ? hotelData : (hotelData.hotels || [hotelData]);
+            const taxiDetails = taxiData.details || [];
+            
+            // 将火车票/机票配对成往返程（一对往返票 = 一条出差记录）
+            // 按照出发地和目的地进行配对
+            const pairedTrips: { outbound: any; return: any | null }[] = [];
+            const usedTickets = new Set<number>();
+            
+            tickets.forEach((ticket: any, idx: number) => {
+                if (usedTickets.has(idx)) return;
+                
+                const departure = ticket.departure || ticket.fromStation || '';
+                const destination = ticket.destination || ticket.toStation || '';
+                const departureDate = ticket.departureDate || ticket.date || '';
+                
+                // 查找对应的返程票（出发地和目的地互换）
+                const returnIdx = tickets.findIndex((t: any, i: number) => {
+                    if (i === idx || usedTickets.has(i)) return false;
+                    const tDeparture = t.departure || t.fromStation || '';
+                    const tDestination = t.destination || t.toStation || '';
+                    // 返程票：出发地=去程目的地，目的地=去程出发地
+                    return tDeparture === destination && tDestination === departure;
+                });
+                
+                usedTickets.add(idx);
+                if (returnIdx !== -1) {
+                    usedTickets.add(returnIdx);
+                    pairedTrips.push({
+                        outbound: ticket,
+                        return: tickets[returnIdx],
+                    });
+                } else {
+                    // 没有找到返程票，单独作为一条记录
+                    pairedTrips.push({
+                        outbound: ticket,
+                        return: null,
+                    });
+                }
+            });
+            
+            // 从配对的往返票据生成出差记录
+            const tripLegs: TripLeg[] = pairedTrips.map((pair) => {
+                const outbound = pair.outbound;
+                const returnTicket = pair.return;
+                
+                const departure = outbound.departure || outbound.fromStation || '';
+                const destination = outbound.destination || outbound.toStation || '';
+                const outboundDate = outbound.departureDate || outbound.date || '';
+                const returnDate = returnTicket?.departureDate || returnTicket?.date || outboundDate;
+                
+                // 计算往返车票费用总和
+                const outboundFee = outbound.amount || outbound.price || 0;
+                const returnFee = returnTicket?.amount || returnTicket?.price || 0;
+                const totalTransportFee = outboundFee + returnFee;
+                
+                // 查找对应的住宿信息（按目的地匹配）
+                const matchedHotel = hotels.find((h: any) => 
+                    h.city === destination || 
+                    h.location?.includes(destination) ||
+                    destination.includes(h.city || '')
+                );
+                
+                return {
+                    dateRange: `${outboundDate}-${returnDate}`, // 出发日期-回程日期
+                    route: `${departure}-${destination}`, // 起讫地点
+                    destination: destination,
+                    transportFee: totalTransportFee, // 往返车票费用之和
+                    hotelDays: matchedHotel?.days || matchedHotel?.nights || 0,
+                    hotelFee: matchedHotel?.amount || matchedHotel?.totalAmount || 0,
+                    cityTrafficFee: 0, // 将在后面计算
+                    mealFee: 0,
+                    otherFee: 0,
+                    subTotal: 0, // 将在后面计算
+                };
+            });
+            
+            // 计算市内交通费（从打车发票）
+            const totalTaxiFee = taxiDetails.reduce((sum: number, t: any) => sum + (t.amount || 0), 0);
+            if (tripLegs.length > 0 && totalTaxiFee > 0) {
+                // 将打车费分配到第一个行程段
+                tripLegs[0].cityTrafficFee = totalTaxiFee;
+            }
+            
+            // 计算每个行程的小计
+            tripLegs.forEach(leg => {
+                leg.subTotal = (leg.transportFee || 0) + (leg.hotelFee || 0) + 
+                              (leg.cityTrafficFee || 0) + (leg.mealFee || 0) + (leg.otherFee || 0);
+            });
+            
+            // 6. 匹配借款记录
+            const potentialLoans = loans.filter((loan: any) => {
+                if (approvalData.approvalNumber && loan.approvalNumber) {
+                    return loan.approvalNumber === approvalData.approvalNumber;
+                }
+                return false;
+            });
+            setMatchedLoans(potentialLoans);
+            
+            // 7. 自动选择预算项目
+            let autoSelectedBudgetId = form.budgetProjectId;
+            if (approvalData.budgetProject) {
+                const matchedBudget = settings.budgetProjects.find((p: any) => 
+                    p.name.includes(approvalData.budgetProject) || p.code === approvalData.budgetCode
+                );
+                if (matchedBudget) {
+                    autoSelectedBudgetId = matchedBudget.id;
+                }
+            }
+            
+            // 8. 更新表单
+            console.log('[AI] 打车明细数据:', taxiDetails);
+            const processedTaxiDetails = taxiDetails.map((t: any, idx: number) => {
+                // 尝试从多个可能的字段名获取金额
+                const amount = parseFloat(t.amount) || parseFloat(t.price) || parseFloat(t.totalAmount) || parseFloat(t.fare) || 0;
+                const processedItem = {
+                    id: `taxi-${Date.now()}-${idx}`,
+                    date: t.date || t.invoiceDate || '',
+                    reason: approvalData.eventSummary || '', // 使用出差事由
+                    route: t.route || `${t.startPoint || ''}-${t.endPoint || ''}`,
+                    amount: amount,
+                };
+                console.log(`[AI] 打车明细 ${idx + 1}:`, { 原始数据: t, 处理后: processedItem });
+                return processedItem;
+            });
             
             setForm(prev => ({
                 ...prev,
-                tripReason: data.tripReason || "",
-                approvalNumber: data.approvalNumber || "",
-                tripLegs: tripLegs
+                tripReason: approvalData.eventSummary || ticketData.tripReason || '',
+                approvalNumber: approvalData.approvalNumber || '',
+                budgetProjectId: autoSelectedBudgetId,
+                tripLegs: tripLegs,
+                taxiDetails: processedTaxiDetails,
             }));
             
-            // Try to match loans
-            if (data.approvalNumber) {
-                const matchedLoan = loans.find((l:any) => l.approvalNumber === data.approvalNumber);
-                if(matchedLoan) setForm(prev => ({ ...prev, prepaidAmount: matchedLoan.amount }));
-            }
             setStep(2);
-         } catch(e) {
-             console.error(e);
-             alert("AI 识别失败，请检查网络或重试");
-         } finally {
-             setAnalyzing(false);
-         }
+        } catch(e) {
+            console.error(e);
+            alert("AI 识别失败，请检查网络或重试");
+        } finally {
+            setAnalyzing(false);
+        }
+    };
+
+    // 计算总金额
+    const calculateTotal = () => {
+        return form.tripLegs.reduce((acc, leg) => acc + (leg.subTotal || 0), 0);
+    };
+    
+    // 金额审核
+    const validateAmounts = () => {
+        // 计算发票总金额
+        const ticketTotal = form.tripLegs.reduce((sum, leg) => sum + (leg.transportFee || 0), 0);
+        const hotelTotal = form.tripLegs.reduce((sum, leg) => sum + (leg.hotelFee || 0), 0);
+        const taxiTotal = form.taxiDetails.reduce((sum, t) => sum + (t.amount || 0), 0);
+        const cityTrafficTotal = form.tripLegs.reduce((sum, leg) => sum + (leg.cityTrafficFee || 0), 0);
+        
+        // 检查打车费是否匹配
+        const isTaxiMatch = Math.abs(taxiTotal - cityTrafficTotal) < 0.01;
+        
+        return {
+            isValid: isTaxiMatch,
+            ticketTotal,
+            hotelTotal,
+            taxiTotal,
+            cityTrafficTotal,
+            diff: taxiTotal - cityTrafficTotal,
+        };
     };
 
     const handleSubmit = (action: 'save' | 'print') => {
-        const totalAmount = form.tripLegs.reduce((acc, cur) => acc + (cur.subTotal || 0), 0);
+        const validation = validateAmounts();
+        if (action === 'print' && !validation.isValid) {
+            alert('金额审核未通过！\n\n打车发票金额与市内交通费不匹配，请调整后再打印。');
+            return;
+        }
+        
+        const totalAmount = calculateTotal();
+        const allAttachments = [...ticketFiles, ...hotelFiles, ...taxiInvoiceFiles, ...taxiTripFiles, ...approvalFiles];
+        
         const report: Report = {
             id: Date.now().toString(),
             title: `差旅费-${form.tripReason}`,
@@ -4464,85 +5691,514 @@ const CreateTravelReportView = ({ settings, loans, onAction, onBack }: any) => {
             totalAmount,
             prepaidAmount: form.prepaidAmount,
             payableAmount: totalAmount - form.prepaidAmount,
-            items: [], // trip legs are stored in tripLegs
+            items: [],
             tripLegs: form.tripLegs,
             tripReason: form.tripReason,
+            taxiDetails: form.taxiDetails,
             isTravel: true,
             userSnapshot: settings.currentUser,
-            attachments: files,
+            attachments: allAttachments,
             approvalNumber: form.approvalNumber,
             budgetProject: settings.budgetProjects.find((p:any) => p.id === form.budgetProjectId),
             paymentAccount: settings.paymentAccounts.find((a:any) => a.id === form.paymentAccountId),
-            invoiceCount: files.length
+            invoiceCount: allAttachments.length
         };
         onAction(report, action);
-    }
+    };
+    
+    const allAttachments = [...ticketFiles, ...hotelFiles, ...taxiInvoiceFiles, ...taxiTripFiles, ...approvalFiles];
+    const currentTotal = calculateTotal();
+    const validation = validateAmounts();
     
     return (
-        <div className="mx-auto h-full flex flex-col">
-             {step === 1 && (
-                 <div className="max-w-4xl mx-auto w-full">
-                     <div className="flex items-center gap-4 mb-6">
-                        <button onClick={onBack} className="p-2 hover:bg-slate-100 rounded-full text-slate-500"><ChevronRight className="rotate-180"/></button>
-                        <h2 className="text-2xl font-bold text-slate-800">差旅报销</h2>
-                    </div>
-                     {/* Upload Area */}
-                     <div className="bg-white rounded-2xl border-2 border-dashed border-indigo-200 p-8 flex flex-col items-center justify-center min-h-[200px] mb-8">
-                        <input type="file" multiple onChange={handleUpload} className="absolute inset-0 opacity-0 cursor-pointer"/>
-                        <div className="text-center pointer-events-none">
-                             <Upload size={40} className="text-indigo-400 mx-auto mb-2"/>
-                             <p className="font-bold text-slate-600">上传差旅票据 (机票/酒店/打车)</p>
+        <div className={`mx-auto h-full flex flex-col ${step === 2 ? 'w-full max-w-none' : 'max-w-5xl'}`}>
+            {/* Header */}
+            {step === 1 && (
+                <div className="flex items-center gap-4 mb-6">
+                    <button onClick={onBack} className="p-2 hover:bg-slate-100 rounded-full text-slate-500"><ChevronRight className="rotate-180"/></button>
+                    <h2 className="text-2xl font-bold text-slate-800">差旅费用报销</h2>
+                </div>
+            )}
+
+            {/* Step 1: Upload */}
+            {step === 1 && (
+                <div className="flex-1 overflow-y-auto pb-20">
+                    <div className="grid md:grid-cols-2 gap-6">
+                        {/* 火车票/机票 - 必须 */}
+                        <div className="col-span-2">
+                            <h3 className="font-bold text-slate-700 mb-2 flex items-center gap-2">
+                                <Plane size={20} className="text-red-500"/> 火车票/机票 <span className="bg-red-100 text-red-600 text-[10px] px-2 py-0.5 rounded-full font-bold">强制上传</span>
+                            </h3>
+                            <div className="bg-white rounded-2xl border-2 border-dashed border-red-200 p-6 flex flex-col items-center justify-center min-h-[160px] hover:bg-red-50/20 transition-colors relative">
+                                <input type="file" multiple accept=".pdf,image/*" className="absolute inset-0 opacity-0 cursor-pointer" onChange={(e) => handleFileUpload(e, 'ticket')} />
+                                {ticketFiles.length > 0 ? (
+                                    <div className="flex flex-wrap gap-4 justify-center w-full z-10 pointer-events-none">
+                                        {ticketFiles.map((f, i) => (
+                                            <div key={i} className="relative group pointer-events-auto">
+                                                <div className="w-20 h-20 bg-slate-100 rounded-lg border border-slate-200 overflow-hidden flex items-center justify-center">
+                                                    <FileText className="text-slate-400"/>
+                                                </div>
+                                                <div className="text-[10px] mt-1 truncate max-w-[80px] text-slate-500">{f.name}</div>
+                                                <button onClick={(e) => { e.stopPropagation(); removeFile('ticket', i); }} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 opacity-100 transition-opacity z-20"><X size={10}/></button>
+                                            </div>
+                                        ))}
+                                        <div className="flex items-center justify-center w-20 h-20 bg-slate-50 rounded-lg border border-slate-200 text-slate-400">
+                                            <Plus size={24}/>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="text-center text-slate-400 pointer-events-none">
+                                        <Upload size={32} className="mx-auto mb-2 text-red-300"/>
+                                        <p className="font-bold text-sm text-slate-600">上传火车票/机票</p>
+                                        <p className="text-xs">支持 PDF / 图片</p>
+                                    </div>
+                                )}
+                            </div>
                         </div>
-                     </div>
-                     <div className="flex gap-2 flex-wrap mb-8">
-                         {files.map((f, i) => <div key={i} className="text-xs bg-slate-100 px-2 py-1 rounded">{f.name}</div>)}
-                     </div>
-                     <button onClick={startAnalysis} className="w-full bg-indigo-600 text-white py-4 rounded-xl font-bold">{analyzing ? 'Analyzing...' : '开始识别'}</button>
-                 </div>
-             )}
-             {step === 2 && (
-                 <div className="flex flex-col h-full bg-slate-200 -m-8">
-                      {/* Toolbar */}
-                      <div className="bg-white p-4 flex justify-between items-center shadow-sm z-10 sticky top-0">
-                          <button onClick={() => setStep(1)} className="font-bold text-slate-500">Back</button>
-                          <div className="flex gap-2">
-                              <button onClick={() => handleSubmit('save')} className="px-4 py-2 border rounded font-bold">Save Draft</button>
-                              <button onClick={() => handleSubmit('print')} className="px-4 py-2 bg-indigo-600 text-white rounded font-bold">Print</button>
-                          </div>
-                      </div>
-                      <div className="flex-1 flex overflow-hidden">
-                          {/* Form Editor Side */}
-                          <div className="w-1/3 bg-white border-r p-6 overflow-y-auto">
-                              <h3 className="font-bold mb-4">Trip Details</h3>
-                              <div className="space-y-4">
-                                  <div>
-                                      <label className="text-xs font-bold block">Trip Reason</label>
-                                      <input value={form.tripReason} onChange={e => setForm({...form, tripReason: e.target.value})} className="w-full border p-2 rounded"/>
-                                  </div>
-                                   {/* Simplified Trip Leg Editor */}
-                                  {form.tripLegs.map((leg, i) => (
-                                      <div key={i} className="bg-slate-50 p-2 rounded border">
-                                          <div className="flex justify-between text-xs font-bold mb-1">
-                                              <span>Segment {i+1}</span>
-                                          </div>
-                                          <input value={leg.route} onChange={e => {
-                                              const legs = [...form.tripLegs];
-                                              legs[i].route = e.target.value;
-                                              setForm({...form, tripLegs: legs});
-                                          }} className="w-full border p-1 rounded text-xs mb-1" placeholder="Route"/>
-                                          <input type="number" value={leg.subTotal} onChange={e => {
-                                              const legs = [...form.tripLegs];
-                                              legs[i].subTotal = parseFloat(e.target.value) || 0;
-                                              setForm({...form, tripLegs: legs});
-                                          }} className="w-full border p-1 rounded text-xs" placeholder="Amount"/>
-                                      </div>
-                                  ))}
-                              </div>
-                          </div>
-                          {/* Preview Side */}
-                          <div className="flex-1 p-8 overflow-y-auto flex justify-center">
-                              <div className="bg-white shadow-xl w-[297mm] min-h-[210mm] p-12 scale-75 origin-top">
-                                  <TravelReimbursementForm 
+
+                        {/* 住宿发票 */}
+                        <div className="col-span-2 md:col-span-1">
+                            <h3 className="font-bold text-slate-700 mb-2 flex items-center gap-2">
+                                <Home size={20} className="text-blue-500"/> 住宿发票 <span className="text-slate-400 text-xs font-normal">可选</span>
+                            </h3>
+                            <div className="bg-white rounded-2xl border-2 border-dashed border-slate-200 p-6 flex flex-col items-center justify-center min-h-[160px] hover:bg-blue-50/10 transition-colors relative">
+                                <input type="file" multiple accept=".pdf,image/*" className="absolute inset-0 opacity-0 cursor-pointer" onChange={(e) => handleFileUpload(e, 'hotel')} />
+                                {hotelFiles.length > 0 ? (
+                                    <div className="flex flex-wrap gap-2 justify-center w-full z-10 pointer-events-none">
+                                        {hotelFiles.map((f, i) => (
+                                            <div key={i} className="relative group pointer-events-auto">
+                                                <div className="w-16 h-16 bg-slate-100 rounded-lg border border-slate-200 overflow-hidden flex items-center justify-center">
+                                                    <FileText size={20} className="text-slate-400"/>
+                                                </div>
+                                                <button onClick={(e) => { e.stopPropagation(); removeFile('hotel', i); }} className="absolute -top-2 -right-2 bg-slate-500 text-white rounded-full p-1"><X size={8}/></button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div className="text-center text-slate-400 pointer-events-none">
+                                        <Upload size={24} className="mx-auto mb-2 text-blue-300"/>
+                                        <p className="font-bold text-xs text-slate-600">上传住宿发票</p>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* 打车发票 */}
+                        <div className="col-span-2 md:col-span-1">
+                            <h3 className="font-bold text-slate-700 mb-2 flex items-center gap-2">
+                                <Car size={20} className="text-yellow-500"/> 打车发票 <span className="text-slate-400 text-xs font-normal">可选</span>
+                            </h3>
+                            <div className="bg-white rounded-2xl border-2 border-dashed border-slate-200 p-6 flex flex-col items-center justify-center min-h-[160px] hover:bg-yellow-50/10 transition-colors relative">
+                                <input type="file" multiple accept=".pdf,image/*" className="absolute inset-0 opacity-0 cursor-pointer" onChange={(e) => handleFileUpload(e, 'taxiInvoice')} />
+                                {taxiInvoiceFiles.length > 0 ? (
+                                    <div className="flex flex-wrap gap-2 justify-center w-full z-10 pointer-events-none">
+                                        {taxiInvoiceFiles.map((f, i) => (
+                                            <div key={i} className="relative group pointer-events-auto">
+                                                <div className="w-16 h-16 bg-slate-100 rounded-lg border border-slate-200 overflow-hidden flex items-center justify-center">
+                                                    <FileText size={20} className="text-slate-400"/>
+                                                </div>
+                                                <button onClick={(e) => { e.stopPropagation(); removeFile('taxiInvoice', i); }} className="absolute -top-2 -right-2 bg-slate-500 text-white rounded-full p-1"><X size={8}/></button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div className="text-center text-slate-400 pointer-events-none">
+                                        <Upload size={24} className="mx-auto mb-2 text-yellow-300"/>
+                                        <p className="font-bold text-xs text-slate-600">上传打车发票</p>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* 打车行程单 */}
+                        <div className="col-span-2">
+                            <h3 className="font-bold text-slate-700 mb-2 flex items-center gap-2">
+                                <MapPin size={20} className="text-purple-500"/> 打车行程单 <span className="text-slate-400 text-xs font-normal">可选 · 用于提取起终点</span>
+                            </h3>
+                            <div className="bg-white rounded-2xl border-2 border-dashed border-slate-200 p-6 flex flex-col items-center justify-center min-h-[120px] hover:bg-purple-50/10 transition-colors relative">
+                                <input type="file" multiple accept=".pdf,image/*" className="absolute inset-0 opacity-0 cursor-pointer" onChange={(e) => handleFileUpload(e, 'taxiTrip')} />
+                                {taxiTripFiles.length > 0 ? (
+                                    <div className="flex flex-wrap gap-2 justify-center w-full z-10 pointer-events-none">
+                                        {taxiTripFiles.map((f, i) => (
+                                            <div key={i} className="relative group pointer-events-auto">
+                                                <div className="w-16 h-16 bg-slate-100 rounded-lg border border-slate-200 overflow-hidden flex items-center justify-center">
+                                                    <FileText size={20} className="text-slate-400"/>
+                                                </div>
+                                                <button onClick={(e) => { e.stopPropagation(); removeFile('taxiTrip', i); }} className="absolute -top-2 -right-2 bg-slate-500 text-white rounded-full p-1"><X size={8}/></button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div className="text-center text-slate-400 pointer-events-none">
+                                        <Upload size={24} className="mx-auto mb-2 text-purple-300"/>
+                                        <p className="font-bold text-xs text-slate-600">上传打车行程单</p>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                    
+                    {/* 开始识别按钮 */}
+                    <button 
+                        onClick={startAnalysis} 
+                        disabled={ticketFiles.length === 0 || analyzing}
+                        className={`w-full mt-8 py-4 rounded-xl font-bold shadow-lg transition-all flex items-center justify-center gap-2 text-lg ${ticketFiles.length > 0 ? 'bg-indigo-600 text-white shadow-indigo-200 hover:bg-indigo-700' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`}
+                    >
+                        {analyzing ? <><Loader2 className="animate-spin"/> AI 正在分析票据...</> : "开始识别与填单"}
+                    </button>
+                </div>
+            )}
+            
+            {/* Step 2: 编辑和预览 */}
+            {step === 2 && (
+                <div className="absolute inset-0 flex flex-col bg-slate-100 z-30">
+                    {/* Toolbar */}
+                    <div className="bg-white border-b border-slate-200 px-4 py-2.5 flex justify-between items-center shadow-sm flex-shrink-0">
+                        <div className="flex items-center gap-3">
+                            <button onClick={() => setStep(1)} className="text-slate-500 hover:text-slate-800 flex items-center gap-1 font-medium text-sm">
+                                <ChevronLeft size={16}/> 返回重传
+                            </button>
+                            <div className="h-4 w-px bg-slate-200"></div>
+                            <span className="text-sm font-medium text-slate-700">差旅费报销单预览</span>
+                        </div>
+                        <div className="flex gap-2 items-center">
+                            {/* 金额审核状态 */}
+                            {validation.isValid ? (
+                                <span className="text-xs text-green-600 bg-green-50 px-2 py-1 rounded-full font-medium">
+                                    ✓ 金额审核通过
+                                </span>
+                            ) : (
+                                <span className="text-xs text-red-600 bg-red-50 px-2 py-1 rounded-full font-medium">
+                                    ⚠ 金额不匹配
+                                </span>
+                            )}
+                            <button onClick={() => handleSubmit('save')} className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 font-medium text-sm hover:bg-slate-50 flex items-center gap-1.5">
+                                <Save size={14}/> 保存草稿
+                            </button>
+                            <button 
+                                onClick={() => handleSubmit('print')} 
+                                className={`px-3 py-1.5 rounded-lg font-medium text-sm shadow-sm flex items-center gap-1.5 ${
+                                    validation.isValid 
+                                        ? 'bg-indigo-600 text-white hover:bg-indigo-700' 
+                                        : 'bg-slate-300 text-slate-500 cursor-not-allowed'
+                                }`}
+                            >
+                                <Printer size={14}/> 打印报销单
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div className="flex-1 overflow-hidden flex flex-row relative bg-slate-100">
+                        {/* 收缩/展开按钮 */}
+                        <button
+                            onClick={() => setFormCollapsed(!formCollapsed)}
+                            className={`absolute top-1/2 -translate-y-1/2 w-6 h-6 bg-white border border-slate-200 rounded-full shadow-md flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-50 transition-all z-40 ${formCollapsed ? 'left-0' : 'left-[276px] xl:left-[316px]'}`}
+                        >
+                            {formCollapsed ? <ChevronRight size={14}/> : <ChevronLeft size={14}/>}
+                        </button>
+                        
+                        {/* Left Panel: Form Controls */}
+                        <div className={`bg-white border-r border-slate-200 overflow-y-auto flex-shrink-0 transition-all duration-300 ${formCollapsed ? 'w-0 p-0 overflow-hidden' : 'w-[280px] xl:w-[320px] p-4'}`}>
+                            <h3 className="font-bold text-slate-800 mb-3 flex items-center gap-2 text-sm">
+                                <Edit2 size={14} className="text-slate-600"/> 填写信息
+                            </h3>
+                            
+                            <div className="space-y-4">
+                                {/* 出差事由 */}
+                                <div>
+                                    <label className="text-xs font-bold text-slate-500 uppercase block mb-1">出差事由</label>
+                                    <textarea 
+                                        value={form.tripReason} 
+                                        onChange={e => setForm({...form, tripReason: e.target.value})} 
+                                        className="w-full p-2 border border-slate-200 rounded-lg text-sm focus:border-indigo-500 outline-none resize-none" 
+                                        rows={2}
+                                        placeholder="请输入出差事由"
+                                    />
+                                    <p className="text-[10px] text-amber-600 mt-1">⚠ 请手动填写或确认出差事由</p>
+                                </div>
+                                
+                                {/* 审批单编号 */}
+                                <div>
+                                    <label className="text-xs font-bold text-slate-500 uppercase block mb-1">审批单编号</label>
+                                    <input 
+                                        value={form.approvalNumber} 
+                                        onChange={e => setForm({...form, approvalNumber: e.target.value})} 
+                                        className="w-full p-2 border border-slate-200 rounded-lg text-sm focus:border-indigo-500 outline-none" 
+                                        placeholder="审批单号"
+                                    />
+                                </div>
+                                
+                                {/* 预算项目 */}
+                                <div>
+                                    <label className="text-xs font-bold text-slate-500 uppercase block mb-1">预算项目</label>
+                                    <select 
+                                        value={form.budgetProjectId} 
+                                        onChange={e => setForm({...form, budgetProjectId: e.target.value})} 
+                                        className="w-full p-2 border border-slate-200 rounded-lg text-sm focus:border-indigo-500 outline-none bg-white"
+                                    >
+                                        {settings.budgetProjects.map((p:any) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                                    </select>
+                                </div>
+                                
+                                {/* 行程明细 */}
+                                <div className="border-t border-slate-100 pt-4">
+                                    <h4 className="font-bold text-sm text-slate-700 mb-2">🚄 行程明细</h4>
+                                    {form.tripLegs.map((leg, idx) => (
+                                        <div key={idx} className="bg-slate-50 rounded-lg p-3 mb-2 border border-slate-200">
+                                            <div className="flex justify-between items-center mb-2">
+                                                <span className="text-xs font-bold text-indigo-600">行程 {idx + 1}</span>
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-2 text-xs">
+                                                <div>
+                                                    <label className="text-slate-500">日期</label>
+                                                    <input 
+                                                        value={leg.dateRange || ''} 
+                                                        onChange={e => {
+                                                            const legs = [...form.tripLegs];
+                                                            legs[idx].dateRange = e.target.value;
+                                                            setForm({...form, tripLegs: legs});
+                                                        }}
+                                                        className="w-full p-1 border rounded text-xs"
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="text-slate-500">路线</label>
+                                                    <input 
+                                                        value={leg.route || ''} 
+                                                        onChange={e => {
+                                                            const legs = [...form.tripLegs];
+                                                            legs[idx].route = e.target.value;
+                                                            setForm({...form, tripLegs: legs});
+                                                        }}
+                                                        className="w-full p-1 border rounded text-xs"
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="text-slate-500">交通费</label>
+                                                    <input 
+                                                        type="number"
+                                                        value={leg.transportFee || 0} 
+                                                        onChange={e => {
+                                                            const legs = [...form.tripLegs];
+                                                            legs[idx].transportFee = parseFloat(e.target.value) || 0;
+                                                            legs[idx].subTotal = (legs[idx].transportFee || 0) + (legs[idx].hotelFee || 0) + 
+                                                                                (legs[idx].cityTrafficFee || 0) + (legs[idx].mealFee || 0) + (legs[idx].otherFee || 0);
+                                                            setForm({...form, tripLegs: legs});
+                                                        }}
+                                                        className="w-full p-1 border rounded text-xs"
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="text-slate-500">住宿费</label>
+                                                    <input 
+                                                        type="number"
+                                                        value={leg.hotelFee || 0} 
+                                                        onChange={e => {
+                                                            const legs = [...form.tripLegs];
+                                                            legs[idx].hotelFee = parseFloat(e.target.value) || 0;
+                                                            legs[idx].subTotal = (legs[idx].transportFee || 0) + (legs[idx].hotelFee || 0) + 
+                                                                                (legs[idx].cityTrafficFee || 0) + (legs[idx].mealFee || 0) + (legs[idx].otherFee || 0);
+                                                            setForm({...form, tripLegs: legs});
+                                                        }}
+                                                        className="w-full p-1 border rounded text-xs"
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="text-slate-500">住宿天数</label>
+                                                    <input 
+                                                        type="number"
+                                                        value={leg.hotelDays || 0} 
+                                                        onChange={e => {
+                                                            const legs = [...form.tripLegs];
+                                                            legs[idx].hotelDays = parseInt(e.target.value) || 0;
+                                                            setForm({...form, tripLegs: legs});
+                                                        }}
+                                                        className="w-full p-1 border rounded text-xs"
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="text-slate-500">市内交通</label>
+                                                    <input 
+                                                        type="number"
+                                                        value={leg.cityTrafficFee || 0} 
+                                                        onChange={e => {
+                                                            const legs = [...form.tripLegs];
+                                                            legs[idx].cityTrafficFee = parseFloat(e.target.value) || 0;
+                                                            legs[idx].subTotal = (legs[idx].transportFee || 0) + (legs[idx].hotelFee || 0) + 
+                                                                                (legs[idx].cityTrafficFee || 0) + (legs[idx].mealFee || 0) + (legs[idx].otherFee || 0);
+                                                            setForm({...form, tripLegs: legs});
+                                                        }}
+                                                        className="w-full p-1 border rounded text-xs"
+                                                    />
+                                                </div>
+                                            </div>
+                                            <div className="mt-2 text-right text-xs font-bold text-indigo-600">
+                                                小计: ¥{(leg.subTotal || 0).toFixed(2)}
+                                            </div>
+                                        </div>
+                                    ))}
+                                    
+                                    {/* 添加行程按钮 */}
+                                    <button 
+                                        onClick={() => {
+                                            setForm({
+                                                ...form, 
+                                                tripLegs: [...form.tripLegs, {
+                                                    dateRange: '',
+                                                    route: '',
+                                                    destination: '',
+                                                    transportFee: 0,
+                                                    hotelDays: 0,
+                                                    hotelFee: 0,
+                                                    cityTrafficFee: 0,
+                                                    mealFee: 0,
+                                                    otherFee: 0,
+                                                    subTotal: 0,
+                                                }]
+                                            });
+                                        }}
+                                        className="w-full py-2 border-2 border-dashed border-slate-200 rounded-lg text-xs text-slate-500 hover:border-indigo-300 hover:text-indigo-600"
+                                    >
+                                        + 添加行程
+                                    </button>
+                                </div>
+                                
+                                {/* 出租车费明细 */}
+                                {form.taxiDetails.length > 0 && (
+                                    <div className="border-t border-slate-100 pt-4">
+                                        <h4 className="font-bold text-sm text-slate-700 mb-2">🚕 出租车费明细</h4>
+                                        {form.taxiDetails.map((taxi, idx) => (
+                                            <div key={idx} className="bg-yellow-50 rounded-lg p-2 mb-2 border border-yellow-200 text-xs">
+                                                <div className="grid grid-cols-2 gap-2">
+                                                    <div>
+                                                        <label className="text-slate-500">日期</label>
+                                                        <input 
+                                                            value={taxi.date || ''} 
+                                                            onChange={e => {
+                                                                const details = [...form.taxiDetails];
+                                                                details[idx].date = e.target.value;
+                                                                setForm({...form, taxiDetails: details});
+                                                            }}
+                                                            className="w-full p-1 border rounded text-xs"
+                                                        />
+                                                    </div>
+                                                    <div>
+                                                        <label className="text-slate-500">金额</label>
+                                                        <input 
+                                                            type="number"
+                                                            value={taxi.amount || 0} 
+                                                            onChange={e => {
+                                                                const details = [...form.taxiDetails];
+                                                                details[idx].amount = parseFloat(e.target.value) || 0;
+                                                                setForm({...form, taxiDetails: details});
+                                                            }}
+                                                            className="w-full p-1 border rounded text-xs"
+                                                        />
+                                                    </div>
+                                                </div>
+                                                <div className="mt-1">
+                                                    <label className="text-slate-500">起终点</label>
+                                                    <input 
+                                                        value={taxi.route || ''} 
+                                                        onChange={e => {
+                                                            const details = [...form.taxiDetails];
+                                                            details[idx].route = e.target.value;
+                                                            setForm({...form, taxiDetails: details});
+                                                        }}
+                                                        className="w-full p-1 border rounded text-xs"
+                                                        placeholder="起点-终点"
+                                                    />
+                                                </div>
+                                            </div>
+                                        ))}
+                                        <p className="text-[10px] text-slate-500">
+                                            出租车费总计: ¥{form.taxiDetails.reduce((sum, t) => sum + (t.amount || 0), 0).toFixed(2)}
+                                        </p>
+                                    </div>
+                                )}
+                                
+                                {/* 金额审核 */}
+                                <div className="border-t border-slate-100 pt-4">
+                                    <h4 className="font-bold text-sm text-slate-700 mb-2 flex items-center gap-2">
+                                        💰 金额审核
+                                        {validation.isValid 
+                                            ? <span className="text-[10px] px-2 py-0.5 bg-green-100 text-green-700 rounded-full font-bold">✓ 已通过</span>
+                                            : <span className="text-[10px] px-2 py-0.5 bg-red-100 text-red-700 rounded-full font-bold">⚠ 不匹配</span>
+                                        }
+                                    </h4>
+                                    <div className="space-y-2 text-xs">
+                                        <div className="flex justify-between">
+                                            <span className="text-slate-500">交通费合计</span>
+                                            <span className="font-mono">¥{validation.ticketTotal.toFixed(2)}</span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                            <span className="text-slate-500">住宿费合计</span>
+                                            <span className="font-mono">¥{validation.hotelTotal.toFixed(2)}</span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                            <span className="text-slate-500">打车发票金额</span>
+                                            <span className="font-mono">¥{validation.taxiTotal.toFixed(2)}</span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                            <span className="text-slate-500">市内交通录入</span>
+                                            <span className="font-mono">¥{validation.cityTrafficTotal.toFixed(2)}</span>
+                                        </div>
+                                        {!validation.isValid && (
+                                            <div className="bg-red-50 border border-red-200 rounded p-2 text-red-600">
+                                                差异: ¥{Math.abs(validation.diff).toFixed(2)}
+                                            </div>
+                                        )}
+                                        <div className="border-t pt-2 flex justify-between font-bold">
+                                            <span>总计</span>
+                                            <span className="text-indigo-600">¥{currentTotal.toFixed(2)}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        {/* Right Panel: Preview */}
+                        <div ref={previewContainerRef} className="flex-1 bg-slate-100 overflow-auto p-2">
+                            {/* 缩放控制 */}
+                            <div className="sticky top-0 z-20 mb-2 flex justify-center">
+                                <div className="bg-white rounded-full shadow-md px-3 py-1.5 flex items-center gap-2 text-xs">
+                                    <button onClick={() => setPreviewScale(Math.max(0.3, previewScale - 0.05))} className="w-6 h-6 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center">−</button>
+                                    <span className="text-slate-600 min-w-[50px] text-center font-medium">{Math.round(previewScale * 100)}%</span>
+                                    <button onClick={() => setPreviewScale(Math.min(1.2, previewScale + 0.05))} className="w-6 h-6 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center">+</button>
+                                </div>
+                            </div>
+                            
+                            {/* 报销单预览 */}
+                            <div className="flex flex-col items-center max-w-4xl mx-auto">
+                                {/* 出租车费明细表 */}
+                                {form.taxiDetails.length > 0 && (
+                                    <div 
+                                        className="bg-white shadow-lg border border-slate-200 mb-4"
+                                        style={{ 
+                                            transform: `scale(${previewScale})`,
+                                            transformOrigin: 'top center',
+                                        }}
+                                    >
+                                        <TaxiExpenseTable 
+                                            data={{
+                                                createdDate: new Date().toISOString(),
+                                                userSnapshot: settings.currentUser,
+                                                tripReason: form.tripReason,
+                                                taxiDetails: form.taxiDetails,
+                                            }}
+                                        />
+                                    </div>
+                                )}
+                                
+                                {/* 差旅费报销单 */}
+                                <div 
+                                    className="bg-white shadow-lg border border-slate-200 mb-4"
+                                    style={{ 
+                                        transform: `scale(${previewScale})`,
+                                        transformOrigin: 'top center',
+                                    }}
+                                >
+                                    <TravelReimbursementForm 
                                     data={{
                                         userSnapshot: settings.currentUser,
                                         tripReason: form.tripReason,
@@ -4552,12 +6208,87 @@ const CreateTravelReportView = ({ settings, loans, onAction, onBack }: any) => {
                                         prepaidAmount: form.prepaidAmount,
                                         payableAmount: form.tripLegs.reduce((a,b) => a + (b.subTotal || 0), 0) - form.prepaidAmount,
                                         budgetProject: settings.budgetProjects.find((p:any) => p.id === form.budgetProjectId),
-                                        paymentAccount: settings.paymentAccounts.find((a:any) => a.id === form.paymentAccountId)
+                                        paymentAccount: settings.paymentAccounts.find((a:any) => a.id === form.paymentAccountId),
+                                        invoiceCount: ticketFiles.length + hotelFiles.length + taxiInvoiceFiles.length + taxiTripFiles.length
                                     }}
                                   />
                               </div>
+                              
+                              {/* 附件展示 - 竖版 A4 */}
+                              {/* 火车票/机票附件 */}
+                              {ticketFiles.map((attachment, idx) => (
+                                  <div 
+                                      key={`ticket-${idx}`}
+                                      className="mb-4"
+                                      style={{ 
+                                          transform: `scale(${previewScale})`,
+                                          transformOrigin: 'top center',
+                                      }}
+                                  >
+                                      <A4SingleAttachment 
+                                          attachment={attachment}
+                                          title="火车票/机票"
+                                          index={idx}
+                                      />
+                                  </div>
+                              ))}
+                              
+                              {/* 住宿发票附件 */}
+                              {hotelFiles.map((attachment, idx) => (
+                                  <div 
+                                      key={`hotel-${idx}`}
+                                      className="mb-4"
+                                      style={{ 
+                                          transform: `scale(${previewScale})`,
+                                          transformOrigin: 'top center',
+                                      }}
+                                  >
+                                      <A4SingleAttachment 
+                                          attachment={attachment}
+                                          title="住宿发票"
+                                          index={idx}
+                                      />
+                                  </div>
+                              ))}
+                              
+                              {/* 打车发票附件 */}
+                              {taxiInvoiceFiles.map((attachment, idx) => (
+                                  <div 
+                                      key={`taxiInvoice-${idx}`}
+                                      className="mb-4"
+                                      style={{ 
+                                          transform: `scale(${previewScale})`,
+                                          transformOrigin: 'top center',
+                                      }}
+                                  >
+                                      <A4SingleAttachment 
+                                          attachment={attachment}
+                                          title="打车发票"
+                                          index={idx}
+                                      />
+                                  </div>
+                              ))}
+                              
+                              {/* 打车行程单附件 */}
+                              {taxiTripFiles.map((attachment, idx) => (
+                                  <div 
+                                      key={`taxiTrip-${idx}`}
+                                      className="mb-4"
+                                      style={{ 
+                                          transform: `scale(${previewScale})`,
+                                          transformOrigin: 'top center',
+                                      }}
+                                  >
+                                      <A4SingleAttachment 
+                                          attachment={attachment}
+                                          title="打车行程单"
+                                          index={idx}
+                                      />
+                                  </div>
+                              ))}
                           </div>
                       </div>
+                    </div>
                  </div>
              )}
         </div>

@@ -17,7 +17,7 @@ import { MODEL_PRICING } from '../../../src/config/model-pricing'
 // 请求体 Schema
 const bodySchema = z.object({
   images: z.array(z.string()).min(1, '至少需要一张图片'),
-  type: z.enum(['invoice', 'approval', 'travel']),
+  type: z.enum(['invoice', 'approval', 'travel', 'ticket', 'hotel', 'taxi']),
   userId: z.string().optional(),
   mimeType: z.string().optional(),
 })
