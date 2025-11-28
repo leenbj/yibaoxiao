@@ -52,3 +52,12 @@ tutorial/
 opencode.json
 motia-workbench.json
 
+# 旧版本代码（不需要）
+yibaoxiao-main/
+yibaoxiao-main.zip
+
+# GitHub 工作流
+.github/
+
+# Claude/Cursor 配置
+.claude/
