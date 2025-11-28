@@ -70,5 +70,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
 # 使用 tini 作为 init 进程
 ENTRYPOINT ["/sbin/tini", "--"]
 
-# 启动命令
-CMD ["npm", "run", "dev"]
+# 启动命令 - 使用启动脚本（初始化管理员 + 启动服务）
+CMD ["npm", "run", "start"]

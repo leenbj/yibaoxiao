@@ -1,0 +1,8 @@
+{
+  "description": "AI Reimbursement Assistant with Voice Recording and OCR",
+  "requestFramePermissions": [
+    "microphone",
+    "camera"
+  ],
+  "name": "易报销pro-2"
+}

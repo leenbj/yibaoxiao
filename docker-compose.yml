@@ -43,6 +43,11 @@ services:
       DEFAULT_AI_API_URL: ${DEFAULT_AI_API_URL:-}
       DEFAULT_AI_MODEL: ${DEFAULT_AI_MODEL:-}
       ADMIN_USER_ID: ${ADMIN_USER_ID:-}
+      # 超级管理员配置
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@example.com}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123456}
+      ADMIN_NAME: ${ADMIN_NAME:-系统管理员}
+      ADMIN_DEPARTMENT: ${ADMIN_DEPARTMENT:-管理部}
     ports:
       - "3000:3000"  # 可选：暴露到宿主机，方便调试
     depends_on:

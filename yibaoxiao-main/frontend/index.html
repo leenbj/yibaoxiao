@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>易报销 Pro - AI 智能报销系统</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- PDF.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script>
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    </script>
+    <link rel="stylesheet" href="/index.css">
+    <style>
+      /* 打印样式 */
+      @media print {
+        /* 报销单页面使用横版 A4 */
+        @page {
+          size: A4 landscape;
+          margin: 0;
+        }
+        
+        /* 附件页面使用竖版 A4 */
+        @page attachment {
+          size: A4 portrait;
+          margin: 0;
+        }
+        
+        .attachment-page {
+          page: attachment;
+        }
+        
+        /* 报销单容器打印时的样式 */
+        .general-reimbursement-container {
+          width: 297mm !important;
+          height: 210mm !important;
+          padding-top: 10mm !important;
+          display: flex !important;
+          flex-direction: column !important;
+          align-items: center !important;
+          justify-content: flex-start !important;
+        }
+        
+        /* 确保分页正确 */
+        .print\\:break-before-page {
+          break-before: page;
+          page-break-before: always;
+        }
+      }
+    </style>
+</head>
+  <body>
+    <div id="root"></div>
+  <script type="module" src="/index.tsx"></script>
+</body>
+</html>
