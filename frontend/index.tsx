@@ -3127,7 +3127,8 @@ const ProfileView = ({ settings, onSave }: any) => {
 
 const SettingsView = ({ settings, onSave }: any) => {
     const [activeTab, setActiveTab] = useState<'users' | 'payment' | 'budget' | 'ai' | 'usage'>('payment');
-    const isSuperAdmin = settings.currentUser?.email === SUPER_ADMIN_EMAIL;
+    // 使用 role 字段判断是否为管理员
+    const isSuperAdmin = settings.currentUser?.role === 'admin';
     
     // 用户管理组件
     const UserManagementTab = () => {
@@ -6550,7 +6551,8 @@ const App = () => {
   // 检查是否需要修改密码（超级管理员首次登录）
   const checkPasswordChange = (user: AppUser) => {
     const hasChangedPassword = localStorage.getItem(`password_changed_${user.id}`);
-    if (user.email === SUPER_ADMIN_EMAIL && !hasChangedPassword) {
+    // 管理员首次登录提示修改密码
+    if (user.role === 'admin' && !hasChangedPassword) {
       setShowPasswordPrompt(true);
     }
   };
@@ -6574,11 +6576,10 @@ const App = () => {
   };
 
   const handleLogin = (user: AppUser, token: string) => {
-    // 检查是否为超级管理员
-    const isSuperAdmin = user.email === SUPER_ADMIN_EMAIL;
+    // 使用后端返回的 role 字段，不再基于邮箱判断
     const userWithRole = {
       ...user,
-      role: isSuperAdmin ? 'admin' : (user.role || 'user')
+      role: user.role || 'user'
     };
     localStorage.setItem('reimb_token', token);
     localStorage.setItem('reimb_user', JSON.stringify(userWithRole));
