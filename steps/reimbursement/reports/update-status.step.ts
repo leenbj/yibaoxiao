@@ -8,7 +8,8 @@
 import { ApiRouteConfig, Handlers } from 'motia'
 import { z } from 'zod'
 import { errorHandlerMiddleware } from '../../../middlewares/error-handler.middleware'
-import { Report, ReportSchema, ReportStatusSchema, STATE_GROUPS, ErrorResponseSchema } from '../types'
+import { ReportSchema, ReportStatusSchema, ErrorResponseSchema } from '../types'
+import { reportRepository, expenseRepository } from '../../../src/db/repositories'
 
 // 请求体 Schema
 const bodySchema = z.object({
@@ -36,17 +37,18 @@ export const config: ApiRouteConfig = {
     200: responseSchema,
     400: ErrorResponseSchema,
     404: ErrorResponseSchema,
+    500: ErrorResponseSchema,
   },
 }
 
-export const handler: Handlers['UpdateReportStatus'] = async (req, { state, logger }) => {
+export const handler: Handlers['UpdateReportStatus'] = async (req, { logger }) => {
   const reportId = req.pathParams.id
   const { userId, status } = bodySchema.parse(req.body)
 
   logger.info('更新报销单状态', { reportId, userId, newStatus: status })
 
   // 获取现有报销单
-  const existing = await state.get<Report>(`${STATE_GROUPS.REPORTS}_${userId}`, reportId)
+  const existing = await reportRepository.getById(userId, reportId)
   
   if (!existing) {
     logger.warn('报销单不存在', { reportId, userId })
@@ -56,30 +58,22 @@ export const handler: Handlers['UpdateReportStatus'] = async (req, { state, logg
     }
   }
 
-  const now = new Date().toISOString()
   const oldStatus = existing.status
 
   // 更新报销单状态
-  const updated: Report = {
-    ...existing,
-    status,
-    updatedAt: now,
-  }
+  const updated = await reportRepository.updateStatus(userId, reportId, status)
 
-  await state.set(`${STATE_GROUPS.REPORTS}_${userId}`, reportId, updated)
+  if (!updated) {
+    return {
+      status: 500,
+      body: { error: '更新失败', message: '更新报销单状态失败' },
+    }
+  }
 
   // 如果状态变为 paid，更新关联费用项的状态
   if (status === 'paid' && existing.items && existing.items.length > 0) {
-    for (const item of existing.items) {
-      const expense = await state.get<any>(`${STATE_GROUPS.EXPENSES}_${userId}`, item.id)
-      if (expense) {
-        await state.set(`${STATE_GROUPS.EXPENSES}_${userId}`, item.id, {
-          ...expense,
-          status: 'done',
-          updatedAt: now,
-        })
-      }
-    }
+    const itemIds = existing.items.map(item => item.id)
+    await expenseRepository.updateStatus(userId, itemIds, 'done')
   }
 
   logger.info('报销单状态更新成功', { reportId, userId, oldStatus, newStatus: status })
@@ -92,13 +86,3 @@ export const handler: Handlers['UpdateReportStatus'] = async (req, { state, logg
     },
   }
 }
-
-
-
-
-
-
-
-
-
-

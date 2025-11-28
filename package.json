@@ -6,7 +6,12 @@
     "dev": "motia dev",
     "generate-types": "motia generate-types",
     "build": "motia build",
-    "clean": "rm -rf dist node_modules python_modules .motia .mermaid"
+    "clean": "rm -rf dist node_modules python_modules .motia .mermaid",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:push": "drizzle-kit push",
+    "db:studio": "drizzle-kit studio",
+    "migrate:redis-to-pg": "npx ts-node scripts/migrate-redis-to-pg.ts"
   },
   "keywords": [
     "motia"
@@ -17,11 +22,17 @@
     "@motiadev/plugin-logs": "^0.13.0-beta.161",
     "@motiadev/plugin-observability": "^0.13.0-beta.161",
     "@motiadev/plugin-states": "^0.13.0-beta.161",
+    "dotenv": "^17.2.3",
+    "drizzle-orm": "^0.44.7",
     "motia": "^0.13.0-beta.161",
+    "pg": "^8.16.3",
+    "redis": "^5.10.0",
     "zod": "^4.1.12"
   },
   "devDependencies": {
+    "@types/pg": "^8.15.6",
     "@types/react": "^19.1.1",
+    "drizzle-kit": "^0.31.7",
     "ts-node": "^10.9.2",
     "typescript": "^5.7.3"
   }

@@ -8,7 +8,8 @@
 import { ApiRouteConfig, Handlers } from 'motia'
 import { z } from 'zod'
 import { errorHandlerMiddleware } from '../../../middlewares/error-handler.middleware'
-import { ExpenseItem, ExpenseItemSchema, STATE_GROUPS, ErrorResponseSchema } from '../types'
+import { ExpenseItemSchema, ErrorResponseSchema, ExpenseStatus } from '../types'
+import { expenseRepository } from '../../../src/db/repositories'
 
 // 查询参数
 const queryParams = [
@@ -44,7 +45,7 @@ export const config: ApiRouteConfig = {
   },
 }
 
-export const handler: Handlers['ListExpenses'] = async (req, { state, logger }) => {
+export const handler: Handlers['ListExpenses'] = async (req, { logger }) => {
   const userId = req.queryParams.userId as string
   const statusFilter = req.queryParams.status as string | undefined
 
@@ -58,12 +59,12 @@ export const handler: Handlers['ListExpenses'] = async (req, { state, logger }) 
   logger.info('获取费用列表', { userId, statusFilter })
 
   // 获取用户的所有费用记录
-  const allExpenses = await state.getGroup<ExpenseItem>(`${STATE_GROUPS.EXPENSES}_${userId}`)
+  let allExpenses = await expenseRepository.getByUserId(userId)
 
   // 按状态筛选
   let expenses = allExpenses
   if (statusFilter && ['pending', 'processing', 'done'].includes(statusFilter)) {
-    expenses = allExpenses.filter(e => e.status === statusFilter)
+    expenses = await expenseRepository.getByStatus(userId, statusFilter as ExpenseStatus)
   }
 
   // 按日期倒序排列
@@ -88,13 +89,3 @@ export const handler: Handlers['ListExpenses'] = async (req, { state, logger }) 
     },
   }
 }
-
-
-
-
-
-
-
-
-
-

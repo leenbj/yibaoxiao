@@ -8,7 +8,8 @@
 import { ApiRouteConfig, Handlers } from 'motia'
 import { z } from 'zod'
 import { errorHandlerMiddleware } from '../../../../middlewares/error-handler.middleware'
-import { BudgetProject, BudgetProjectSchema, STATE_GROUPS, ErrorResponseSchema } from '../../types'
+import { BudgetProject, BudgetProjectSchema, ErrorResponseSchema } from '../../types'
+import { budgetProjectRepository } from '../../../../src/db/repositories'
 
 // 请求体 Schema
 const bodySchema = z.object({
@@ -40,7 +41,7 @@ export const config: ApiRouteConfig = {
   },
 }
 
-export const handler: Handlers['CreateProject'] = async (req, { state, logger }) => {
+export const handler: Handlers['CreateProject'] = async (req, { logger }) => {
   const data = bodySchema.parse(req.body)
   const { userId, ...projectData } = data
   
@@ -51,10 +52,10 @@ export const handler: Handlers['CreateProject'] = async (req, { state, logger })
 
   // 如果是默认项目，取消其他项目的默认状态
   if (projectData.isDefault) {
-    const existingProjects = await state.getGroup<BudgetProject>(`${STATE_GROUPS.BUDGET_PROJECTS}_${userId}`)
+    const existingProjects = await budgetProjectRepository.list(userId)
     for (const proj of existingProjects) {
       if (proj.isDefault) {
-        await state.set(`${STATE_GROUPS.BUDGET_PROJECTS}_${userId}`, proj.id, {
+        await budgetProjectRepository.update(userId, proj.id, {
           ...proj,
           isDefault: false,
         })
@@ -68,7 +69,7 @@ export const handler: Handlers['CreateProject'] = async (req, { state, logger })
     ...projectData,
   }
 
-  await state.set(`${STATE_GROUPS.BUDGET_PROJECTS}_${userId}`, projectId, budgetProject)
+  await budgetProjectRepository.create(userId, budgetProject)
 
   logger.info('预算项目创建成功', { projectId, userId })
 
@@ -80,13 +81,3 @@ export const handler: Handlers['CreateProject'] = async (req, { state, logger })
     },
   }
 }
-
-
-
-
-
-
-
-
-
-

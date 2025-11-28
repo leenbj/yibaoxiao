@@ -8,7 +8,8 @@
 import { ApiRouteConfig, Handlers } from 'motia'
 import { z } from 'zod'
 import { errorHandlerMiddleware } from '../../../../middlewares/error-handler.middleware'
-import { BudgetProject, BudgetProjectSchema, STATE_GROUPS, ErrorResponseSchema } from '../../types'
+import { BudgetProject, BudgetProjectSchema, ErrorResponseSchema } from '../../types'
+import { budgetProjectRepository } from '../../../../src/db/repositories'
 
 // 请求体 Schema
 const bodySchema = z.object({
@@ -38,10 +39,11 @@ export const config: ApiRouteConfig = {
     200: responseSchema,
     400: ErrorResponseSchema,
     404: ErrorResponseSchema,
+    500: ErrorResponseSchema,
   },
 }
 
-export const handler: Handlers['UpdateProject'] = async (req, { state, logger }) => {
+export const handler: Handlers['UpdateProject'] = async (req, { logger }) => {
   const projectId = req.pathParams.id
   const data = bodySchema.parse(req.body)
   const { userId, ...updateData } = data
@@ -49,7 +51,7 @@ export const handler: Handlers['UpdateProject'] = async (req, { state, logger })
   logger.info('更新预算项目', { projectId, userId })
 
   // 获取现有项目
-  const existing = await state.get<BudgetProject>(`${STATE_GROUPS.BUDGET_PROJECTS}_${userId}`, projectId)
+  const existing = await budgetProjectRepository.getById(userId, projectId)
   
   if (!existing) {
     logger.warn('预算项目不存在', { projectId, userId })
@@ -61,10 +63,10 @@ export const handler: Handlers['UpdateProject'] = async (req, { state, logger })
 
   // 如果设为默认，取消其他项目的默认状态
   if (updateData.isDefault && !existing.isDefault) {
-    const existingProjects = await state.getGroup<BudgetProject>(`${STATE_GROUPS.BUDGET_PROJECTS}_${userId}`)
+    const existingProjects = await budgetProjectRepository.list(userId)
     for (const proj of existingProjects) {
       if (proj.isDefault && proj.id !== projectId) {
-        await state.set(`${STATE_GROUPS.BUDGET_PROJECTS}_${userId}`, proj.id, {
+        await budgetProjectRepository.update(userId, proj.id, {
           ...proj,
           isDefault: false,
         })
@@ -73,12 +75,14 @@ export const handler: Handlers['UpdateProject'] = async (req, { state, logger })
   }
 
   // 更新项目
-  const updated: BudgetProject = {
-    ...existing,
-    ...updateData,
-  }
+  const updated = await budgetProjectRepository.update(userId, projectId, updateData)
 
-  await state.set(`${STATE_GROUPS.BUDGET_PROJECTS}_${userId}`, projectId, updated)
+  if (!updated) {
+    return {
+      status: 500,
+      body: { error: '更新失败', message: '更新预算项目失败' },
+    }
+  }
 
   logger.info('预算项目更新成功', { projectId, userId })
 
@@ -90,13 +94,3 @@ export const handler: Handlers['UpdateProject'] = async (req, { state, logger })
     },
   }
 }
-
-
-
-
-
-
-
-
-
-

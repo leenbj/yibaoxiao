@@ -1,0 +1,75 @@
+# 易报销 Pro - 后端 Dockerfile
+# 基于 Node.js 20 构建 Motia 后端服务
+
+FROM node:20-alpine AS builder
+
+# 设置工作目录
+WORKDIR /app
+
+# 安装构建依赖
+RUN apk add --no-cache python3 make g++
+
+# 复制 package 文件
+COPY package*.json ./
+
+# 安装依赖
+RUN npm ci --only=production=false
+
+# 复制源代码
+COPY . .
+
+# 生成类型定义
+RUN npm run generate-types || true
+
+# 构建应用
+RUN npm run build
+
+# ==================== 生产阶段 ====================
+FROM node:20-alpine AS production
+
+WORKDIR /app
+
+# 安装运行时依赖
+RUN apk add --no-cache tini
+
+# 复制 package 文件
+COPY package*.json ./
+
+# 只安装生产依赖
+RUN npm ci --only=production
+
+# 从构建阶段复制构建产物
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/types.d.ts ./types.d.ts
+
+# 复制必要的源文件（Motia 运行时需要）
+COPY --from=builder /app/steps ./steps
+COPY --from=builder /app/middlewares ./middlewares
+COPY --from=builder /app/src ./src
+COPY --from=builder /app/motia.config.ts ./motia.config.ts
+COPY --from=builder /app/drizzle.config.ts ./drizzle.config.ts
+COPY --from=builder /app/tsconfig.json ./tsconfig.json
+
+# 创建非 root 用户
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S motia -u 1001 -G nodejs
+
+# 设置目录权限
+RUN chown -R motia:nodejs /app
+
+# 切换到非 root 用户
+USER motia
+
+# 暴露端口
+EXPOSE 3000
+
+# 健康检查
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1
+
+# 使用 tini 作为 init 进程
+ENTRYPOINT ["/sbin/tini", "--"]
+
+# 启动命令 - 使用 motia dev（生产环境可改为自定义启动脚本）
+CMD ["npm", "run", "dev"]
+

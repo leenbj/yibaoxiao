@@ -8,7 +8,8 @@
 import { ApiRouteConfig, Handlers } from 'motia'
 import { z } from 'zod'
 import { errorHandlerMiddleware } from '../../../middlewares/error-handler.middleware'
-import { LoanRecord, LoanRecordSchema, STATE_GROUPS, ErrorResponseSchema } from '../types'
+import { LoanRecordSchema, ErrorResponseSchema } from '../types'
+import { loanRepository } from '../../../src/db/repositories'
 
 // 查询参数
 const queryParams = [
@@ -38,7 +39,7 @@ export const config: ApiRouteConfig = {
   },
 }
 
-export const handler: Handlers['ListLoans'] = async (req, { state, logger }) => {
+export const handler: Handlers['ListLoans'] = async (req, { logger }) => {
   const userId = req.queryParams.userId as string
   const statusFilter = req.queryParams.status as string | undefined
 
@@ -52,12 +53,11 @@ export const handler: Handlers['ListLoans'] = async (req, { state, logger }) => 
   logger.info('获取借款列表', { userId, statusFilter })
 
   // 获取用户的所有借款记录
-  const allLoans = await state.getGroup<LoanRecord>(`${STATE_GROUPS.LOANS}_${userId}`)
+  let loans = await loanRepository.list(userId)
 
   // 按状态筛选
-  let loans = allLoans
   if (statusFilter && ['draft', 'submitted', 'paid'].includes(statusFilter)) {
-    loans = allLoans.filter(l => l.status === statusFilter)
+    loans = loans.filter(l => l.status === statusFilter)
   }
 
   // 按日期倒序排列
@@ -73,13 +73,3 @@ export const handler: Handlers['ListLoans'] = async (req, { state, logger }) => 
     },
   }
 }
-
-
-
-
-
-
-
-
-
-

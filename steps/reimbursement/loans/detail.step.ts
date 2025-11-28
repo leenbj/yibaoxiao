@@ -8,7 +8,8 @@
 import { ApiRouteConfig, Handlers } from 'motia'
 import { z } from 'zod'
 import { errorHandlerMiddleware } from '../../../middlewares/error-handler.middleware'
-import { LoanRecord, LoanRecordSchema, STATE_GROUPS, ErrorResponseSchema } from '../types'
+import { LoanRecordSchema, ErrorResponseSchema } from '../types'
+import { loanRepository } from '../../../src/db/repositories'
 
 // 查询参数
 const queryParams = [
@@ -32,7 +33,7 @@ export const config: ApiRouteConfig = {
   },
 }
 
-export const handler: Handlers['GetLoanDetail'] = async (req, { state, logger }) => {
+export const handler: Handlers['GetLoanDetail'] = async (req, { logger }) => {
   const loanId = req.pathParams.id
   const userId = req.queryParams.userId as string
 
@@ -46,7 +47,7 @@ export const handler: Handlers['GetLoanDetail'] = async (req, { state, logger })
   logger.info('获取借款详情', { loanId, userId })
 
   // 获取借款记录
-  const loan = await state.get<LoanRecord>(`${STATE_GROUPS.LOANS}_${userId}`, loanId)
+  const loan = await loanRepository.getById(userId, loanId)
   
   if (!loan) {
     logger.warn('借款记录不存在', { loanId, userId })
@@ -63,13 +64,3 @@ export const handler: Handlers['GetLoanDetail'] = async (req, { state, logger })
     body: loan,
   }
 }
-
-
-
-
-
-
-
-
-
-

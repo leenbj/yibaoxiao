@@ -8,7 +8,8 @@
 import { ApiRouteConfig, Handlers } from 'motia'
 import { z } from 'zod'
 import { errorHandlerMiddleware } from '../../../middlewares/error-handler.middleware'
-import { LoanRecord, LoanRecordSchema, ReportStatusSchema, STATE_GROUPS, ErrorResponseSchema } from '../types'
+import { LoanRecordSchema, ReportStatusSchema, ErrorResponseSchema } from '../types'
+import { loanRepository } from '../../../src/db/repositories'
 
 // 请求体 Schema
 const bodySchema = z.object({
@@ -36,17 +37,18 @@ export const config: ApiRouteConfig = {
     200: responseSchema,
     400: ErrorResponseSchema,
     404: ErrorResponseSchema,
+    500: ErrorResponseSchema,
   },
 }
 
-export const handler: Handlers['UpdateLoanStatus'] = async (req, { state, logger }) => {
+export const handler: Handlers['UpdateLoanStatus'] = async (req, { logger }) => {
   const loanId = req.pathParams.id
   const { userId, status } = bodySchema.parse(req.body)
 
   logger.info('更新借款状态', { loanId, userId, newStatus: status })
 
   // 获取现有借款记录
-  const existing = await state.get<LoanRecord>(`${STATE_GROUPS.LOANS}_${userId}`, loanId)
+  const existing = await loanRepository.getById(userId, loanId)
   
   if (!existing) {
     logger.warn('借款记录不存在', { loanId, userId })
@@ -56,17 +58,17 @@ export const handler: Handlers['UpdateLoanStatus'] = async (req, { state, logger
     }
   }
 
-  const now = new Date().toISOString()
   const oldStatus = existing.status
 
   // 更新借款状态
-  const updated: LoanRecord = {
-    ...existing,
-    status,
-    updatedAt: now,
-  }
+  const updated = await loanRepository.updateStatus(userId, loanId, status)
 
-  await state.set(`${STATE_GROUPS.LOANS}_${userId}`, loanId, updated)
+  if (!updated) {
+    return {
+      status: 500,
+      body: { error: '更新失败', message: '更新借款状态失败' },
+    }
+  }
 
   logger.info('借款状态更新成功', { loanId, userId, oldStatus, newStatus: status })
 
@@ -78,13 +80,3 @@ export const handler: Handlers['UpdateLoanStatus'] = async (req, { state, logger
     },
   }
 }
-
-
-
-
-
-
-
-
-
-

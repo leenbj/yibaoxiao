@@ -8,7 +8,8 @@
 import { ApiRouteConfig, Handlers } from 'motia'
 import { z } from 'zod'
 import { errorHandlerMiddleware } from '../../../middlewares/error-handler.middleware'
-import { Report, ReportSchema, STATE_GROUPS, ErrorResponseSchema } from '../types'
+import { ReportSchema, ReportStatus, ErrorResponseSchema } from '../types'
+import { reportRepository } from '../../../src/db/repositories'
 
 // 查询参数
 const queryParams = [
@@ -38,7 +39,7 @@ export const config: ApiRouteConfig = {
   },
 }
 
-export const handler: Handlers['ListReports'] = async (req, { state, logger }) => {
+export const handler: Handlers['ListReports'] = async (req, { logger }) => {
   const userId = req.queryParams.userId as string
   const statusFilter = req.queryParams.status as string | undefined
 
@@ -52,12 +53,11 @@ export const handler: Handlers['ListReports'] = async (req, { state, logger }) =
   logger.info('获取报销单列表', { userId, statusFilter })
 
   // 获取用户的所有报销单
-  const allReports = await state.getGroup<Report>(`${STATE_GROUPS.REPORTS}_${userId}`)
+  let reports = await reportRepository.getByUserId(userId)
 
   // 按状态筛选
-  let reports = allReports
   if (statusFilter && ['draft', 'submitted', 'paid'].includes(statusFilter)) {
-    reports = allReports.filter(r => r.status === statusFilter)
+    reports = reports.filter(r => r.status === statusFilter)
   }
 
   // 按创建日期倒序排列
@@ -73,13 +73,3 @@ export const handler: Handlers['ListReports'] = async (req, { state, logger }) =
     },
   }
 }
-
-
-
-
-
-
-
-
-
-

@@ -8,7 +8,8 @@
 import { ApiRouteConfig, Handlers } from 'motia'
 import { z } from 'zod'
 import { errorHandlerMiddleware } from '../../../middlewares/error-handler.middleware'
-import { ExpenseItem, ExpenseItemSchema, ExpenseStatusSchema, STATE_GROUPS, ErrorResponseSchema } from '../types'
+import { ExpenseItemSchema, ExpenseStatusSchema, ErrorResponseSchema } from '../types'
+import { expenseRepository } from '../../../src/db/repositories'
 
 // 请求体 Schema
 const bodySchema = z.object({
@@ -41,10 +42,11 @@ export const config: ApiRouteConfig = {
     200: responseSchema,
     400: ErrorResponseSchema,
     404: ErrorResponseSchema,
+    500: ErrorResponseSchema,
   },
 }
 
-export const handler: Handlers['UpdateExpense'] = async (req, { state, logger }) => {
+export const handler: Handlers['UpdateExpense'] = async (req, { logger }) => {
   const expenseId = req.pathParams.id
   const data = bodySchema.parse(req.body)
   const { userId, ...updateData } = data
@@ -52,7 +54,7 @@ export const handler: Handlers['UpdateExpense'] = async (req, { state, logger })
   logger.info('更新费用记录', { expenseId, userId })
 
   // 获取现有记录
-  const existing = await state.get<ExpenseItem>(`${STATE_GROUPS.EXPENSES}_${userId}`, expenseId)
+  const existing = await expenseRepository.getById(userId, expenseId)
   
   if (!existing) {
     logger.warn('费用记录不存在', { expenseId, userId })
@@ -63,13 +65,14 @@ export const handler: Handlers['UpdateExpense'] = async (req, { state, logger })
   }
 
   // 更新记录
-  const updated: ExpenseItem = {
-    ...existing,
-    ...updateData,
-    updatedAt: new Date().toISOString(),
-  }
+  const updated = await expenseRepository.update(userId, expenseId, updateData)
 
-  await state.set(`${STATE_GROUPS.EXPENSES}_${userId}`, expenseId, updated)
+  if (!updated) {
+    return {
+      status: 500,
+      body: { error: '更新失败', message: '更新费用记录失败' },
+    }
+  }
 
   logger.info('费用记录更新成功', { expenseId, userId })
 
@@ -81,13 +84,3 @@ export const handler: Handlers['UpdateExpense'] = async (req, { state, logger })
     },
   }
 }
-
-
-
-
-
-
-
-
-
-

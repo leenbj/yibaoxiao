@@ -9,7 +9,6 @@ import { ApiRouteConfig, Handlers } from 'motia'
 import { z } from 'zod'
 import { errorHandlerMiddleware } from '../../../middlewares/error-handler.middleware'
 import { 
-  Report,
   ReportSchema, 
   ReportStatusSchema,
   ExpenseItemSchema,
@@ -18,9 +17,9 @@ import {
   PaymentAccountSchema,
   TripLegSchema,
   TaxiDetailSchema,
-  STATE_GROUPS, 
   ErrorResponseSchema 
 } from '../types'
+import { reportRepository } from '../../../src/db/repositories'
 
 // 请求体 Schema
 const bodySchema = z.object({
@@ -62,10 +61,11 @@ export const config: ApiRouteConfig = {
     200: responseSchema,
     400: ErrorResponseSchema,
     404: ErrorResponseSchema,
+    500: ErrorResponseSchema,
   },
 }
 
-export const handler: Handlers['UpdateReport'] = async (req, { state, logger }) => {
+export const handler: Handlers['UpdateReport'] = async (req, { logger }) => {
   const reportId = req.pathParams.id
   const data = bodySchema.parse(req.body)
   const { userId, ...updateData } = data
@@ -73,7 +73,7 @@ export const handler: Handlers['UpdateReport'] = async (req, { state, logger }) 
   logger.info('更新报销单', { reportId, userId })
 
   // 获取现有报销单
-  const existing = await state.get<Report>(`${STATE_GROUPS.REPORTS}_${userId}`, reportId)
+  const existing = await reportRepository.getById(userId, reportId)
   
   if (!existing) {
     logger.warn('报销单不存在', { reportId, userId })
@@ -83,16 +83,15 @@ export const handler: Handlers['UpdateReport'] = async (req, { state, logger }) 
     }
   }
 
-  const now = new Date().toISOString()
-
   // 更新报销单
-  const updated: Report = {
-    ...existing,
-    ...updateData,
-    updatedAt: now,
-  }
+  const updated = await reportRepository.update(userId, reportId, updateData)
 
-  await state.set(`${STATE_GROUPS.REPORTS}_${userId}`, reportId, updated)
+  if (!updated) {
+    return {
+      status: 500,
+      body: { error: '更新失败', message: '更新报销单失败' },
+    }
+  }
 
   logger.info('报销单更新成功', { reportId, userId })
 
@@ -104,13 +103,3 @@ export const handler: Handlers['UpdateReport'] = async (req, { state, logger }) 
     },
   }
 }
-
-
-
-
-
-
-
-
-
-

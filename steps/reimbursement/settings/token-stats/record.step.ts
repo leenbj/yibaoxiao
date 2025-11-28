@@ -9,11 +9,11 @@ import { ApiRouteConfig, Handlers } from 'motia'
 import { z } from 'zod'
 import { errorHandlerMiddleware } from '../../../../middlewares/error-handler.middleware'
 import { 
-  STATE_GROUPS, 
   ErrorResponseSchema,
   TokenUsage,
 } from '../../types'
-import { MODEL_PRICING, calculateTokenCost } from '../../../../src/config/model-pricing'
+import { MODEL_PRICING } from '../../../../src/config/model-pricing'
+import { tokenUsageRepository } from '../../../../src/db/repositories'
 
 // 请求体 Schema
 const bodySchema = z.object({
@@ -53,7 +53,7 @@ export const config: ApiRouteConfig = {
   },
 }
 
-export const handler: Handlers['RecordTokenUsage'] = async (req, { state, logger }) => {
+export const handler: Handlers['RecordTokenUsage'] = async (req, { logger }) => {
   const { userId, provider, model, inputTokens, outputTokens, cached, operation } = bodySchema.parse(req.body)
   
   logger.info('记录 Token 使用', { userId, provider, inputTokens, outputTokens })
@@ -89,8 +89,8 @@ export const handler: Handlers['RecordTokenUsage'] = async (req, { state, logger
     createdAt: new Date().toISOString(),
   }
 
-  // 保存到 state
-  await state.set(STATE_GROUPS.TOKEN_USAGE, usageId, usage)
+  // 保存到数据库
+  await tokenUsageRepository.create(usage)
 
   logger.info('Token 使用记录已保存', { 
     usageId, 
@@ -112,12 +112,3 @@ export const handler: Handlers['RecordTokenUsage'] = async (req, { state, logger
     },
   }
 }
-
-
-
-
-
-
-
-
-

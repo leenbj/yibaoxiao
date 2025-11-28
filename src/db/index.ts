@@ -1,0 +1,110 @@
+/**
+ * 数据库连接模块
+ * 管理 PostgreSQL 数据库连接池
+ */
+
+import { drizzle } from 'drizzle-orm/node-postgres'
+import { Pool } from 'pg'
+import * as schema from './schema'
+
+// 加载环境变量
+import 'dotenv/config'
+
+// 数据库配置
+const getDatabaseConfig = () => {
+  // 优先使用 DATABASE_URL
+  if (process.env.DATABASE_URL) {
+    return {
+      connectionString: process.env.DATABASE_URL,
+    }
+  }
+
+  // 否则使用分开的配置
+  return {
+    host: process.env.DATABASE_HOST || 'localhost',
+    port: parseInt(process.env.DATABASE_PORT || '5432', 10),
+    database: process.env.DATABASE_NAME || 'yibao_db',
+    user: process.env.DATABASE_USER || 'postgres',
+    password: process.env.DATABASE_PASSWORD || 'password',
+  }
+}
+
+// 连接池配置
+const poolConfig = {
+  ...getDatabaseConfig(),
+  min: parseInt(process.env.DATABASE_POOL_MIN || '2', 10),
+  max: parseInt(process.env.DATABASE_POOL_MAX || '10', 10),
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 2000,
+}
+
+// 创建连接池
+let pool: Pool | null = null
+
+export const getPool = (): Pool => {
+  if (!pool) {
+    pool = new Pool(poolConfig)
+    
+    // 连接池错误处理
+    pool.on('error', (err) => {
+      console.error('数据库连接池错误:', err)
+    })
+
+    // 连接池连接事件
+    pool.on('connect', () => {
+      console.log('数据库连接已建立')
+    })
+  }
+  return pool
+}
+
+// 创建 Drizzle 实例
+let db: ReturnType<typeof drizzle<typeof schema>> | null = null
+
+export const getDb = () => {
+  if (!db) {
+    db = drizzle(getPool(), { schema })
+  }
+  return db
+}
+
+// 导出数据库实例（延迟初始化）
+export const database = {
+  get instance() {
+    return getDb()
+  },
+  get pool() {
+    return getPool()
+  },
+}
+
+// 关闭数据库连接
+export const closeDatabase = async (): Promise<void> => {
+  if (pool) {
+    await pool.end()
+    pool = null
+    db = null
+    console.log('数据库连接已关闭')
+  }
+}
+
+// 测试数据库连接
+export const testConnection = async (): Promise<boolean> => {
+  try {
+    const client = await getPool().connect()
+    await client.query('SELECT 1')
+    client.release()
+    console.log('数据库连接测试成功')
+    return true
+  } catch (error) {
+    console.error('数据库连接测试失败:', error)
+    return false
+  }
+}
+
+// 导出 schema 以便其他模块使用
+export { schema }
+
+// 导出类型
+export type Database = ReturnType<typeof getDb>
+

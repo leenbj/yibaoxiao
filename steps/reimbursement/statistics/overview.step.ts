@@ -9,13 +9,11 @@ import { ApiRouteConfig, Handlers } from 'motia'
 import { z } from 'zod'
 import { errorHandlerMiddleware } from '../../../middlewares/error-handler.middleware'
 import { 
-  ExpenseItem, 
   Report, 
-  LoanRecord, 
   StatisticsOverviewSchema, 
-  STATE_GROUPS, 
   ErrorResponseSchema 
 } from '../types'
+import { expenseRepository, reportRepository, loanRepository } from '../../../src/db/repositories'
 
 // 查询参数
 const queryParams = [
@@ -39,7 +37,7 @@ export const config: ApiRouteConfig = {
   },
 }
 
-export const handler: Handlers['GetStatisticsOverview'] = async (req, { state, logger }) => {
+export const handler: Handlers['GetStatisticsOverview'] = async (req, { logger }) => {
   const userId = req.queryParams.userId as string
   const period = (req.queryParams.period as string) || '6m'
 
@@ -53,9 +51,9 @@ export const handler: Handlers['GetStatisticsOverview'] = async (req, { state, l
   logger.info('获取统计概览', { userId, period })
 
   // 获取所有数据
-  const expenses = await state.getGroup<ExpenseItem>(`${STATE_GROUPS.EXPENSES}_${userId}`)
-  const reports = await state.getGroup<Report>(`${STATE_GROUPS.REPORTS}_${userId}`)
-  const loans = await state.getGroup<LoanRecord>(`${STATE_GROUPS.LOANS}_${userId}`)
+  const expenses = await expenseRepository.list(userId)
+  const reports = await reportRepository.list(userId)
+  const loans = await loanRepository.list(userId)
 
   // 计算统计数据
   // 1. 已提交报销金额（状态为 submitted 的报销单）
@@ -138,13 +136,3 @@ function calculateMonthlyData(reports: Report[], period: string) {
 
   return monthlyData
 }
-
-
-
-
-
-
-
-
-
-

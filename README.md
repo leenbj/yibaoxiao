@@ -2,23 +2,24 @@
 
 一个使用 **Motia 框架** 构建的智能财务报销系统，支持 AI 自动识别发票、审批单，简化报销流程。
 
-## 🚀 功能特性
+## 功能特性
 
-- 📋 **记账本** - 快速记录待报销费用
-- 🎙️ **语音录入** - AI 识别语音自动填写
-- 📄 **通用报销** - 上传发票/审批单，AI 自动识别
-- ✈️ **差旅报销** - 差旅费用专项报销
-- 💰 **借款申请** - 预借款申请管理
-- 📜 **历史记录** - 查看所有报销/借款记录
-- 📊 **数据统计** - 各时期报销数据分析
-- ⚙️ **系统设置** - 用户、收款人、预算项目管理
+- **记账本** - 快速记录待报销费用
+- **语音录入** - AI 识别语音自动填写
+- **通用报销** - 上传发票/审批单，AI 自动识别
+- **差旅报销** - 差旅费用专项报销
+- **借款申请** - 预借款申请管理
+- **历史记录** - 查看所有报销/借款记录
+- **数据统计** - 各时期报销数据分析
+- **系统设置** - 用户、收款人、预算项目管理
 
-## 🛠️ 技术栈
+## 技术栈
 
 - **后端**: Motia 框架 (Node.js + TypeScript)
-- **前端**: React + Tailwind CSS
-- **AI**: Google Gemini API (发票/审批单识别)
-- **数据**: Motia State Manager (内置状态管理)
+- **前端**: React + Vite + Tailwind CSS
+- **数据库**: PostgreSQL
+- **AI**: 支持多种 AI 模型 (Gemini, DeepSeek, 豆包, GLM 等)
+- **部署**: Docker + Docker Compose
 
 ## 📦 项目结构
 
@@ -231,39 +232,123 @@ function MyComponent() {
 - 统计数据展示
 - AI 识别测试
 
-## 📝 注意事项
+## Docker 部署 (生产环境)
 
-1. **数据存储**: 当前使用 Motia 内置的 State Manager 存储数据，适合开发测试。生产环境建议对接数据库。
+### 系统架构
 
-2. **AI 识别**: 默认返回模拟数据，配置 GEMINI_API_KEY 后使用真实 AI 识别。
+```
+┌─────────────────────────────────────────────────────────┐
+│                    宝塔面板服务器                         │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────┐  │
+│  │  Frontend   │  │   Backend   │  │   PostgreSQL    │  │
+│  │  (Nginx)    │──│   (Motia)   │──│   (Database)    │  │
+│  │  :80        │  │   :3000     │  │   :5432         │  │
+│  └─────────────┘  └─────────────┘  └─────────────────┘  │
+└─────────────────────────────────────────────────────────┘
+```
+
+### 部署文件
+
+| 文件 | 说明 |
+|------|------|
+| `docker-compose.yml` | Docker Compose 编排配置 |
+| `Dockerfile.backend` | 后端 Motia 服务镜像 |
+| `Dockerfile.frontend` | 前端 Nginx 服务镜像 |
+| `nginx.conf` | Nginx 反向代理配置 |
+| `.env.production` | 生产环境变量模板 |
+
+### 快速部署
+
+```bash
+# 1. 上传代码到服务器
+cd /www/wwwroot/
+git clone <仓库地址> yibao
+cd yibao
+
+# 2. 配置环境变量
+cp .env.production .env
+# 编辑 .env 修改数据库密码和 AI 配置
+
+# 3. 构建并启动所有服务
+docker-compose up -d --build
+
+# 4. 初始化数据库表结构
+docker-compose exec backend sh
+npm run db:push
+exit
+
+# 5. 访问系统
+# http://服务器IP/
+```
+
+### 常用命令
+
+```bash
+# 查看服务状态
+docker-compose ps
+
+# 查看日志
+docker-compose logs -f
+
+# 重启服务
+docker-compose restart
+
+# 停止服务
+docker-compose down
+
+# 重新构建
+docker-compose up -d --build
+```
+
+### 数据备份
+
+```bash
+# 备份数据库
+docker-compose exec postgres pg_dump -U yibao yibao > backup_$(date +%Y%m%d).sql
+
+# 恢复数据库
+cat backup.sql | docker-compose exec -T postgres psql -U yibao -d yibao
+```
+
+详细部署说明请查看 [DEPLOY.md](DEPLOY.md)
+
+## 注意事项
+
+1. **数据存储**: 使用 PostgreSQL 数据库存储数据，支持 Docker 容器化部署。
+
+2. **AI 识别**: 支持多种 AI 模型，在系统设置中配置 API Key 即可使用。
 
 3. **用户认证**: 当前使用简化的 Token 认证。生产环境建议使用 JWT。
 
-4. **跨域访问**: 前端默认访问 `http://localhost:3000`，如需修改请编辑 `frontend/src/api/client.ts`。
+4. **跨域访问**: 生产环境通过 Nginx 反向代理，开发环境使用 Vite 代理。
 
-## 🚀 快速体验
+## 快速体验 (本地开发)
 
 ```bash
 # 1. 安装依赖
 npm install
+cd frontend && npm install && cd ..
 
-# 2. 启动后端（终端 1）
+# 2. 配置数据库连接
+cp .env.example .env
+# 编辑 .env 配置 DATABASE_URL
+
+# 3. 启动后端
 npm run dev
 
-# 3. 打开浏览器访问 Motia Workbench
-open http://localhost:3000
+# 4. 启动前端（另一个终端）
+cd frontend && npm run dev
 
-# 4. 测试 API（可选）
-curl -X POST http://localhost:3000/api/auth/register \
-  -H "Content-Type: application/json" \
-  -d '{"name":"测试用户","email":"test@test.com","password":"123456","department":"技术部"}'
+# 5. 访问
+# 前端: http://localhost:5173
+# 后端: http://localhost:3000
 ```
 
-## 📄 许可证
+## 许可证
 
 MIT License
 
 ---
 
-**易报销 Pro** - 让报销更简单！🎉
+**易报销 Pro** - 让报销更简单！
 

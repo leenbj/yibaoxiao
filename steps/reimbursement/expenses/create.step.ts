@@ -8,7 +8,8 @@
 import { ApiRouteConfig, Handlers } from 'motia'
 import { z } from 'zod'
 import { errorHandlerMiddleware } from '../../../middlewares/error-handler.middleware'
-import { ExpenseItemSchema, STATE_GROUPS, ErrorResponseSchema } from '../types'
+import { ExpenseItemSchema, ErrorResponseSchema } from '../types'
+import { expenseRepository } from '../../../src/db/repositories'
 
 // 请求体 Schema
 const bodySchema = z.object({
@@ -42,7 +43,7 @@ export const config: ApiRouteConfig = {
   },
 }
 
-export const handler: Handlers['CreateExpense'] = async (req, { state, logger }) => {
+export const handler: Handlers['CreateExpense'] = async (req, { logger }) => {
   const data = bodySchema.parse(req.body)
   
   logger.info('创建费用记录', { userId: data.userId, amount: data.amount })
@@ -65,8 +66,8 @@ export const handler: Handlers['CreateExpense'] = async (req, { state, logger })
     updatedAt: now,
   }
 
-  // 存储到 State
-  await state.set(`${STATE_GROUPS.EXPENSES}_${data.userId}`, expenseId, expense)
+  // 存储到数据库
+  await expenseRepository.create(expense)
 
   logger.info('费用记录创建成功', { expenseId, userId: data.userId })
 
@@ -78,13 +79,3 @@ export const handler: Handlers['CreateExpense'] = async (req, { state, logger })
     },
   }
 }
-
-
-
-
-
-
-
-
-
-

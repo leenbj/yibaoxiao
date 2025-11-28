@@ -1,0 +1,90 @@
+# 易报销 Pro - Docker Compose 配置
+# 包含：PostgreSQL 数据库、Motia 后端、Nginx 前端
+
+version: '3.8'
+
+services:
+  # ==================== PostgreSQL 数据库 ====================
+  postgres:
+    image: postgres:16-alpine
+    container_name: yibao-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-yibao}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-yibao123456}
+      POSTGRES_DB: ${POSTGRES_DB:-yibao}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"  # 可选：暴露到宿主机，方便调试
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-yibao} -d ${POSTGRES_DB:-yibao}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - yibao-network
+
+  # ==================== Motia 后端服务 ====================
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: yibao-backend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-yibao}:${POSTGRES_PASSWORD:-yibao123456}@postgres:5432/${POSTGRES_DB:-yibao}
+      # AI 配置
+      DEFAULT_AI_PROVIDER: ${DEFAULT_AI_PROVIDER:-}
+      DEFAULT_AI_API_KEY: ${DEFAULT_AI_API_KEY:-}
+      DEFAULT_AI_API_URL: ${DEFAULT_AI_API_URL:-}
+      DEFAULT_AI_MODEL: ${DEFAULT_AI_MODEL:-}
+      ADMIN_USER_ID: ${ADMIN_USER_ID:-}
+    ports:
+      - "3000:3000"  # 可选：暴露到宿主机，方便调试
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - yibao-network
+
+  # ==================== Nginx 前端服务 ====================
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: yibao-frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - yibao-network
+
+# ==================== 数据卷 ====================
+volumes:
+  postgres_data:
+    name: yibao_postgres_data
+
+# ==================== 网络 ====================
+networks:
+  yibao-network:
+    name: yibao-network
+    driver: bridge
+

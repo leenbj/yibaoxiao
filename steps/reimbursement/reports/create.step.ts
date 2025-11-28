@@ -19,9 +19,9 @@ import {
   AppUserSchema,
   TripLegSchema,
   TaxiDetailSchema,
-  STATE_GROUPS, 
   ErrorResponseSchema 
 } from '../types'
+import { reportRepository, expenseRepository } from '../../../src/db/repositories'
 
 // 请求体 Schema
 const bodySchema = z.object({
@@ -43,6 +43,8 @@ const bodySchema = z.object({
   tripReason: z.string().optional(),
   tripLegs: z.array(TripLegSchema).optional(),
   taxiDetails: z.array(TaxiDetailSchema).optional(),
+  // AI 识别数据
+  aiRecognitionData: z.any().optional(),
 })
 
 // 响应 Schema
@@ -67,7 +69,7 @@ export const config: ApiRouteConfig = {
   },
 }
 
-export const handler: Handlers['CreateReport'] = async (req, { state, logger }) => {
+export const handler: Handlers['CreateReport'] = async (req, { logger }) => {
   const data = bodySchema.parse(req.body)
   const { userId, ...reportData } = data
   
@@ -87,21 +89,14 @@ export const handler: Handlers['CreateReport'] = async (req, { state, logger }) 
     updatedAt: now,
   }
 
-  // 存储到 State
-  await state.set(`${STATE_GROUPS.REPORTS}_${userId}`, reportId, report)
+  // 存储到数据库
+  await reportRepository.create(report)
 
   // 如果有关联的费用项，更新它们的状态
   if (report.items && report.items.length > 0) {
-    for (const item of report.items) {
-      const existing = await state.get<any>(`${STATE_GROUPS.EXPENSES}_${userId}`, item.id)
-      if (existing) {
-        await state.set(`${STATE_GROUPS.EXPENSES}_${userId}`, item.id, {
-          ...existing,
-          status: report.status === 'draft' ? 'pending' : 'processing',
-          updatedAt: now,
-        })
-      }
-    }
+    const itemIds = report.items.map(item => item.id)
+    const newStatus = report.status === 'draft' ? 'pending' : 'processing'
+    await expenseRepository.updateStatus(userId, itemIds, newStatus)
   }
 
   logger.info('报销单创建成功', { reportId, userId })
@@ -114,13 +109,3 @@ export const handler: Handlers['CreateReport'] = async (req, { state, logger }) 
     },
   }
 }
-
-
-
-
-
-
-
-
-
-

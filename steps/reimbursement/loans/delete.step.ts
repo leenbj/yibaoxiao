@@ -6,7 +6,8 @@
 import { ApiRouteConfig, Handlers } from 'motia'
 import { z } from 'zod'
 import { errorHandlerMiddleware } from '../../../middlewares/error-handler.middleware'
-import { STATE_GROUPS, ErrorResponseSchema } from '../types'
+import { ErrorResponseSchema } from '../types'
+import { loanRepository } from '../../../src/db/repositories'
 
 // 查询参数
 const queryParams = [
@@ -36,41 +37,31 @@ export const config: ApiRouteConfig = {
   },
 }
 
-export const handler: Handlers['LoansDelete'] = async (req, { state, logger }) => {
+export const handler: Handlers['LoansDelete'] = async (req, { logger }) => {
   const loanId = req.pathParams.id
+  const userId = req.queryParams.userId as string || 'default_user'
 
-  logger.info('LoansDelete 开始处理', { id: loanId })
+  logger.info('LoansDelete 开始处理', { id: loanId, userId })
 
-  // 获取用户ID（从请求头获取 token 或 query params）
-  const authHeader = req.headers.authorization
-  let userId = req.queryParams.userId as string || 'default_user'
-  
-  if (!userId && authHeader?.startsWith('Bearer ')) {
-    const token = authHeader.substring(7)
-    // 简单解析 token 获取用户ID
-    const parts = token.split('_')
-    if (parts.length >= 3) {
-      userId = `${parts[0]}_${parts[1]}`
+  if (!userId) {
+    return {
+      status: 400,
+      body: { error: '参数错误', message: '缺少 userId 参数' },
     }
   }
 
-  // 获取当前借款列表
-  const loansKey = `${STATE_GROUPS.LOANS}_${userId}`
-  const loans = await state.get<any[]>(loansKey) || []
+  // 检查借款记录是否存在
+  const existing = await loanRepository.getById(userId, loanId)
   
-  // 查找要删除的借款
-  const loanIndex = loans.findIndex(l => l.id === loanId)
-  
-  if (loanIndex === -1) {
+  if (!existing) {
     return {
       status: 404,
-      body: { success: false, message: '借款记录不存在' },
+      body: { error: '不存在', message: '借款记录不存在' },
     }
   }
 
-  // 删除借款
-  loans.splice(loanIndex, 1)
-  await state.set(loansKey, loans)
+  // 删除借款记录
+  await loanRepository.delete(userId, loanId)
 
   logger.info('LoansDelete 删除成功', { id: loanId })
 

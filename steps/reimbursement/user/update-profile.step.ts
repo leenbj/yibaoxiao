@@ -8,7 +8,8 @@
 import { ApiRouteConfig, Handlers } from 'motia'
 import { z } from 'zod'
 import { errorHandlerMiddleware } from '../../../middlewares/error-handler.middleware'
-import { AppUser, AppUserSchema, STATE_GROUPS, ErrorResponseSchema } from '../types'
+import { AppUserSchema, ErrorResponseSchema } from '../types'
+import { userRepository } from '../../../src/db/repositories'
 
 // 请求体 Schema
 const bodySchema = z.object({
@@ -39,17 +40,18 @@ export const config: ApiRouteConfig = {
     200: responseSchema,
     400: ErrorResponseSchema,
     404: ErrorResponseSchema,
+    500: ErrorResponseSchema,
   },
 }
 
-export const handler: Handlers['UpdateUserProfile'] = async (req, { state, logger }) => {
+export const handler: Handlers['UpdateUserProfile'] = async (req, { logger }) => {
   const data = bodySchema.parse(req.body)
   const { userId, ...updateData } = data
 
   logger.info('更新用户信息', { userId })
 
   // 获取现有用户
-  const existingUser = await state.get<AppUser>(STATE_GROUPS.USERS, userId)
+  const existingUser = await userRepository.getById(userId)
   
   if (!existingUser) {
     logger.warn('用户不存在', { userId })
@@ -60,12 +62,14 @@ export const handler: Handlers['UpdateUserProfile'] = async (req, { state, logge
   }
 
   // 更新用户信息
-  const updatedUser: AppUser = {
-    ...existingUser,
-    ...updateData,
-  }
+  const updatedUser = await userRepository.update(userId, updateData)
 
-  await state.set(STATE_GROUPS.USERS, userId, updatedUser)
+  if (!updatedUser) {
+    return {
+      status: 500,
+      body: { error: '更新失败', message: '更新用户信息失败' },
+    }
+  }
 
   logger.info('用户信息更新成功', { userId })
 
@@ -80,13 +84,3 @@ export const handler: Handlers['UpdateUserProfile'] = async (req, { state, logge
     },
   }
 }
-
-
-
-
-
-
-
-
-
-

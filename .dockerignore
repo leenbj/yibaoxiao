@@ -1,0 +1,54 @@
+# 易报销 Pro - Docker 忽略文件
+# 优化构建速度和镜像大小
+
+# 依赖目录
+node_modules/
+frontend/node_modules/
+python_modules/
+
+# 构建产物
+dist/
+frontend/dist/
+.motia/
+.mermaid/
+
+# 开发文件
+*.log
+*.md
+!README.md
+.git/
+.gitignore
+.cursor/
+
+# IDE 配置
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 测试文件
+*.test.ts
+*.spec.ts
+__tests__/
+coverage/
+
+# 环境文件（使用 docker-compose 环境变量）
+.env
+.env.local
+.env.development
+
+# 临时文件
+*.tmp
+*.temp
+.DS_Store
+Thumbs.db
+
+# Redis 数据（开发用）
+appendonlydir/
+dump.rdb
+
+# 其他
+tutorial/
+opencode.json
+motia-workbench.json
+

@@ -8,7 +8,8 @@
 import { ApiRouteConfig, Handlers } from 'motia'
 import { z } from 'zod'
 import { errorHandlerMiddleware } from '../../../middlewares/error-handler.middleware'
-import { AppUser, AppUserSchema, STATE_GROUPS, ErrorResponseSchema } from '../types'
+import { AppUserSchema, ErrorResponseSchema } from '../types'
+import { userRepository } from '../../../src/db/repositories'
 
 // 请求体 Schema
 const bodySchema = z.object({
@@ -40,14 +41,13 @@ export const config: ApiRouteConfig = {
   },
 }
 
-export const handler: Handlers['AuthLogin'] = async (req, { state, logger }) => {
+export const handler: Handlers['AuthLogin'] = async (req, { logger }) => {
   logger.info('处理用户登录请求', { email: req.body.email })
 
   const { email, password } = bodySchema.parse(req.body)
 
   // 查找用户
-  const users = await state.getGroup<AppUser>(STATE_GROUPS.USERS)
-  const user = users.find(u => u.email === email)
+  const user = await userRepository.getByEmail(email)
 
   if (!user) {
     logger.warn('用户不存在', { email })
@@ -83,13 +83,3 @@ export const handler: Handlers['AuthLogin'] = async (req, { state, logger }) => 
     },
   }
 }
-
-
-
-
-
-
-
-
-
-

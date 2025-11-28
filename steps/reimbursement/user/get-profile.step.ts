@@ -9,13 +9,10 @@ import { ApiRouteConfig, Handlers } from 'motia'
 import { z } from 'zod'
 import { errorHandlerMiddleware } from '../../../middlewares/error-handler.middleware'
 import { 
-  AppUser, 
-  PaymentAccount, 
-  BudgetProject,
   UserSettingsSchema,
-  STATE_GROUPS, 
   ErrorResponseSchema 
 } from '../types'
+import { userRepository, paymentAccountRepository, budgetProjectRepository } from '../../../src/db/repositories'
 
 // 查询参数
 const queryParams = [
@@ -39,7 +36,7 @@ export const config: ApiRouteConfig = {
   },
 }
 
-export const handler: Handlers['GetUserProfile'] = async (req, { state, logger }) => {
+export const handler: Handlers['GetUserProfile'] = async (req, { logger }) => {
   const userId = req.queryParams.userId as string
 
   if (!userId) {
@@ -52,7 +49,7 @@ export const handler: Handlers['GetUserProfile'] = async (req, { state, logger }
   logger.info('获取用户配置', { userId })
 
   // 获取用户信息
-  const user = await state.get<AppUser>(STATE_GROUPS.USERS, userId)
+  const user = await userRepository.getById(userId)
   
   if (!user) {
     logger.warn('用户不存在', { userId })
@@ -63,13 +60,13 @@ export const handler: Handlers['GetUserProfile'] = async (req, { state, logger }
   }
 
   // 获取用户的收款账户
-  const paymentAccounts = await state.getGroup<PaymentAccount>(`${STATE_GROUPS.PAYMENT_ACCOUNTS}_${userId}`)
+  const paymentAccounts = await paymentAccountRepository.getByUserId(userId)
 
   // 获取用户的预算项目
-  const budgetProjects = await state.getGroup<BudgetProject>(`${STATE_GROUPS.BUDGET_PROJECTS}_${userId}`)
+  const budgetProjects = await budgetProjectRepository.getByUserId(userId)
 
   // 获取所有用户（用于管理员查看）
-  const allUsers = await state.getGroup<AppUser>(STATE_GROUPS.USERS)
+  const allUsers = await userRepository.getAll()
 
   // 返回时不包含密码
   const { password: _, ...currentUserWithoutPassword } = user
@@ -90,13 +87,3 @@ export const handler: Handlers['GetUserProfile'] = async (req, { state, logger }
     },
   }
 }
-
-
-
-
-
-
-
-
-
-

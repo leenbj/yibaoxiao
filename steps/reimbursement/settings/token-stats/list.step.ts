@@ -9,11 +9,10 @@ import { ApiRouteConfig, Handlers } from 'motia'
 import { z } from 'zod'
 import { errorHandlerMiddleware } from '../../../../middlewares/error-handler.middleware'
 import { 
-  STATE_GROUPS, 
   ErrorResponseSchema,
-  TokenUsage,
 } from '../../types'
 import { MODEL_PRICING } from '../../../../src/config/model-pricing'
+import { tokenUsageRepository } from '../../../../src/db/repositories'
 
 // 查询参数 Schema
 const queryParamsSchema = z.object({
@@ -85,13 +84,13 @@ export const config: ApiRouteConfig = {
   },
 }
 
-export const handler: Handlers['GetTokenStats'] = async (req, { state, logger }) => {
+export const handler: Handlers['GetTokenStats'] = async (req, { logger }) => {
   const { userId, startDate, endDate, provider, period } = queryParamsSchema.parse(req.queryParams)
   
   logger.info('获取 Token 统计', { userId, period })
 
   // 获取所有使用记录
-  const allUsages = await state.getGroup<TokenUsage>(STATE_GROUPS.TOKEN_USAGE)
+  const allUsages = await tokenUsageRepository.list()
   
   // 筛选当前用户的记录
   let usages = allUsages.filter(u => u.userId === userId)
@@ -240,12 +239,3 @@ export const handler: Handlers['GetTokenStats'] = async (req, { state, logger })
     },
   }
 }
-
-
-
-
-
-
-
-
-

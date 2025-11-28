@@ -8,7 +8,8 @@
 import { ApiRouteConfig, Handlers } from 'motia'
 import { z } from 'zod'
 import { errorHandlerMiddleware } from '../../../../middlewares/error-handler.middleware'
-import { PaymentAccount, PaymentAccountSchema, STATE_GROUPS, ErrorResponseSchema } from '../../types'
+import { PaymentAccount, PaymentAccountSchema, ErrorResponseSchema } from '../../types'
+import { paymentAccountRepository } from '../../../../src/db/repositories'
 
 // 请求体 Schema
 const bodySchema = z.object({
@@ -42,7 +43,7 @@ export const config: ApiRouteConfig = {
   },
 }
 
-export const handler: Handlers['CreatePayee'] = async (req, { state, logger }) => {
+export const handler: Handlers['CreatePayee'] = async (req, { logger }) => {
   const data = bodySchema.parse(req.body)
   const { userId, ...accountData } = data
   
@@ -53,10 +54,10 @@ export const handler: Handlers['CreatePayee'] = async (req, { state, logger }) =
 
   // 如果是默认账户，取消其他账户的默认状态
   if (accountData.isDefault) {
-    const existingAccounts = await state.getGroup<PaymentAccount>(`${STATE_GROUPS.PAYMENT_ACCOUNTS}_${userId}`)
+    const existingAccounts = await paymentAccountRepository.list(userId)
     for (const acc of existingAccounts) {
       if (acc.isDefault) {
-        await state.set(`${STATE_GROUPS.PAYMENT_ACCOUNTS}_${userId}`, acc.id, {
+        await paymentAccountRepository.update(userId, acc.id, {
           ...acc,
           isDefault: false,
         })
@@ -70,7 +71,7 @@ export const handler: Handlers['CreatePayee'] = async (req, { state, logger }) =
     ...accountData,
   }
 
-  await state.set(`${STATE_GROUPS.PAYMENT_ACCOUNTS}_${userId}`, accountId, paymentAccount)
+  await paymentAccountRepository.create(userId, paymentAccount)
 
   logger.info('收款人创建成功', { accountId, userId })
 
@@ -82,13 +83,3 @@ export const handler: Handlers['CreatePayee'] = async (req, { state, logger }) =
     },
   }
 }
-
-
-
-
-
-
-
-
-
-

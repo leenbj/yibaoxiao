@@ -8,7 +8,8 @@
 import { ApiRouteConfig, Handlers } from 'motia'
 import { z } from 'zod'
 import { errorHandlerMiddleware } from '../../../../middlewares/error-handler.middleware'
-import { BudgetProject, BudgetProjectSchema, STATE_GROUPS, ErrorResponseSchema } from '../../types'
+import { BudgetProjectSchema, ErrorResponseSchema } from '../../types'
+import { budgetProjectRepository } from '../../../../src/db/repositories'
 
 // 查询参数
 const queryParams = [
@@ -37,7 +38,7 @@ export const config: ApiRouteConfig = {
   },
 }
 
-export const handler: Handlers['ListProjects'] = async (req, { state, logger }) => {
+export const handler: Handlers['ListProjects'] = async (req, { logger }) => {
   const userId = req.queryParams.userId as string
 
   if (!userId) {
@@ -49,7 +50,7 @@ export const handler: Handlers['ListProjects'] = async (req, { state, logger }) 
 
   logger.info('获取预算项目列表', { userId })
 
-  const budgetProjects = await state.getGroup<BudgetProject>(`${STATE_GROUPS.BUDGET_PROJECTS}_${userId}`)
+  const budgetProjects = await budgetProjectRepository.list(userId)
 
   logger.info('预算项目列表获取成功', { userId, count: budgetProjects.length })
 
@@ -61,13 +62,3 @@ export const handler: Handlers['ListProjects'] = async (req, { state, logger }) 
     },
   }
 }
-
-
-
-
-
-
-
-
-
-

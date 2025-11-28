@@ -16,8 +16,10 @@ export const errorHandlerMiddleware: ApiMiddleware = async (req, ctx, next) => {
   } catch (error: any) {
     // 处理 Zod 验证错误
     if (error instanceof ZodError) {
+      // Zod v4 使用 issues 而不是 errors
+      const issues = error.issues || (error as any).errors || []
       logger.error('验证错误', {
-        errors: error.errors,
+        errors: issues,
         path: req.pathParams,
       })
 
@@ -25,7 +27,7 @@ export const errorHandlerMiddleware: ApiMiddleware = async (req, ctx, next) => {
         status: 400,
         body: {
           error: '请求数据验证失败',
-          message: error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join('; '),
+          message: issues.map((e: any) => `${String(e.path?.join('.') || '')}: ${e.message || ''}`).join('; '),
         },
       }
     }

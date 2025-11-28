@@ -8,7 +8,8 @@
 import { ApiRouteConfig, Handlers } from 'motia'
 import { z } from 'zod'
 import { errorHandlerMiddleware } from '../../../middlewares/error-handler.middleware'
-import { AppUserSchema, STATE_GROUPS, ErrorResponseSchema } from '../types'
+import { AppUserSchema, ErrorResponseSchema } from '../types'
+import { userRepository, paymentAccountRepository, budgetProjectRepository } from '../../../src/db/repositories'
 
 // 请求体 Schema
 const bodySchema = z.object({
@@ -42,16 +43,15 @@ export const config: ApiRouteConfig = {
   },
 }
 
-export const handler: Handlers['AuthRegister'] = async (req, { state, logger }) => {
+export const handler: Handlers['AuthRegister'] = async (req, { logger }) => {
   logger.info('处理用户注册请求', { email: req.body.email })
 
   const { name, email, password, department } = bodySchema.parse(req.body)
 
   // 检查邮箱是否已存在
-  const existingUsers = await state.getGroup<{ id: string; email: string }>(STATE_GROUPS.USERS)
-  const emailExists = existingUsers.some(u => u.email === email)
+  const existingUser = await userRepository.getByEmail(email)
 
-  if (emailExists) {
+  if (existingUser) {
     logger.warn('邮箱已被注册', { email })
     return {
       status: 409,
@@ -72,7 +72,7 @@ export const handler: Handlers['AuthRegister'] = async (req, { state, logger }) 
   }
 
   // 存储用户
-  await state.set(STATE_GROUPS.USERS, userId, newUser)
+  await userRepository.create(newUser)
 
   // 同时初始化用户的默认设置
   const defaultPaymentAccount = {
@@ -83,7 +83,7 @@ export const handler: Handlers['AuthRegister'] = async (req, { state, logger }) 
     accountName: name,
     isDefault: true,
   }
-  await state.set(`${STATE_GROUPS.PAYMENT_ACCOUNTS}_${userId}`, defaultPaymentAccount.id, defaultPaymentAccount)
+  await paymentAccountRepository.create(userId, defaultPaymentAccount)
 
   const defaultProject = {
     id: `proj_${Date.now()}`,
@@ -91,7 +91,7 @@ export const handler: Handlers['AuthRegister'] = async (req, { state, logger }) 
     code: 'DEFAULT',
     isDefault: true,
   }
-  await state.set(`${STATE_GROUPS.BUDGET_PROJECTS}_${userId}`, defaultProject.id, defaultProject)
+  await budgetProjectRepository.create(userId, defaultProject)
 
   logger.info('用户注册成功', { userId, email })
 
@@ -107,13 +107,3 @@ export const handler: Handlers['AuthRegister'] = async (req, { state, logger }) 
     },
   }
 }
-
-
-
-
-
-
-
-
-
-

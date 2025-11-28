@@ -8,7 +8,8 @@
 import { ApiRouteConfig, Handlers } from 'motia'
 import { z } from 'zod'
 import { errorHandlerMiddleware } from '../../../middlewares/error-handler.middleware'
-import { Report, ReportSchema, STATE_GROUPS, ErrorResponseSchema } from '../types'
+import { ReportSchema, ErrorResponseSchema } from '../types'
+import { reportRepository } from '../../../src/db/repositories'
 
 // 查询参数
 const queryParams = [
@@ -32,7 +33,7 @@ export const config: ApiRouteConfig = {
   },
 }
 
-export const handler: Handlers['GetReportDetail'] = async (req, { state, logger }) => {
+export const handler: Handlers['GetReportDetail'] = async (req, { logger }) => {
   const reportId = req.pathParams.id
   const userId = req.queryParams.userId as string
 
@@ -46,7 +47,7 @@ export const handler: Handlers['GetReportDetail'] = async (req, { state, logger 
   logger.info('获取报销单详情', { reportId, userId })
 
   // 获取报销单
-  const report = await state.get<Report>(`${STATE_GROUPS.REPORTS}_${userId}`, reportId)
+  const report = await reportRepository.getById(userId, reportId)
   
   if (!report) {
     logger.warn('报销单不存在', { reportId, userId })
@@ -63,13 +64,3 @@ export const handler: Handlers['GetReportDetail'] = async (req, { state, logger 
     body: report,
   }
 }
-
-
-
-
-
-
-
-
-
-

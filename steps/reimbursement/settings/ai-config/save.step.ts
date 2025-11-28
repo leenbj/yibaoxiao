@@ -13,9 +13,9 @@ import {
   AIConfigSchema, 
   AIProviderSchema,
   AI_PROVIDERS_INFO,
-  STATE_GROUPS, 
   ErrorResponseSchema 
 } from '../../types'
+import { aiConfigRepository } from '../../../../src/db/repositories'
 
 // 请求体 Schema
 const bodySchema = z.object({
@@ -51,7 +51,7 @@ export const config: ApiRouteConfig = {
   },
 }
 
-export const handler: Handlers['SaveAIConfig'] = async (req, { state, logger }) => {
+export const handler: Handlers['SaveAIConfig'] = async (req, { logger }) => {
   const data = bodySchema.parse(req.body)
   const { userId, provider, apiKey, apiUrl, model, isActive } = data
   
@@ -61,7 +61,7 @@ export const handler: Handlers['SaveAIConfig'] = async (req, { state, logger }) 
   const providerInfo = AI_PROVIDERS_INFO[provider]
 
   // 检查是否已存在该厂商的配置
-  const existingConfigs = await state.getGroup<AIConfig>(`${STATE_GROUPS.AI_CONFIGS}_${userId}`)
+  const existingConfigs = await aiConfigRepository.list(userId)
   const existingConfig = existingConfigs.find(c => c.provider === provider)
 
   const now = new Date().toISOString()
@@ -78,6 +78,7 @@ export const handler: Handlers['SaveAIConfig'] = async (req, { state, logger }) 
       isActive,
       updatedAt: now,
     }
+    await aiConfigRepository.update(userId, aiConfig.id, aiConfig)
   } else {
     // 创建新配置
     isNew = true
@@ -93,13 +94,14 @@ export const handler: Handlers['SaveAIConfig'] = async (req, { state, logger }) 
       createdAt: now,
       updatedAt: now,
     }
+    await aiConfigRepository.create(aiConfig)
   }
 
   // 如果设为激活，取消其他配置的激活状态
   if (isActive) {
     for (const conf of existingConfigs) {
       if (conf.provider !== provider && conf.isActive) {
-        await state.set(`${STATE_GROUPS.AI_CONFIGS}_${userId}`, conf.id, {
+        await aiConfigRepository.update(userId, conf.id, {
           ...conf,
           isActive: false,
           updatedAt: now,
@@ -107,9 +109,6 @@ export const handler: Handlers['SaveAIConfig'] = async (req, { state, logger }) 
       }
     }
   }
-
-  // 保存配置
-  await state.set(`${STATE_GROUPS.AI_CONFIGS}_${userId}`, aiConfig.id, aiConfig)
 
   logger.info('AI 配置保存成功', { userId, provider, configId: aiConfig.id })
 
@@ -122,13 +121,3 @@ export const handler: Handlers['SaveAIConfig'] = async (req, { state, logger }) 
     },
   }
 }
-
-
-
-
-
-
-
-
-
-

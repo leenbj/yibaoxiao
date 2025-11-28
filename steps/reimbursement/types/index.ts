@@ -362,7 +362,7 @@ export const TokenStatsSchema = z.object({
   inputCost: z.number(),
   outputCost: z.number(),
   usageCount: z.number(), // 调用次数
-  byProvider: z.record(z.object({
+  byProvider: z.record(z.string(), z.object({
     provider: z.string(),
     providerName: z.string(),
     totalTokens: z.number(),

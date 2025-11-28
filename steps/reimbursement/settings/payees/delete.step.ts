@@ -8,7 +8,8 @@
 import { ApiRouteConfig, Handlers } from 'motia'
 import { z } from 'zod'
 import { errorHandlerMiddleware } from '../../../../middlewares/error-handler.middleware'
-import { PaymentAccount, STATE_GROUPS, ErrorResponseSchema, SuccessResponseSchema } from '../../types'
+import { ErrorResponseSchema, SuccessResponseSchema } from '../../types'
+import { paymentAccountRepository } from '../../../../src/db/repositories'
 
 // 查询参数
 const queryParams = [
@@ -32,7 +33,7 @@ export const config: ApiRouteConfig = {
   },
 }
 
-export const handler: Handlers['DeletePayee'] = async (req, { state, logger }) => {
+export const handler: Handlers['DeletePayee'] = async (req, { logger }) => {
   const accountId = req.pathParams.id
   const userId = req.queryParams.userId as string
 
@@ -46,7 +47,7 @@ export const handler: Handlers['DeletePayee'] = async (req, { state, logger }) =
   logger.info('删除收款人', { accountId, userId })
 
   // 检查是否存在
-  const existing = await state.get<PaymentAccount>(`${STATE_GROUPS.PAYMENT_ACCOUNTS}_${userId}`, accountId)
+  const existing = await paymentAccountRepository.getById(userId, accountId)
   
   if (!existing) {
     logger.warn('收款人不存在', { accountId, userId })
@@ -57,7 +58,7 @@ export const handler: Handlers['DeletePayee'] = async (req, { state, logger }) =
   }
 
   // 删除账户
-  await state.delete(`${STATE_GROUPS.PAYMENT_ACCOUNTS}_${userId}`, accountId)
+  await paymentAccountRepository.delete(userId, accountId)
 
   logger.info('收款人删除成功', { accountId, userId })
 
@@ -69,13 +70,3 @@ export const handler: Handlers['DeletePayee'] = async (req, { state, logger }) =
     },
   }
 }
-
-
-
-
-
-
-
-
-
-

@@ -8,7 +8,8 @@
 import { ApiRouteConfig, Handlers } from 'motia'
 import { z } from 'zod'
 import { errorHandlerMiddleware } from '../../../../middlewares/error-handler.middleware'
-import { BudgetProject, STATE_GROUPS, ErrorResponseSchema, SuccessResponseSchema } from '../../types'
+import { ErrorResponseSchema, SuccessResponseSchema } from '../../types'
+import { budgetProjectRepository } from '../../../../src/db/repositories'
 
 // 查询参数
 const queryParams = [
@@ -32,7 +33,7 @@ export const config: ApiRouteConfig = {
   },
 }
 
-export const handler: Handlers['DeleteProject'] = async (req, { state, logger }) => {
+export const handler: Handlers['DeleteProject'] = async (req, { logger }) => {
   const projectId = req.pathParams.id
   const userId = req.queryParams.userId as string
 
@@ -46,7 +47,7 @@ export const handler: Handlers['DeleteProject'] = async (req, { state, logger })
   logger.info('删除预算项目', { projectId, userId })
 
   // 检查是否存在
-  const existing = await state.get<BudgetProject>(`${STATE_GROUPS.BUDGET_PROJECTS}_${userId}`, projectId)
+  const existing = await budgetProjectRepository.getById(userId, projectId)
   
   if (!existing) {
     logger.warn('预算项目不存在', { projectId, userId })
@@ -57,7 +58,7 @@ export const handler: Handlers['DeleteProject'] = async (req, { state, logger })
   }
 
   // 删除项目
-  await state.delete(`${STATE_GROUPS.BUDGET_PROJECTS}_${userId}`, projectId)
+  await budgetProjectRepository.delete(userId, projectId)
 
   logger.info('预算项目删除成功', { projectId, userId })
 
@@ -69,13 +70,3 @@ export const handler: Handlers['DeleteProject'] = async (req, { state, logger })
     },
   }
 }
-
-
-
-
-
-
-
-
-
-

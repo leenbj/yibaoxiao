@@ -3,10 +3,11 @@
  * DELETE /api/reports/:id
  */
 
-import { ApiRouteConfig, Handlers, StepResponse } from 'motia'
+import { ApiRouteConfig, Handlers } from 'motia'
 import { z } from 'zod'
 import { errorHandlerMiddleware } from '../../../middlewares/error-handler.middleware'
-import { STATE_GROUPS, ErrorResponseSchema } from '../types'
+import { ErrorResponseSchema } from '../types'
+import { reportRepository } from '../../../src/db/repositories'
 
 // 查询参数
 const queryParams = [
@@ -36,41 +37,33 @@ export const config: ApiRouteConfig = {
   },
 }
 
-export const handler: Handlers['ReportsDelete'] = async (req, { state, logger }) => {
+export const handler: Handlers['ReportsDelete'] = async (req, { logger }) => {
   const reportId = req.pathParams.id
   
   logger.info('ReportsDelete 开始处理', { id: reportId })
 
-  // 获取用户ID（从请求头获取 token 或 query params）
-  const authHeader = req.headers.authorization
-  let userId = req.queryParams.userId as string || 'default_user'
-  
-  if (!userId && authHeader?.startsWith('Bearer ')) {
-    const token = authHeader.substring(7)
-    // 简单解析 token 获取用户ID
-    const parts = token.split('_')
-    if (parts.length >= 3) {
-      userId = `${parts[0]}_${parts[1]}`
+  // 获取用户ID
+  const userId = req.queryParams.userId as string || 'default_user'
+
+  if (!userId) {
+    return {
+      status: 400,
+      body: { error: '参数错误', message: '缺少 userId 参数' },
     }
   }
 
-  // 获取当前报销单列表
-  const reportsKey = `${STATE_GROUPS.REPORTS}_${userId}`
-  const reports = await state.get<any[]>(reportsKey) || []
+  // 检查报销单是否存在
+  const existing = await reportRepository.getById(userId, reportId)
   
-  // 查找要删除的报销单
-  const reportIndex = reports.findIndex(r => r.id === reportId)
-  
-  if (reportIndex === -1) {
+  if (!existing) {
     return {
       status: 404,
-      body: { success: false, message: '报销单不存在' },
+      body: { error: '不存在', message: '报销单不存在' },
     }
   }
 
   // 删除报销单
-  reports.splice(reportIndex, 1)
-  await state.set(reportsKey, reports)
+  await reportRepository.delete(userId, reportId)
 
   logger.info('ReportsDelete 删除成功', { id: reportId })
 

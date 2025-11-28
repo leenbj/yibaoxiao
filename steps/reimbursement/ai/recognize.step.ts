@@ -10,9 +10,10 @@
 import { ApiRouteConfig, Handlers } from 'motia'
 import { z } from 'zod'
 import { errorHandlerMiddleware } from '../../../middlewares/error-handler.middleware'
-import { AIRecognizeResultSchema, ErrorResponseSchema, STATE_GROUPS, TokenUsage } from '../types'
+import { AIRecognizeResultSchema, ErrorResponseSchema, TokenUsage } from '../types'
 import { recognizeWithConfig, AIConfig } from '../../../src/services/ai-recognition'
 import { MODEL_PRICING } from '../../../src/config/model-pricing'
+import { aiConfigRepository, tokenUsageRepository } from '../../../src/db/repositories'
 
 // 请求体 Schema
 const bodySchema = z.object({
@@ -41,16 +42,18 @@ export const config: ApiRouteConfig = {
   responseSchema: {
     200: directResultSchema,
     400: ErrorResponseSchema,
+    500: ErrorResponseSchema,
   },
 }
 
 /**
- * AI 识别处理器
- * 
- * 从用户配置中读取 AI 设置，调用相应的 AI 服务
- * 如果未配置，将返回模拟数据
+ * 获取 AI 配置的优先级：
+ * 1. 用户自己的配置
+ * 2. 管理员的共享配置（通过 ADMIN_USER_ID 环境变量指定）
+ * 3. 环境变量中的默认配置（DEFAULT_AI_PROVIDER, DEFAULT_AI_API_KEY 等）
+ * 4. 返回模拟数据
  */
-export const handler: Handlers['AIRecognize'] = async (req, { logger, state }) => {
+export const handler: Handlers['AIRecognize'] = async (req, { logger }) => {
   const { images, type, userId: bodyUserId } = bodySchema.parse(req.body)
   
   // 从 token 中提取用户ID，或使用请求体中的 userId
@@ -80,33 +83,76 @@ export const handler: Handlers['AIRecognize'] = async (req, { logger, state }) =
   logger.info('开始 AI 识别', { userId, type, imageCount: images.length })
 
   try {
-    // 从用户配置中获取 AI 设置
+    // 按优先级获取 AI 配置
     let aiConfig: AIConfig | null = null
+    let configSource = ''
     
     try {
-      // 使用正确的状态组格式
-      const stateGroup = `ai_configs_${userId}`
-      const userConfigs = await state.getGroup<any>(stateGroup)
-      
-      logger.info('读取 AI 配置', { userId, stateGroup, configCount: userConfigs?.length || 0 })
+      // 1. 首先尝试获取用户自己的配置
+      const userConfigs = await aiConfigRepository.getByUserId(userId)
+      logger.info('读取用户 AI 配置', { userId, configCount: userConfigs?.length || 0 })
       
       if (userConfigs && Array.isArray(userConfigs) && userConfigs.length > 0) {
-        // 查找激活的配置或第一个可用配置
         const activeConfig = userConfigs.find((c: any) => c.isActive === true) || userConfigs[0]
-        
         if (activeConfig && activeConfig.apiKey) {
           aiConfig = {
             provider: activeConfig.provider,
             apiKey: activeConfig.apiKey,
-            apiUrl: activeConfig.apiUrl,
-            model: activeConfig.model,
+            apiUrl: activeConfig.apiUrl || undefined,
+            model: activeConfig.model || undefined,
           }
-          logger.info('使用用户 AI 配置', { 
-            provider: aiConfig.provider, 
-            model: aiConfig.model,
-            hasApiUrl: !!aiConfig.apiUrl 
-          })
+          configSource = '用户配置'
         }
+      }
+      
+      // 2. 如果用户没有配置，尝试获取管理员的共享配置
+      if (!aiConfig) {
+        const adminUserId = process.env.ADMIN_USER_ID
+        if (adminUserId && adminUserId !== userId) {
+          const adminConfigs = await aiConfigRepository.getByUserId(adminUserId)
+          logger.info('读取管理员共享配置', { adminUserId, configCount: adminConfigs?.length || 0 })
+          
+          if (adminConfigs && Array.isArray(adminConfigs) && adminConfigs.length > 0) {
+            const activeConfig = adminConfigs.find((c: any) => c.isActive === true) || adminConfigs[0]
+            if (activeConfig && activeConfig.apiKey) {
+              aiConfig = {
+                provider: activeConfig.provider,
+                apiKey: activeConfig.apiKey,
+                apiUrl: activeConfig.apiUrl || undefined,
+                model: activeConfig.model || undefined,
+              }
+              configSource = '管理员共享配置'
+            }
+          }
+        }
+      }
+      
+      // 3. 如果仍然没有配置，使用环境变量中的默认配置
+      if (!aiConfig) {
+        const defaultProvider = process.env.DEFAULT_AI_PROVIDER
+        const defaultApiKey = process.env.DEFAULT_AI_API_KEY
+        
+        if (defaultProvider && defaultApiKey) {
+          aiConfig = {
+            provider: defaultProvider,
+            apiKey: defaultApiKey,
+            apiUrl: process.env.DEFAULT_AI_API_URL || undefined,
+            model: process.env.DEFAULT_AI_MODEL || undefined,
+          }
+          configSource = '环境变量默认配置'
+          logger.info('使用环境变量默认 AI 配置', { provider: defaultProvider })
+        }
+      }
+      
+      if (aiConfig) {
+        logger.info('使用 AI 配置', { 
+          source: configSource,
+          provider: aiConfig.provider, 
+          model: aiConfig.model,
+          hasApiUrl: !!aiConfig.apiUrl 
+        })
+      } else {
+        logger.warn('未找到任何 AI 配置，将使用模拟数据')
       }
     } catch (configError: any) {
       logger.warn('读取 AI 配置失败，使用模拟数据', { error: configError.message })
@@ -179,9 +225,9 @@ export const handler: Handlers['AIRecognize'] = async (req, { logger, state }) =
         createdAt: new Date().toISOString(),
       }
 
-      // 保存到 state
+      // 保存到数据库
       try {
-        await state.set(STATE_GROUPS.TOKEN_USAGE, usageId, usage)
+        await tokenUsageRepository.create(usage)
         logger.info('Token 使用已记录', { 
           usageId, 
           totalTokens, 

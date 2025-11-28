@@ -8,7 +8,8 @@
 import { ApiRouteConfig, Handlers } from 'motia'
 import { z } from 'zod'
 import { errorHandlerMiddleware } from '../../../middlewares/error-handler.middleware'
-import { ExpenseItem, STATE_GROUPS, ErrorResponseSchema, SuccessResponseSchema } from '../types'
+import { ErrorResponseSchema, SuccessResponseSchema } from '../types'
+import { expenseRepository } from '../../../src/db/repositories'
 
 // 查询参数
 const queryParams = [
@@ -32,7 +33,7 @@ export const config: ApiRouteConfig = {
   },
 }
 
-export const handler: Handlers['DeleteExpense'] = async (req, { state, logger }) => {
+export const handler: Handlers['DeleteExpense'] = async (req, { logger }) => {
   const expenseId = req.pathParams.id
   const userId = req.queryParams.userId as string
 
@@ -46,7 +47,7 @@ export const handler: Handlers['DeleteExpense'] = async (req, { state, logger })
   logger.info('删除费用记录', { expenseId, userId })
 
   // 检查记录是否存在
-  const existing = await state.get<ExpenseItem>(`${STATE_GROUPS.EXPENSES}_${userId}`, expenseId)
+  const existing = await expenseRepository.getById(userId, expenseId)
   
   if (!existing) {
     logger.warn('费用记录不存在', { expenseId, userId })
@@ -57,7 +58,7 @@ export const handler: Handlers['DeleteExpense'] = async (req, { state, logger })
   }
 
   // 删除记录
-  await state.delete(`${STATE_GROUPS.EXPENSES}_${userId}`, expenseId)
+  await expenseRepository.delete(userId, expenseId)
 
   logger.info('费用记录删除成功', { expenseId, userId })
 
@@ -69,13 +70,3 @@ export const handler: Handlers['DeleteExpense'] = async (req, { state, logger })
     },
   }
 }
-
-
-
-
-
-
-
-
-
-

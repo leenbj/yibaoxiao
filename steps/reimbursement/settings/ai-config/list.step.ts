@@ -9,12 +9,10 @@ import { ApiRouteConfig, Handlers } from 'motia'
 import { z } from 'zod'
 import { errorHandlerMiddleware } from '../../../../middlewares/error-handler.middleware'
 import { 
-  AIConfig, 
   AIConfigSchema, 
-  AI_PROVIDERS_INFO,
-  STATE_GROUPS, 
   ErrorResponseSchema 
 } from '../../types'
+import { aiConfigRepository } from '../../../../src/db/repositories'
 
 // 查询参数
 const queryParams = [
@@ -43,7 +41,7 @@ export const config: ApiRouteConfig = {
   },
 }
 
-export const handler: Handlers['ListAIConfigs'] = async (req, { state, logger }) => {
+export const handler: Handlers['ListAIConfigs'] = async (req, { logger }) => {
   const userId = req.queryParams.userId as string
 
   if (!userId) {
@@ -56,7 +54,7 @@ export const handler: Handlers['ListAIConfigs'] = async (req, { state, logger })
   logger.info('获取 AI 配置列表', { userId })
 
   // 获取用户的 AI 配置
-  const configs = await state.getGroup<AIConfig>(`${STATE_GROUPS.AI_CONFIGS}_${userId}`)
+  const configs = await aiConfigRepository.list(userId)
 
   logger.info('AI 配置列表获取成功', { userId, count: configs.length })
 

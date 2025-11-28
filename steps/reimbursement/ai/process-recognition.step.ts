@@ -7,6 +7,7 @@
 import { EventConfig, Handlers } from 'motia'
 import { z } from 'zod'
 import { recognizeWithConfig, AIConfig } from '../../../src/services/ai-recognition'
+import { aiConfigRepository } from '../../../src/db/repositories'
 
 // 输入 Schema
 const inputSchema = z.object({
@@ -35,13 +36,12 @@ export const handler: Handlers['AIRecognitionProcess'] = async (input, { emit, l
     // 从用户配置中获取 AI 设置
     let aiConfig: AIConfig | null = null
     
-    const userConfigs = await state.get<Record<string, any>>('ai_configs', userId)
+    const userConfigs = await aiConfigRepository.list(userId)
     
-    if (userConfigs) {
+    if (userConfigs && userConfigs.length > 0) {
       // 查找默认配置或第一个可用配置
-      const configs = Object.values(userConfigs)
-      const defaultConfig = configs.find((c: any) => c.isDefault)
-      const activeConfig = defaultConfig || configs[0]
+      const defaultConfig = userConfigs.find((c: any) => c.isActive)
+      const activeConfig = defaultConfig || userConfigs[0]
       
       if (activeConfig) {
         aiConfig = {
@@ -67,7 +67,7 @@ export const handler: Handlers['AIRecognitionProcess'] = async (input, { emit, l
       completedAt: new Date().toISOString(),
     }
 
-    // 存储结果
+    // 存储结果 (使用 state 作为临时任务存储，因为任务结果是临时的)
     await state.set('ai_tasks', taskId, result)
 
     // 发送完成通知

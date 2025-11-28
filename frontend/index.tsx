@@ -283,7 +283,8 @@ const AppLogo = ({ className = "w-8 h-8" }: { className?: string }) => (
 );
 
 // --- API 请求工具 ---
-const API_BASE_URL = 'http://localhost:3000'; // Motia 后端服务器
+// 生产环境使用相对路径（通过 Nginx 代理），开发环境使用本地后端
+const API_BASE_URL = import.meta.env.PROD ? '' : 'http://localhost:3000';
 
 const apiRequest = async (path: string, options: RequestInit = {}) => {
   const token = localStorage.getItem('reimb_token');

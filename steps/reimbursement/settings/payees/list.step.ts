@@ -8,7 +8,8 @@
 import { ApiRouteConfig, Handlers } from 'motia'
 import { z } from 'zod'
 import { errorHandlerMiddleware } from '../../../../middlewares/error-handler.middleware'
-import { PaymentAccount, PaymentAccountSchema, STATE_GROUPS, ErrorResponseSchema } from '../../types'
+import { PaymentAccountSchema, ErrorResponseSchema } from '../../types'
+import { paymentAccountRepository } from '../../../../src/db/repositories'
 
 // 查询参数
 const queryParams = [
@@ -37,7 +38,7 @@ export const config: ApiRouteConfig = {
   },
 }
 
-export const handler: Handlers['ListPayees'] = async (req, { state, logger }) => {
+export const handler: Handlers['ListPayees'] = async (req, { logger }) => {
   const userId = req.queryParams.userId as string
 
   if (!userId) {
@@ -49,7 +50,7 @@ export const handler: Handlers['ListPayees'] = async (req, { state, logger }) =>
 
   logger.info('获取收款人列表', { userId })
 
-  const paymentAccounts = await state.getGroup<PaymentAccount>(`${STATE_GROUPS.PAYMENT_ACCOUNTS}_${userId}`)
+  const paymentAccounts = await paymentAccountRepository.list(userId)
 
   logger.info('收款人列表获取成功', { userId, count: paymentAccounts.length })
 
@@ -61,13 +62,3 @@ export const handler: Handlers['ListPayees'] = async (req, { state, logger }) =>
     },
   }
 }
-
-
-
-
-
-
-
-
-
-

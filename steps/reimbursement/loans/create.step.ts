@@ -16,9 +16,9 @@ import {
   BudgetProjectSchema,
   PaymentAccountSchema,
   AppUserSchema,
-  STATE_GROUPS, 
   ErrorResponseSchema 
 } from '../types'
+import { loanRepository } from '../../../src/db/repositories'
 
 // 请求体 Schema
 const bodySchema = z.object({
@@ -56,7 +56,7 @@ export const config: ApiRouteConfig = {
   },
 }
 
-export const handler: Handlers['CreateLoan'] = async (req, { state, logger }) => {
+export const handler: Handlers['CreateLoan'] = async (req, { logger }) => {
   const data = bodySchema.parse(req.body)
   const { userId, ...loanData } = data
   
@@ -76,8 +76,8 @@ export const handler: Handlers['CreateLoan'] = async (req, { state, logger }) =>
     updatedAt: now,
   }
 
-  // 存储到 State
-  await state.set(`${STATE_GROUPS.LOANS}_${userId}`, loanId, loan)
+  // 存储到数据库
+  await loanRepository.create(loan)
 
   logger.info('借款申请创建成功', { loanId, userId })
 
@@ -89,13 +89,3 @@ export const handler: Handlers['CreateLoan'] = async (req, { state, logger }) =>
     },
   }
 }
-
-
-
-
-
-
-
-
-
-

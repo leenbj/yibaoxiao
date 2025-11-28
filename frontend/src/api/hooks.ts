@@ -8,8 +8,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import * as api from './client'
 
-// API 基础地址
-const API_BASE = 'http://localhost:3000'
+// API 基础地址 - 生产环境使用相对路径，开发环境使用本地后端
+const API_BASE = import.meta.env.PROD ? '' : 'http://localhost:3000'
 
 // ==================== 用户状态管理 ====================
 

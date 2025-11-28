@@ -8,7 +8,8 @@
 import { ApiRouteConfig, Handlers } from 'motia'
 import { z } from 'zod'
 import { errorHandlerMiddleware } from '../../../../middlewares/error-handler.middleware'
-import { AIConfig, STATE_GROUPS, ErrorResponseSchema, SuccessResponseSchema } from '../../types'
+import { ErrorResponseSchema, SuccessResponseSchema } from '../../types'
+import { aiConfigRepository } from '../../../../src/db/repositories'
 
 // 查询参数
 const queryParams = [
@@ -32,7 +33,7 @@ export const config: ApiRouteConfig = {
   },
 }
 
-export const handler: Handlers['DeleteAIConfig'] = async (req, { state, logger }) => {
+export const handler: Handlers['DeleteAIConfig'] = async (req, { logger }) => {
   const configId = req.pathParams.id
   const userId = req.queryParams.userId as string
 
@@ -46,7 +47,7 @@ export const handler: Handlers['DeleteAIConfig'] = async (req, { state, logger }
   logger.info('删除 AI 配置', { configId, userId })
 
   // 检查是否存在
-  const existing = await state.get<AIConfig>(`${STATE_GROUPS.AI_CONFIGS}_${userId}`, configId)
+  const existing = await aiConfigRepository.getById(userId, configId)
   
   if (!existing) {
     logger.warn('AI 配置不存在', { configId, userId })
@@ -57,7 +58,7 @@ export const handler: Handlers['DeleteAIConfig'] = async (req, { state, logger }
   }
 
   // 删除配置
-  await state.delete(`${STATE_GROUPS.AI_CONFIGS}_${userId}`, configId)
+  await aiConfigRepository.delete(userId, configId)
 
   logger.info('AI 配置删除成功', { configId, userId })
 
@@ -69,13 +70,3 @@ export const handler: Handlers['DeleteAIConfig'] = async (req, { state, logger }
     },
   }
 }
-
-
-
-
-
-
-
-
-
-
