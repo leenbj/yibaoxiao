@@ -1,8 +1,6 @@
 # 易报销 Pro - Docker Compose 配置
 # 包含：PostgreSQL 数据库、Motia 后端、Nginx 前端
 
-version: '3.8'
-
 services:
   # ==================== PostgreSQL 数据库 ====================
   postgres:
