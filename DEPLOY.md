@@ -2,6 +2,83 @@
 
 本文档介绍如何使用 Docker Compose 在宝塔面板的 Linux 服务器上部署易报销 Pro 系统。
 
+## 部署方式
+
+| 方式 | 优点 | 缺点 |
+|------|------|------|
+| **方式一：GitHub Actions 预构建镜像（推荐）** | 服务器无需构建，部署快速 | 需要 GitHub 账号 |
+| **方式二：服务器本地构建** | 无需额外配置 | 首次构建耗时较长 |
+
+---
+
+## 方式一：使用 GitHub Actions 预构建镜像（推荐）
+
+### 工作原理
+
+1. 代码推送到 GitHub 后，GitHub Actions 自动构建 Docker 镜像
+2. 镜像推送到 GitHub Container Registry (ghcr.io)
+3. 服务器只需拉取镜像，无需本地构建
+
+### 部署步骤
+
+#### 1. 创建 GitHub Personal Access Token
+
+1. 访问 https://github.com/settings/tokens
+2. 点击 "Generate new token (classic)"
+3. 勾选 `read:packages` 权限
+4. 生成并保存 Token
+
+#### 2. 服务器登录 GitHub Container Registry
+
+```bash
+# 登录 ghcr.io（将 YOUR_GITHUB_USERNAME 和 YOUR_TOKEN 替换为实际值）
+echo YOUR_TOKEN | docker login ghcr.io -u YOUR_GITHUB_USERNAME --password-stdin
+```
+
+#### 3. 下载配置文件
+
+```bash
+cd /www/wwwroot/
+mkdir yibao && cd yibao
+
+# 下载必要文件
+curl -O https://raw.githubusercontent.com/leenbj/yibaoxiao/main/docker-compose.prod.yml
+curl -O https://raw.githubusercontent.com/leenbj/yibaoxiao/main/.env.production
+mv .env.production .env
+```
+
+#### 4. 编辑环境变量
+
+```bash
+nano .env
+# 修改 POSTGRES_PASSWORD、ADMIN_EMAIL、ADMIN_PASSWORD 等
+```
+
+#### 5. 启动服务
+
+```bash
+docker-compose -f docker-compose.prod.yml up -d
+
+# 查看状态
+docker-compose -f docker-compose.prod.yml ps
+```
+
+#### 6. 更新部署
+
+当有新版本发布时：
+
+```bash
+# 拉取最新镜像
+docker-compose -f docker-compose.prod.yml pull
+
+# 重启服务
+docker-compose -f docker-compose.prod.yml up -d
+```
+
+---
+
+## 方式二：服务器本地构建
+
 ## 系统架构
 
 ```

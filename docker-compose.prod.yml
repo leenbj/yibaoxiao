@@ -1,0 +1,83 @@
+# 易报销 Pro - 生产环境 Docker Compose（使用预构建镜像）
+# 
+# 使用方法：
+# 1. 登录 GitHub Container Registry: 
+#    echo $GITHUB_TOKEN | docker login ghcr.io -u USERNAME --password-stdin
+# 2. 启动服务: 
+#    docker-compose -f docker-compose.prod.yml up -d
+
+services:
+  # PostgreSQL 数据库
+  postgres:
+    image: postgres:16-alpine
+    container_name: yibao-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-yibao}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-yibao123456}
+      POSTGRES_DB: ${POSTGRES_DB:-yibao}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - yibao-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-yibao}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Motia 后端服务（使用预构建镜像）
+  backend:
+    image: ghcr.io/leenbj/yibaoxiao-backend:latest
+    container_name: yibao-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-yibao}:${POSTGRES_PASSWORD:-yibao123456}@postgres:5432/${POSTGRES_DB:-yibao}
+      # AI 配置
+      DEFAULT_AI_PROVIDER: ${DEFAULT_AI_PROVIDER:-}
+      DEFAULT_AI_API_KEY: ${DEFAULT_AI_API_KEY:-}
+      DEFAULT_AI_API_URL: ${DEFAULT_AI_API_URL:-}
+      DEFAULT_AI_MODEL: ${DEFAULT_AI_MODEL:-}
+      ADMIN_USER_ID: ${ADMIN_USER_ID:-}
+      # 超级管理员配置
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@example.com}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123456}
+      ADMIN_NAME: ${ADMIN_NAME:-系统管理员}
+      ADMIN_DEPARTMENT: ${ADMIN_DEPARTMENT:-管理部}
+    networks:
+      - yibao-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 3
+
+  # Nginx 前端服务（使用预构建镜像）
+  frontend:
+    image: ghcr.io/leenbj/yibaoxiao-frontend:latest
+    container_name: yibao-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "80:80"
+    networks:
+      - yibao-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+networks:
+  yibao-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+
