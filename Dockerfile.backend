@@ -1,5 +1,5 @@
-# 易报销 Pro - 后端 Dockerfile（优化版）
-# 跳过预构建，使用 motia dev 运行时构建
+# 易报销 Pro - 后端 Dockerfile（方案B：运行时构建）
+# 构建快速，首次启动时自动构建 Motia 应用
 
 FROM node:20-alpine
 
@@ -17,8 +17,11 @@ RUN npm ci && npm cache clean --force
 # 复制源代码
 COPY . .
 
-# 生成类型定义（快速操作）
+# 生成类型定义（快速）
 RUN npm run generate-types || true
+
+# 创建构建缓存目录（用于持久化）
+RUN mkdir -p /app/.motia /app/dist
 
 # 创建非 root 用户
 RUN addgroup -g 1001 -S nodejs && \
@@ -31,12 +34,12 @@ USER motia
 # 暴露端口
 EXPOSE 3000
 
-# 健康检查
-HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=5 \
+# 健康检查（首次启动需要较长时间）
+HEALTHCHECK --interval=30s --timeout=10s --start-period=180s --retries=5 \
     CMD wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1
 
 # 使用 tini 作为 init 进程
 ENTRYPOINT ["/sbin/tini", "--"]
 
-# 直接使用 motia dev（运行时构建，首次启动会构建）
+# 启动命令 - motia dev 会在首次启动时构建
 CMD ["npx", "motia", "dev"]

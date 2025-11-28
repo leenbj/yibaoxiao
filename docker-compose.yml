@@ -46,6 +46,10 @@ services:
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123456}
       ADMIN_NAME: ${ADMIN_NAME:-系统管理员}
       ADMIN_DEPARTMENT: ${ADMIN_DEPARTMENT:-管理部}
+    volumes:
+      # 持久化 Motia 构建缓存，加速后续启动
+      - motia_cache:/app/.motia
+      - motia_dist:/app/dist
     ports:
       - "3000:3000"  # 可选：暴露到宿主机，方便调试
     depends_on:
@@ -55,8 +59,8 @@ services:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
       interval: 30s
       timeout: 10s
-      retries: 3
-      start_period: 60s
+      retries: 5
+      start_period: 180s
     networks:
       - yibao-network
 
@@ -84,6 +88,10 @@ services:
 volumes:
   postgres_data:
     name: yibao_postgres_data
+  motia_cache:
+    name: yibao_motia_cache
+  motia_dist:
+    name: yibao_motia_dist
 
 # ==================== 网络 ====================
 networks:
