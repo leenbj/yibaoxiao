@@ -232,21 +232,7 @@ function MyComponent() {
 - 统计数据展示
 - AI 识别测试
 
-## 🚀 一键部署（推荐）
-
-在服务器上执行一条命令即可完成部署：
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/leenbj/yibaoxiao/main/deploy.sh | bash
-```
-
-脚本会自动：
-- ✅ 检测并安装 Docker（如未安装）
-- ✅ 下载配置文件
-- ✅ 交互式配置（数据库密码、管理员账号）
-- ✅ 拉取预构建镜像并启动服务
-
-**首次启动需要 3-5 分钟**，之后重启只需几秒钟。
+## 🚀 服务器部署
 
 ### 系统架构
 
@@ -261,6 +247,62 @@ curl -fsSL https://raw.githubusercontent.com/leenbj/yibaoxiao/main/deploy.sh | b
 └─────────────────────────────────────────────────────────┘
 ```
 
+### 部署步骤
+
+**步骤 1：创建目录**
+
+```bash
+mkdir -p /root/yibaoxiao && cd /root/yibaoxiao
+```
+
+**步骤 2：下载配置文件**
+
+```bash
+curl -O https://raw.githubusercontent.com/leenbj/yibaoxiao/main/docker-compose.prod.yml
+curl -O https://raw.githubusercontent.com/leenbj/yibaoxiao/main/.env.production
+mv docker-compose.prod.yml docker-compose.yml
+mv .env.production .env
+```
+
+**步骤 3：编辑配置**
+
+```bash
+nano .env
+```
+
+修改以下配置项：
+- `POSTGRES_PASSWORD` - 数据库密码
+- `ADMIN_EMAIL` - 管理员邮箱
+- `ADMIN_PASSWORD` - 管理员密码
+- `DEFAULT_AI_API_KEY` - AI API密钥（可选）
+
+**步骤 4：拉取镜像**
+
+```bash
+docker-compose pull
+```
+
+**步骤 5：启动服务**
+
+```bash
+docker-compose up -d
+```
+
+**步骤 6：查看启动进度**
+
+```bash
+docker-compose logs -f backend
+```
+
+等待看到 `✓ [SUCCESS] Build completed` 后，服务即可访问。
+
+**首次启动需要 3-5 分钟**（Motia 运行时构建），后续重启只需几秒钟。
+
+### 访问系统
+
+- 访问地址：`http://服务器IP`
+- 管理员账号：配置文件中设置的 `ADMIN_EMAIL`
+
 ### 常用命令
 
 ```bash
@@ -272,7 +314,7 @@ docker-compose ps
 # 查看日志
 docker-compose logs -f
 
-# 查看后端启动进度
+# 查看后端日志
 docker-compose logs -f backend
 
 # 重启服务
@@ -293,32 +335,6 @@ docker-compose exec postgres pg_dump -U yibao yibao > backup_$(date +%Y%m%d).sql
 
 # 恢复数据库
 cat backup.sql | docker-compose exec -T postgres psql -U yibao -d yibao
-```
-
-### 手动部署
-
-如果一键脚本无法使用，可以手动部署：
-
-```bash
-# 1. 创建目录
-mkdir -p /root/yibaoxiao && cd /root/yibaoxiao
-
-# 2. 下载配置文件
-curl -O https://raw.githubusercontent.com/leenbj/yibaoxiao/main/docker-compose.prod.yml
-curl -O https://raw.githubusercontent.com/leenbj/yibaoxiao/main/.env.production
-mv docker-compose.prod.yml docker-compose.yml
-mv .env.production .env
-
-# 3. 编辑配置
-nano .env
-# 修改 POSTGRES_PASSWORD、ADMIN_EMAIL、ADMIN_PASSWORD
-
-# 4. 拉取镜像并启动
-docker-compose pull
-docker-compose up -d
-
-# 5. 查看启动进度
-docker-compose logs -f backend
 ```
 
 详细部署说明请查看 [DEPLOY.md](DEPLOY.md)
