@@ -232,13 +232,27 @@ function MyComponent() {
 - 统计数据展示
 - AI 识别测试
 
-## Docker 部署 (生产环境)
+## 🚀 一键部署（推荐）
+
+在服务器上执行一条命令即可完成部署：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/leenbj/yibaoxiao/main/deploy.sh | bash
+```
+
+脚本会自动：
+- ✅ 检测并安装 Docker（如未安装）
+- ✅ 下载配置文件
+- ✅ 交互式配置（数据库密码、管理员账号）
+- ✅ 拉取预构建镜像并启动服务
+
+**首次启动需要 3-5 分钟**，之后重启只需几秒钟。
 
 ### 系统架构
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                    宝塔面板服务器                         │
+│                       服务器                             │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────┐  │
 │  │  Frontend   │  │   Backend   │  │   PostgreSQL    │  │
 │  │  (Nginx)    │──│   (Motia)   │──│   (Database)    │  │
@@ -247,48 +261,19 @@ function MyComponent() {
 └─────────────────────────────────────────────────────────┘
 ```
 
-### 部署文件
-
-| 文件 | 说明 |
-|------|------|
-| `docker-compose.yml` | Docker Compose 编排配置 |
-| `Dockerfile.backend` | 后端 Motia 服务镜像 |
-| `Dockerfile.frontend` | 前端 Nginx 服务镜像 |
-| `nginx.conf` | Nginx 反向代理配置 |
-| `.env.production` | 生产环境变量模板 |
-
-### 快速部署
-
-```bash
-# 1. 上传代码到服务器
-cd /www/wwwroot/
-git clone <仓库地址> yibao
-cd yibao
-
-# 2. 配置环境变量
-cp .env.production .env
-# 编辑 .env 修改数据库密码和 AI 配置
-
-# 3. 构建并启动所有服务
-docker-compose up -d --build
-
-# 4. 初始化数据库表结构
-docker-compose exec backend sh
-npm run db:push
-exit
-
-# 5. 访问系统
-# http://服务器IP/
-```
-
 ### 常用命令
 
 ```bash
+cd /root/yibaoxiao
+
 # 查看服务状态
 docker-compose ps
 
 # 查看日志
 docker-compose logs -f
+
+# 查看后端启动进度
+docker-compose logs -f backend
 
 # 重启服务
 docker-compose restart
@@ -296,8 +281,8 @@ docker-compose restart
 # 停止服务
 docker-compose down
 
-# 重新构建
-docker-compose up -d --build
+# 更新到最新版本
+docker-compose pull && docker-compose up -d
 ```
 
 ### 数据备份
@@ -308,6 +293,32 @@ docker-compose exec postgres pg_dump -U yibao yibao > backup_$(date +%Y%m%d).sql
 
 # 恢复数据库
 cat backup.sql | docker-compose exec -T postgres psql -U yibao -d yibao
+```
+
+### 手动部署
+
+如果一键脚本无法使用，可以手动部署：
+
+```bash
+# 1. 创建目录
+mkdir -p /root/yibaoxiao && cd /root/yibaoxiao
+
+# 2. 下载配置文件
+curl -O https://raw.githubusercontent.com/leenbj/yibaoxiao/main/docker-compose.prod.yml
+curl -O https://raw.githubusercontent.com/leenbj/yibaoxiao/main/.env.production
+mv docker-compose.prod.yml docker-compose.yml
+mv .env.production .env
+
+# 3. 编辑配置
+nano .env
+# 修改 POSTGRES_PASSWORD、ADMIN_EMAIL、ADMIN_PASSWORD
+
+# 4. 拉取镜像并启动
+docker-compose pull
+docker-compose up -d
+
+# 5. 查看启动进度
+docker-compose logs -f backend
 ```
 
 详细部署说明请查看 [DEPLOY.md](DEPLOY.md)
