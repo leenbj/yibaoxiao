@@ -294,16 +294,23 @@ docker-compose up -d
 docker-compose logs -f backend
 ```
 
-等待看到以下信息表示启动成功：
-```
-[2/4] 同步数据库表结构...
-[3/4] 初始化超级管理员...
-管理员初始化完成, ID: user_xxx
-[4/4] 启动 Motia 服务...
-🚀 Server ready and listening on port 3000
-```
+等待看到 `🚀 Server ready and listening on port 3000` 表示启动成功。
 
 **首次启动需要 3-5 分钟**（Motia 运行时构建），后续重启只需几秒钟。
+
+**步骤 7：初始化数据库（首次部署必须执行）**
+
+```bash
+# 创建数据库表
+docker-compose exec backend npx drizzle-kit push
+
+# 创建超级管理员（使用 .env 中配置的账号密码）
+docker-compose exec backend npx ts-node -e "
+require('./src/db/init-admin').initializeAdmin().then(() => process.exit(0))
+"
+```
+
+> 💡 **提示**：新版本镜像会自动执行上述初始化，如果日志中看到 `[2/4] 同步数据库表结构...` 则无需手动执行。
 
 ### 访问系统
 
