@@ -2,7 +2,7 @@
   "name": "yibao",
   "description": "易报销 Pro - 智能报销管理系统",
   "scripts": {
-    "postinstall": "motia install",
+    "postinstall": "motia install || true",
     "dev": "motia dev",
     "start": "npx ts-node scripts/start.ts",
     "start:prod": "motia start",
@@ -12,8 +12,7 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
-    "db:studio": "drizzle-kit studio",
-    "migrate:redis-to-pg": "npx ts-node scripts/migrate-redis-to-pg.ts"
+    "db:studio": "drizzle-kit studio"
   },
   "keywords": [
     "motia"
@@ -21,21 +20,16 @@
   "dependencies": {
     "@motiadev/core": "^0.13.0-beta.161",
     "@motiadev/plugin-endpoint": "^0.13.0-beta.161",
-    "@motiadev/plugin-logs": "^0.13.0-beta.161",
-    "@motiadev/plugin-observability": "^0.13.0-beta.161",
-    "@motiadev/plugin-states": "^0.13.0-beta.161",
     "dotenv": "^17.2.3",
     "drizzle-orm": "^0.44.7",
     "motia": "^0.13.0-beta.161",
     "pg": "^8.16.3",
-    "redis": "^5.10.0",
     "ts-node": "^10.9.2",
     "typescript": "^5.7.3",
     "zod": "^4.1.12"
   },
   "devDependencies": {
     "@types/pg": "^8.15.6",
-    "@types/react": "^19.1.1",
     "drizzle-kit": "^0.31.7"
   }
 }

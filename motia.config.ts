@@ -1,9 +1,10 @@
 import { config } from '@motiadev/core'
-const statesPlugin = require('@motiadev/plugin-states/plugin')
+
+// 只加载必要的插件（生产环境优化）
 const endpointPlugin = require('@motiadev/plugin-endpoint/plugin')
-const logsPlugin = require('@motiadev/plugin-logs/plugin')
-const observabilityPlugin = require('@motiadev/plugin-observability/plugin')
 
 export default config({
-  plugins: [observabilityPlugin, statesPlugin, endpointPlugin, logsPlugin],
+  // 精简插件列表，只保留 endpoint 插件
+  // 移除了 states、logs、observability 以减少依赖和构建时间
+  plugins: [endpointPlugin],
 })

@@ -1,56 +1,57 @@
-# 易报销 Pro - 后端 Dockerfile（生产环境）
-# 针对 2核4G 低配服务器优化
-# 使用多阶段构建减少最终镜像大小
+# 易报销 Pro - 后端 Dockerfile（生产环境极速版）
+# 优化：只构建必要组件，跳过不必要的插件和依赖
 
 # ==================== 构建阶段 ====================
 FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# 设置生产环境和构建时内存限制
+# 设置生产环境
 ENV NODE_ENV=production
 ARG NODE_OPTIONS="--max-old-space-size=4096"
 ENV NODE_OPTIONS=${NODE_OPTIONS}
 
-# 安装构建原生模块所需的依赖
+# 安装构建依赖（最小化）
 RUN apk add --no-cache python3 make g++
 
 # 复制 package 文件
 COPY package*.json ./
 
-# 安装所有依赖（生产环境需要 ts-node 和 drizzle-kit）
-RUN npm ci && npm cache clean --force
+# 安装依赖（跳过 postinstall 中的 motia install）
+RUN npm ci --ignore-scripts && npm cache clean --force
 
-# 复制源代码
+# 只复制必要的源代码文件
 COPY tsconfig.json ./
 COPY drizzle.config.ts ./
 COPY motia.config.ts ./
 COPY types.d.ts ./
 COPY src ./src
-COPY steps ./steps
 COPY middlewares ./middlewares
 COPY scripts ./scripts
 
-# 生成类型定义
-RUN npm run generate-types 2>/dev/null || true
+# 只复制必要的 steps（跳过 petstore、hello 等示例）
+COPY steps/health ./steps/health
+COPY steps/reimbursement ./steps/reimbursement
 
-# 预构建 Motia 项目（生产模式）
-# 这会预编译所有 steps，减少运行时 CPU 占用
-RUN NODE_ENV=production npm run build 2>/dev/null || true
+# 生成类型定义（快速）
+RUN npx motia generate-types 2>/dev/null || true
+
+# 预构建 Motia（生产模式，只构建必要组件）
+RUN NODE_ENV=production npx motia build 2>/dev/null || true
 
 # ==================== 运行阶段（生产环境）====================
 FROM node:20-alpine AS runner
 
 WORKDIR /app
 
-# 设置生产环境变量
+# 设置生产环境
 ENV NODE_ENV=production
 ENV NODE_OPTIONS="--max-old-space-size=1024"
 
-# 安装运行时工具
+# 安装最小运行时依赖
 RUN apk add --no-cache tini wget postgresql-client
 
-# 从构建阶段复制所有必要文件
+# 从构建阶段复制必要文件
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package*.json ./
 COPY --from=builder /app/dist ./dist
@@ -64,11 +65,11 @@ COPY --from=builder /app/motia.config.ts ./
 COPY --from=builder /app/tsconfig.json ./
 COPY --from=builder /app/types.d.ts ./
 
-# 创建必要目录并设置权限
+# 创建目录并设置权限
 RUN mkdir -p /app/.motia /app/dist && \
     chmod +x /app/scripts/docker-start.sh
 
-# 创建非 root 用户（安全最佳实践）
+# 创建非 root 用户
 RUN addgroup -g 1001 -S nodejs && \
     adduser -S motia -u 1001 -G nodejs && \
     chown -R motia:nodejs /app
@@ -77,17 +78,9 @@ USER motia
 
 EXPOSE 3000
 
-# 健康检查（生产环境配置）
-HEALTHCHECK --interval=60s --timeout=10s --start-period=180s --retries=3 \
+# 健康检查
+HEALTHCHECK --interval=60s --timeout=10s --start-period=120s --retries=3 \
     CMD wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1
 
-# 使用 tini 作为 init 进程（防止僵尸进程）
 ENTRYPOINT ["/sbin/tini", "--"]
-
-# 启动生产环境服务
-# docker-start.sh 会执行：
-# 1. 等待数据库就绪
-# 2. 推送数据库表结构 (drizzle-kit push)
-# 3. 初始化超级管理员 (wangbo@knet.cn)
-# 4. 启动 Motia 生产模式 (motia start)
 CMD ["/app/scripts/docker-start.sh"]
