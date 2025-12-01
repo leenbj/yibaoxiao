@@ -33,8 +33,9 @@ COPY scripts ./scripts
 COPY steps/health ./steps/health
 COPY steps/reimbursement ./steps/reimbursement
 
-# 生成类型定义（快速）
-RUN npx motia generate-types 2>/dev/null || true
+# 跳过 generate-types（生产环境不需要，节省 ~4 分钟）
+# types.d.ts 已提交到仓库，无需重新生成
+RUN echo "Skipping generate-types - using pre-committed types.d.ts"
 
 # 预构建 Motia（生产模式，只构建必要组件）
 RUN NODE_ENV=production npx motia build 2>/dev/null || true

@@ -60,8 +60,13 @@ jobs:
           push: true
           tags: ${{ steps.meta-backend.outputs.tags }}
           labels: ${{ steps.meta-backend.outputs.labels }}
-          cache-from: type=gha,scope=backend
-          cache-to: type=gha,mode=max,scope=backend
+          # 使用多层缓存：Registry 缓存 + GHA 缓存
+          cache-from: |
+            type=registry,ref=ghcr.io/${{ github.repository }}-backend:cache
+            type=gha,scope=backend
+          cache-to: |
+            type=registry,ref=ghcr.io/${{ github.repository }}-backend:cache,mode=max
+            type=gha,mode=max,scope=backend
           build-args: |
             NODE_OPTIONS=--max-old-space-size=4096
 
@@ -104,8 +109,13 @@ jobs:
           push: true
           tags: ${{ steps.meta-frontend.outputs.tags }}
           labels: ${{ steps.meta-frontend.outputs.labels }}
-          cache-from: type=gha,scope=frontend
-          cache-to: type=gha,mode=max,scope=frontend
+          # 使用多层缓存：Registry 缓存 + GHA 缓存
+          cache-from: |
+            type=registry,ref=ghcr.io/${{ github.repository }}-frontend:cache
+            type=gha,scope=frontend
+          cache-to: |
+            type=registry,ref=ghcr.io/${{ github.repository }}-frontend:cache,mode=max
+            type=gha,mode=max,scope=frontend
 
   summary:
     needs: [build-backend, build-frontend]
