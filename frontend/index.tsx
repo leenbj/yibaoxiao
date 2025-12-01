@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { createRoot } from "react-dom/client";
 import { GoogleGenAI } from "@google/genai";
+import html2canvas from "html2canvas";
+import { jsPDF } from "jspdf";
 import {
   LogIn,
   LogOut,
@@ -15,6 +17,8 @@ import {
   Clock,
   Trash2,
   Printer,
+  Eye,
+  Download,
   ChevronRight,
   ChevronLeft,
   Loader2,
@@ -610,9 +614,9 @@ const MainApp = ({ user, onLogout }: { user: AppUser, onLogout: () => void }) =>
     }
   };
 
-  const handleReportAction = async (report: Report, action: 'save' | 'print') => {
-      const status: ReportStatus = action === 'print' ? 'submitted' : 'draft';
-      const expenseStatus: ExpenseStatus = action === 'print' ? 'processing' : 'pending';
+  const handleReportAction = async (report: Report, action: 'save' | 'pdf') => {
+      const status: ReportStatus = action === 'pdf' ? 'submitted' : 'draft';
+      const expenseStatus: ExpenseStatus = action === 'pdf' ? 'processing' : 'pending';
       
       const newReport = { ...report, status };
     
@@ -635,19 +639,15 @@ const MainApp = ({ user, onLogout }: { user: AppUser, onLogout: () => void }) =>
           updateExpensesStatus(linkedExpenseIds, expenseStatus);
       }
 
-      if(action === 'print') {
-          setTimeout(() => {
-              setSelectedId(report.id);
-              setView("report-detail");
-              setTimeout(() => window.print(), 500);
-          }, 100);
-      } else {
-          setView("history");
-      }
+      // 跳转到详情页面（用户可在详情页生成 PDF）
+      setTimeout(() => {
+          setSelectedId(report.id);
+          setView("report-detail");
+      }, 100);
   };
 
-  const handleLoanAction = async (loan: LoanRecord, action: 'save' | 'print') => {
-    const status: ReportStatus = action === 'print' ? 'submitted' : 'draft';
+  const handleLoanAction = async (loan: LoanRecord, action: 'save' | 'pdf') => {
+    const status: ReportStatus = action === 'pdf' ? 'submitted' : 'draft';
     const newLoan = { ...loan, status };
     
     try {
@@ -662,15 +662,11 @@ const MainApp = ({ user, onLogout }: { user: AppUser, onLogout: () => void }) =>
     setLoans(prev => [newLoan, ...prev]);
     }
     
-    if(action === 'print') {
-        setTimeout(() => {
-            setSelectedId(loan.id);
-            setView("loan-detail");
-            setTimeout(() => window.print(), 500);
-        }, 100);
-    } else {
-        setView("history");
-    }
+    // 跳转到详情页面（用户可在详情页生成 PDF）
+    setTimeout(() => {
+        setSelectedId(loan.id);
+        setView("loan-detail");
+    }, 100);
   };
 
   const deleteRecord = async (id: string, type: 'report' | 'loan') => {
@@ -1531,26 +1527,43 @@ const CreateReportView = ({ settings, expenses, setExpenses, loans, onAction, on
             const invoiceImages = invoiceFiles.map(f => cleanB64(f.data));
             const approvalImages = approvalFiles.map(f => cleanB64(f.data));
 
-            // 1. 识别电子发票 - 支持多张发票
-            console.log('[AI] 发送发票识别请求', { imageCount: invoiceImages.length });
-            const invoiceResponse = await apiRequest('/api/ai/recognize', {
+            // 并行识别发票和审批单，大幅提升速度
+            console.log('[AI] 开始并行识别发票和审批单');
+            const startTime = Date.now();
+            
+            // 创建并行请求
+            const invoicePromise = apiRequest('/api/ai/recognize', {
                 method: 'POST',
                 body: JSON.stringify({
                     type: 'invoice',
                     images: invoiceImages,
                     mimeType: 'image/jpeg',
                 }),
-            }) as any;
-            console.log('[AI] 发票识别原始响应', JSON.stringify(invoiceResponse, null, 2));
-            let invoiceData = invoiceResponse.result || {};
+            });
             
-            // 检查返回的是否是数组（多张发票的情况）
+            const approvalPromise = approvalImages.length > 0 
+                ? apiRequest('/api/ai/recognize', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        type: 'approval',
+                        images: approvalImages,
+                        mimeType: 'image/jpeg',
+                    }),
+                })
+                : Promise.resolve({ result: {} });
+            
+            // 等待所有请求完成
+            const [invoiceResponse, approvalResponse] = await Promise.all([invoicePromise, approvalPromise]) as any[];
+            
+            console.log(`[AI] 并行识别完成，耗时: ${Date.now() - startTime}ms`);
+            
+            // 处理发票识别结果
+            let invoiceData = invoiceResponse.result || {};
             const isArray = Array.isArray(invoiceData);
             console.log('[AI] 发票识别数据类型', { isArray, dataType: typeof invoiceData });
             
             if (isArray) {
                 console.log('[AI] 检测到多张发票数组格式，发票数量:', invoiceData.length);
-                // 如果是数组，转换为 { invoices: [...] } 格式
                 invoiceData = { invoices: invoiceData };
             }
             
@@ -1565,18 +1578,9 @@ const CreateReportView = ({ settings, expenses, setExpenses, loans, onAction, on
             });
             setAiInvoiceResult(invoiceData);
 
-            // 2. 如果有审批单，识别审批单
-            let approvalData: any = {};
+            // 处理审批单识别结果
+            const approvalData = approvalResponse.result || {};
             if (approvalImages.length > 0) {
-                const approvalResponse = await apiRequest('/api/ai/recognize', {
-                    method: 'POST',
-                    body: JSON.stringify({
-                        type: 'approval',
-                        images: approvalImages,
-                        mimeType: 'image/jpeg',
-                    }),
-                }) as any;
-                approvalData = approvalResponse.result || {};
                 setAiApprovalResult(approvalData);
             }
 
@@ -2116,19 +2120,19 @@ const CreateReportView = ({ settings, expenses, setExpenses, loans, onAction, on
                                     <button 
                                         onClick={() => {
                                             if (!isMatch) {
-                                                alert('金额审核未通过！\n\n发票总金额与报销单录入金额不匹配，请调整后再打印。');
+                                                alert('金额审核未通过！\n\n发票总金额与报销单录入金额不匹配，请调整后再提交。');
                                                 return;
                                             }
-                                            handleSubmit('print');
+                                            handleSubmit('pdf');
                                         }} 
                                         className={`px-3 py-1.5 rounded-lg font-medium text-sm shadow-sm flex items-center gap-1.5 ${
                                             isMatch 
                                                 ? 'bg-indigo-600 text-white hover:bg-indigo-700' 
                                                 : 'bg-slate-300 text-slate-500 cursor-not-allowed'
                                         }`}
-                                        title={isMatch ? '打印报销单' : '金额审核未通过，无法打印'}
+                                        title={isMatch ? '提交报销单' : '金额审核未通过，无法提交'}
                                     >
-                                        <Printer size={14}/> 打印报销单
+                                        <Download size={14}/> 提交报销
                                     </button>
                                 );
                             })()}
@@ -2822,8 +2826,8 @@ const LoanView = ({ settings, onAction, onBack }: any) => {
                             <button onClick={() => handleSubmit('save')} className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 font-medium text-sm hover:bg-slate-50 flex items-center gap-1.5">
                                 <Save size={14}/> 保存草稿
                             </button>
-                            <button onClick={() => handleSubmit('print')} className="px-3 py-1.5 rounded-lg bg-amber-500 text-white font-medium text-sm shadow-md shadow-amber-200 hover:bg-amber-600 flex items-center gap-1.5">
-                                <Printer size={14}/> 打印借款单
+                            <button onClick={() => handleSubmit('pdf')} className="px-3 py-1.5 rounded-lg bg-amber-500 text-white font-medium text-sm shadow-md shadow-amber-200 hover:bg-amber-600 flex items-center gap-1.5">
+                                <Download size={14}/> 提交借款
                             </button>
                         </div>
                     </div>
@@ -3036,9 +3040,9 @@ const HistoryView = ({ reports, loans, onDelete, onComplete, onSelect }: any) =>
                             <div className="text-xs text-slate-400 mt-1">{formatDate(item.createdDate || item.date)} · ¥{item.totalAmount || item.amount}</div>
                         </div>
                         <div className="flex items-center gap-2">
-                            <button onClick={() => onSelect(item.id, tab)} className="p-2 text-slate-700 bg-slate-100 rounded-lg hover:bg-indigo-100"><Printer size={16}/></button>
-                            {item.status !== 'paid' && <button onClick={() => onComplete(item.id, tab)} className="p-2 text-green-600 bg-green-50 rounded-lg hover:bg-green-100"><CheckCircle size={16}/></button>}
-                            <button onClick={() => onDelete(item.id, tab)} className="p-2 text-red-600 bg-red-50 rounded-lg hover:bg-red-100"><Trash2 size={16}/></button>
+                            <button onClick={() => onSelect(item.id, tab)} className="p-2 text-slate-700 bg-slate-100 rounded-lg hover:bg-indigo-100" title="查看/编辑"><Eye size={16}/></button>
+                            {item.status !== 'paid' && <button onClick={() => onComplete(item.id, tab)} className="p-2 text-green-600 bg-green-50 rounded-lg hover:bg-green-100" title="完成报销"><CheckCircle size={16}/></button>}
+                            <button onClick={() => onDelete(item.id, tab)} className="p-2 text-red-600 bg-red-50 rounded-lg hover:bg-red-100" title="删除"><Trash2 size={16}/></button>
                         </div>
                     </div>
                 ))}
@@ -4376,30 +4380,24 @@ const GeneralReimbursementForm = ({ data }: any) => {
     const month = currentDate.getMonth() + 1;
     const day = currentDate.getDate();
     
-    // 外层容器样式 - 横版 A4 页面，用于打印时的页面尺寸
+    // 缩放比例
+    const scale = 1;
+    
+    // 外层容器样式 - 横版 A4 页面
     const containerStyle: React.CSSProperties = {
         width: '297mm',  // A4 横版宽度
         height: '210mm', // A4 横版高度
         backgroundColor: 'white',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'flex-start', // 顶部对齐
-        paddingTop: '10mm', // 顶部留白
+        padding: '8mm 12mm',
         boxSizing: 'border-box',
+        fontFamily: '"SimSun", "Songti SC", serif',
+        fontSize: '12px',
+        lineHeight: '1.4',
     };
     
-    // 样式定义 - 完全按照 HTML 模板，整体缩放至 80%（包括高度）
-    const scale = 0.8; // 缩放比例
-    
+    // 内容容器
     const paperStyle: React.CSSProperties = {
-        backgroundColor: 'white',
-        width: `calc(297mm * ${scale})`,  // A4 横版宽度的 80%
-        padding: `${12 * scale}mm ${16 * scale}mm`, // 缩放后的内边距
-        fontFamily: '"SimSun", "Songti SC", serif',
-        fontSize: `${14 * scale}px`, // 14px * 0.8
-        lineHeight: '1.2', // 缩小行高
-        boxSizing: 'border-box',
+        width: '100%',
     };
 
     const tableStyle: React.CSSProperties = {
@@ -4411,40 +4409,42 @@ const GeneralReimbursementForm = ({ data }: any) => {
 
     const cellStyle: React.CSSProperties = {
         border: '1px solid black',
-        padding: `${6 * scale}px ${5 * scale}px`, // 缩放后的内边距
+        padding: '4px 3px',
         verticalAlign: 'middle',
-        fontSize: `${14 * scale}px`, // 缩放字体
-        lineHeight: '1.2',
+        fontSize: '12px',
+        lineHeight: '1.3',
         overflow: 'hidden',
+        textAlign: 'center',
     };
 
     const titleStyle: React.CSSProperties = {
         fontFamily: '"SimSun", serif',
-        fontSize: `${24 * scale}px`, // 24px * 0.8
+        fontSize: '20px',
         textAlign: 'center',
-        marginBottom: `${4 * scale}px`,
+        marginBottom: '3px',
+        fontWeight: 'bold',
     };
 
     const subtitleStyle: React.CSSProperties = {
         fontFamily: '"SimSun", serif',
-        fontSize: `${20 * scale}px`, // 20px * 0.8
+        fontSize: '18px',
         textAlign: 'center',
-        marginBottom: `${16 * scale}px`, // 20px * 0.8
-        letterSpacing: `${4 * scale}px`,
+        marginBottom: '12px',
+        letterSpacing: '4px',
     };
 
     const headerRowStyle: React.CSSProperties = {
         display: 'flex',
         justifyContent: 'space-between',
-        marginBottom: `${3 * scale}px`,
-        fontSize: `${16 * scale}px`, // 16px * 0.8
+        marginBottom: '3px',
+        fontSize: '13px',
     };
 
     const underlineStyle: React.CSSProperties = {
         borderBottom: '1px solid black',
-        padding: `0 ${8 * scale}px`,
+        padding: '0 6px',
         display: 'inline-block',
-        minWidth: `${40 * scale}px`,
+        minWidth: '30px',
         textAlign: 'center',
     };
     
@@ -4521,12 +4521,12 @@ const GeneralReimbursementForm = ({ data }: any) => {
 
                     {/* 第4行：提请报销金额 + 预支借款金额 */}
                     <tr>
-                        <td colSpan={2} style={cellStyle}>
+                        <td colSpan={2} style={{ ...cellStyle, textAlign: 'left', paddingLeft: '8px' }}>
                             <span style={{ fontWeight: 'bold' }}>提请报销金额：</span>
                             <span style={{ marginLeft: `${4 * scale}px`, fontSize: `${13 * scale}px` }}>※{digitToChinese(data.totalAmount || 0)}</span>
                             <span style={{ float: 'right', marginRight: `${4 * scale}px`, whiteSpace: 'nowrap' }}>￥ <span style={{ textDecoration: 'underline' }}>{(data.totalAmount || 0).toFixed(2)}</span> 元</span>
                         </td>
-                        <td colSpan={3} style={cellStyle}>
+                        <td colSpan={3} style={{ ...cellStyle, textAlign: 'left', paddingLeft: '8px' }}>
                             <span style={{ fontWeight: 'bold' }}>预支借款金额：</span>
                             <span>{(data.prepaidAmount || 0).toFixed(2)}</span>
                             <span style={{ float: 'right', marginRight: `${8 * scale}px` }}>￥ <span style={{ textDecoration: 'underline' }}>{digitToChinese(data.prepaidAmount || 0)}</span></span>
@@ -4535,12 +4535,12 @@ const GeneralReimbursementForm = ({ data }: any) => {
 
                     {/* 第5行：应领款金额 + 结算方式 */}
                     <tr>
-                        <td colSpan={2} style={cellStyle}>
+                        <td colSpan={2} style={{ ...cellStyle, textAlign: 'left', paddingLeft: '8px' }}>
                             <span style={{ fontWeight: 'bold' }}>应领款金额：</span>
                             <span style={{ marginLeft: `${4 * scale}px`, fontSize: `${13 * scale}px` }}>※{digitToChinese(Math.abs(payableAmount))}</span>
                             <span style={{ float: 'right', marginRight: `${4 * scale}px`, whiteSpace: 'nowrap' }}>￥ <span style={{ textDecoration: 'underline' }}>{payableAmount.toFixed(2)}</span> 元</span>
                         </td>
-                        <td colSpan={3} style={cellStyle}>
+                        <td colSpan={3} style={{ ...cellStyle, textAlign: 'left', paddingLeft: '8px' }}>
                             <span style={{ fontWeight: 'bold' }}>结算方式：</span>
                             <span style={{ marginLeft: `${16 * scale}px` }}>□现金</span>
                             <span style={{ marginLeft: `${16 * scale}px` }}>□支票</span>
@@ -4553,7 +4553,7 @@ const GeneralReimbursementForm = ({ data }: any) => {
                         <td rowSpan={3} style={{ ...cellStyle, textAlign: 'center', width: `${64 * scale}px` }}>
                             收款人
                         </td>
-                        <td colSpan={2} style={cellStyle}>
+                        <td colSpan={2} style={{ ...cellStyle, textAlign: 'left', paddingLeft: '8px' }}>
                             单位名称（姓名）： {data.paymentAccount?.accountName || ''}
                         </td>
                         <td rowSpan={3} style={{ ...cellStyle, textAlign: 'center', verticalAlign: 'middle' }}>
@@ -4564,12 +4564,12 @@ const GeneralReimbursementForm = ({ data }: any) => {
                         </td>
                     </tr>
                     <tr>
-                        <td colSpan={2} style={cellStyle}>
+                        <td colSpan={2} style={{ ...cellStyle, textAlign: 'left', paddingLeft: '8px' }}>
                             开户行： {data.paymentAccount?.bankName || ''}
                         </td>
                     </tr>
                     <tr>
-                        <td colSpan={2} style={cellStyle}>
+                        <td colSpan={2} style={{ ...cellStyle, textAlign: 'left', paddingLeft: '8px' }}>
                             单位账号（银行卡号）： {data.paymentAccount?.accountNumber || ''}
                         </td>
                     </tr>
@@ -4614,7 +4614,7 @@ const GeneralReimbursementForm = ({ data }: any) => {
 
                     {/* 第10行：所属产品线 */}
                     <tr>
-                        <td colSpan={5} style={cellStyle}>
+                        <td colSpan={5} style={{ ...cellStyle, textAlign: 'left', paddingLeft: '8px' }}>
                             所属产品线：
                         </td>
                     </tr>
@@ -5195,13 +5195,16 @@ const TravelReimbursementForm = ({ data }: any) => {
     const totalOther = tripLegs.reduce((sum: number, leg: any) => sum + (leg.otherFee || 0), 0);
     const grandTotal = data.totalAmount || (totalTransport + totalHotel + totalCityTraffic + totalMeal + totalOther);
     
+    // 外层容器 - A4 竖版页面
     const containerStyle: React.CSSProperties = {
         width: '210mm',
-        minHeight: '297mm',
+        height: '297mm',
         backgroundColor: 'white',
-        padding: '20mm 15mm',
+        padding: '15mm 12mm',
         boxSizing: 'border-box',
         fontFamily: '"SimSun", "Songti SC", serif',
+        display: 'flex',
+        flexDirection: 'column',
     };
     
     const tableStyle: React.CSSProperties = {
@@ -5435,52 +5438,74 @@ const CreateTravelReportView = ({ settings, loans, onAction, onBack }: any) => {
         try {
             const cleanB64 = (d: string) => d.split(',')[1];
             
-            // 1. 识别火车票/机票
-            console.log('[AI] 开始识别火车票/机票');
+            // 并行识别所有票据，大幅提升速度
+            console.log('[AI] 开始并行识别所有票据');
+            const startTime = Date.now();
+            
+            // 准备所有图片
             const ticketImages = ticketFiles.map(f => cleanB64(f.data));
-            const ticketResponse = await apiRequest('/api/ai/recognize', {
+            const hotelImages = hotelFiles.map(f => cleanB64(f.data));
+            const taxiImages = [...taxiInvoiceFiles, ...taxiTripFiles].map(f => cleanB64(f.data));
+            const approvalImages = approvalFiles.map(f => cleanB64(f.data));
+            
+            // 创建并行请求
+            const ticketPromise = apiRequest('/api/ai/recognize', {
                 method: 'POST',
                 body: JSON.stringify({ type: 'ticket', images: ticketImages, mimeType: 'image/jpeg' }),
-            }) as any;
+            });
+            
+            const hotelPromise = hotelImages.length > 0 
+                ? apiRequest('/api/ai/recognize', {
+                    method: 'POST',
+                    body: JSON.stringify({ type: 'hotel', images: hotelImages, mimeType: 'image/jpeg' }),
+                })
+                : Promise.resolve({ result: {} });
+            
+            const taxiPromise = taxiImages.length > 0 
+                ? apiRequest('/api/ai/recognize', {
+                    method: 'POST',
+                    body: JSON.stringify({ type: 'taxi', images: taxiImages, mimeType: 'image/jpeg' }),
+                })
+                : Promise.resolve({ result: { details: [] } });
+            
+            const approvalPromise = approvalImages.length > 0 
+                ? apiRequest('/api/ai/recognize', {
+                    method: 'POST',
+                    body: JSON.stringify({ type: 'approval', images: approvalImages, mimeType: 'image/jpeg' }),
+                })
+                : Promise.resolve({ result: {} });
+            
+            // 等待所有请求完成
+            const [ticketResponse, hotelResponse, taxiResponse, approvalResponse] = await Promise.all([
+                ticketPromise, hotelPromise, taxiPromise, approvalPromise
+            ]) as any[];
+            
+            console.log(`[AI] 并行识别完成，耗时: ${Date.now() - startTime}ms`);
+            
+            // 处理火车票/机票识别结果
             const ticketData = ticketResponse.result || {};
             setAiTicketResult(ticketData);
             console.log('[AI] 火车票/机票识别结果', ticketData);
             
-            // 2. 识别住宿发票（如果有）
-            let hotelData: any = {};
-            if (hotelFiles.length > 0) {
-                console.log('[AI] 开始识别住宿发票');
-                const hotelImages = hotelFiles.map(f => cleanB64(f.data));
-                const hotelResponse = await apiRequest('/api/ai/recognize', {
-                    method: 'POST',
-                    body: JSON.stringify({ type: 'hotel', images: hotelImages, mimeType: 'image/jpeg' }),
-                }) as any;
-                hotelData = hotelResponse.result || {};
+            // 处理住宿发票识别结果
+            const hotelData = hotelResponse.result || {};
+            if (hotelImages.length > 0) {
                 setAiHotelResult(hotelData);
                 console.log('[AI] 住宿发票识别结果', hotelData);
             }
             
-            // 3. 识别打车发票和行程单（如果有）
+            // 处理打车发票识别结果
             let taxiData: any = { details: [] };
-            if (taxiInvoiceFiles.length > 0 || taxiTripFiles.length > 0) {
-                console.log('[AI] 开始识别打车发票');
-                const taxiImages = [...taxiInvoiceFiles, ...taxiTripFiles].map(f => cleanB64(f.data));
-                const taxiResponse = await apiRequest('/api/ai/recognize', {
-                    method: 'POST',
-                    body: JSON.stringify({ type: 'taxi', images: taxiImages, mimeType: 'image/jpeg' }),
-                }) as any;
+            if (taxiImages.length > 0) {
                 const rawTaxiData = taxiResponse.result || { details: [] };
                 console.log('[AI] 打车发票原始识别结果', rawTaxiData);
                 
                 // 处理各种可能的返回格式
                 if (Array.isArray(rawTaxiData)) {
-                    // AI 直接返回数组
                     taxiData = { details: rawTaxiData };
                 } else if (rawTaxiData.details && Array.isArray(rawTaxiData.details)) {
-                    // AI 返回 { details: [...] } 格式
                     taxiData = rawTaxiData;
                 } else if (typeof rawTaxiData === 'object' && rawTaxiData.amount !== undefined) {
-                    // AI 返回单个对象
                     taxiData = { details: [rawTaxiData] };
                 } else {
                     taxiData = { details: [] };
@@ -5490,16 +5515,9 @@ const CreateTravelReportView = ({ settings, loans, onAction, onBack }: any) => {
                 console.log('[AI] 打车发票处理后结果', taxiData);
             }
             
-            // 4. 识别审批单（如果有）
-            let approvalData: any = {};
-            if (approvalFiles.length > 0) {
-                console.log('[AI] 开始识别审批单');
-                const approvalImages = approvalFiles.map(f => cleanB64(f.data));
-                const approvalResponse = await apiRequest('/api/ai/recognize', {
-                    method: 'POST',
-                    body: JSON.stringify({ type: 'approval', images: approvalImages, mimeType: 'image/jpeg' }),
-                }) as any;
-                approvalData = approvalResponse.result || {};
+            // 处理审批单识别结果
+            const approvalData = approvalResponse.result || {};
+            if (approvalImages.length > 0) {
                 setAiApprovalResult(approvalData);
                 console.log('[AI] 审批单识别结果', approvalData);
             }
@@ -5620,11 +5638,15 @@ const CreateTravelReportView = ({ settings, loans, onAction, onBack }: any) => {
             const processedTaxiDetails = taxiDetails.map((t: any, idx: number) => {
                 // 尝试从多个可能的字段名获取金额
                 const amount = parseFloat(t.amount) || parseFloat(t.price) || parseFloat(t.totalAmount) || parseFloat(t.fare) || 0;
+                
+                // 获取起终点信息（保留完整内容）
+                const route = t.route || `${t.startPoint || ''}-${t.endPoint || ''}`;
+                
                 const processedItem = {
                     id: `taxi-${Date.now()}-${idx}`,
                     date: t.date || t.invoiceDate || '',
                     reason: approvalData.eventSummary || '', // 使用出差事由
-                    route: t.route || `${t.startPoint || ''}-${t.endPoint || ''}`,
+                    route: route, // 保留完整起终点信息
                     amount: amount,
                 };
                 console.log(`[AI] 打车明细 ${idx + 1}:`, { 原始数据: t, 处理后: processedItem });
@@ -5641,9 +5663,10 @@ const CreateTravelReportView = ({ settings, loans, onAction, onBack }: any) => {
             }));
             
             setStep(2);
-        } catch(e) {
-            console.error(e);
-            alert("AI 识别失败，请检查网络或重试");
+        } catch(e: any) {
+            console.error('[AI] 识别失败:', e);
+            const errorMsg = e?.message || e?.toString() || '未知错误';
+            alert(`AI 识别失败: ${errorMsg}\n\n请检查：\n1. 网络连接是否正常\n2. AI 配置是否正确\n3. 上传的图片是否清晰`);
         } finally {
             setAnalyzing(false);
         }
@@ -5878,14 +5901,14 @@ const CreateTravelReportView = ({ settings, loans, onAction, onBack }: any) => {
                                 <Save size={14}/> 保存草稿
                             </button>
                             <button 
-                                onClick={() => handleSubmit('print')} 
+                                onClick={() => handleSubmit('pdf')} 
                                 className={`px-3 py-1.5 rounded-lg font-medium text-sm shadow-sm flex items-center gap-1.5 ${
                                     validation.isValid 
                                         ? 'bg-indigo-600 text-white hover:bg-indigo-700' 
                                         : 'bg-slate-300 text-slate-500 cursor-not-allowed'
                                 }`}
                             >
-                                <Printer size={14}/> 打印报销单
+                                <Download size={14}/> 提交报销
                             </button>
                         </div>
                     </div>
@@ -6368,17 +6391,27 @@ const A4SingleAttachment = ({ attachment, title, index }: { attachment: any; tit
 
 const ReportDetailView = ({ report, onUpdate, onBack }: any) => {
     const [previewMode, setPreviewMode] = useState<'all' | 'report' | 'invoices' | 'approvals' | 'vouchers'>('all');
+    const [generating, setGenerating] = useState(false);
+    // 确保 taxiDetails 正确初始化
+    const [editData, setEditData] = useState({ 
+        ...report,
+        taxiDetails: report.taxiDetails || [] // 确保 taxiDetails 存在
+    });
+    const canEdit = report.status !== 'paid'; // 未完成报销时可编辑
+    const [editPanelCollapsed, setEditPanelCollapsed] = useState(false); // 编辑面板伸缩状态
+    const reportRef = useRef<HTMLDivElement>(null);
+    const taxiTableRef = useRef<HTMLDivElement>(null); // 打车行程表引用
     
     // 分类附件 - 优先使用 type 属性，其次使用文件名判断
-    const invoiceAttachments = report.attachments?.filter((a: any) => 
+    const invoiceAttachments = editData.attachments?.filter((a: any) => 
         a.type === 'invoice' || a.name?.includes('发票') || a.name?.includes('invoice')
     ) || [];
     
-    const approvalAttachments = report.attachments?.filter((a: any) => 
+    const approvalAttachments = editData.attachments?.filter((a: any) => 
         a.type === 'approval' || a.name?.includes('审批') || a.name?.includes('approval')
     ) || [];
     
-    const voucherAttachments = report.attachments?.filter((a: any) => 
+    const voucherAttachments = editData.attachments?.filter((a: any) => 
         a.type === 'voucher' || a.name?.includes('凭证') || a.name?.includes('voucher')
     ) || [];
     
@@ -6388,11 +6421,125 @@ const ReportDetailView = ({ report, onUpdate, onBack }: any) => {
         ...approvalAttachments.map((a: any) => a.data),
         ...voucherAttachments.map((a: any) => a.data)
     ]);
-    const unclassifiedAttachments = report.attachments?.filter((a: any) => 
+    const unclassifiedAttachments = editData.attachments?.filter((a: any) => 
         !classifiedIds.has(a.data)
     ) || [];
     
     const allInvoices = [...invoiceAttachments, ...unclassifiedAttachments];
+    
+    // 保存编辑
+    const handleSave = () => {
+        if (onUpdate) {
+            onUpdate(editData);
+            alert('保存成功！');
+        }
+    };
+
+    // 生成 PDF - 直接截取预览页面显示的内容（所见即所得）
+    const generatePDF = async () => {
+        if (generating) return;
+        setGenerating(true);
+        
+        try {
+            // 根据报销单类型选择方向
+            const isTravel = editData.isTravel;
+            const orientation = isTravel ? 'portrait' : 'landscape';
+            const a4Width = isTravel ? 210 : 297;
+            const a4Height = isTravel ? 297 : 210;
+            
+            const pdf = new jsPDF({
+                orientation: orientation,
+                unit: 'mm',
+                format: 'a4',
+                compress: true // 启用压缩
+            });
+            
+            // 1. 添加报销单页面 - 直接截取预览中显示的元素
+            if (reportRef.current) {
+                const element = reportRef.current;
+                
+                // 使用 html2canvas 截图，优化参数
+                const canvas = await html2canvas(element, {
+                    scale: 1.5, // 降低分辨率以减小文件大小，同时保持清晰
+                    useCORS: true,
+                    allowTaint: true,
+                    backgroundColor: '#ffffff',
+                    logging: false,
+                    // 不指定 width/height，让 html2canvas 自动获取完整尺寸
+                });
+                
+                // 使用 JPEG 格式并压缩以减小文件大小
+                const imgData = canvas.toDataURL('image/jpeg', 0.85);
+                
+                // 直接填满整个 A4 页面
+                pdf.addImage(imgData, 'JPEG', 0, 0, a4Width, a4Height);
+            }
+            
+            // 2. 如果是差旅报销且有打车明细，添加打车行程表
+            if (editData.isTravel && editData.taxiDetails && editData.taxiDetails.length > 0 && taxiTableRef.current) {
+                pdf.addPage('a4', 'portrait'); // 打车行程表用竖版
+                
+                const taxiCanvas = await html2canvas(taxiTableRef.current, {
+                    scale: 1.5,
+                    useCORS: true,
+                    allowTaint: true,
+                    backgroundColor: '#ffffff',
+                    logging: false,
+                });
+                
+                const taxiImgData = taxiCanvas.toDataURL('image/jpeg', 0.85);
+                pdf.addImage(taxiImgData, 'JPEG', 0, 0, 210, 297);
+            }
+            
+            // 3. 添加附件页面 - 每张附件单独一页
+            const allAttachments = editData.attachments || [];
+            for (let i = 0; i < allAttachments.length; i++) {
+                const attachment = allAttachments[i];
+                pdf.addPage('a4', 'portrait');
+                
+                const portraitWidth = 210;
+                const portraitHeight = 297;
+                
+                if (attachment.data) {
+                    const img = new Image();
+                    img.src = attachment.data;
+                    await new Promise((resolve, reject) => { 
+                        img.onload = resolve; 
+                        img.onerror = reject;
+                    });
+                    
+                    const imgRatio = img.width / img.height;
+                    const pageRatio = portraitWidth / portraitHeight;
+                    
+                    let finalWidth, finalHeight, x, y;
+                    
+                    if (imgRatio > pageRatio) {
+                        finalWidth = portraitWidth - 10;
+                        finalHeight = finalWidth / imgRatio;
+                        x = 5;
+                        y = (portraitHeight - finalHeight) / 2;
+                    } else {
+                        finalHeight = portraitHeight - 10;
+                        finalWidth = finalHeight * imgRatio;
+                        x = (portraitWidth - finalWidth) / 2;
+                        y = 5;
+                    }
+                    
+                    pdf.addImage(attachment.data, 'JPEG', x, y, finalWidth, finalHeight);
+                }
+            }
+            
+            // 保存 PDF
+            const fileName = `报销单_${editData.title || editData.id}_${new Date().toLocaleDateString('zh-CN').replace(/\//g, '-')}.pdf`;
+            pdf.save(fileName);
+            
+        } catch (error) {
+            console.error('PDF 生成失败:', error);
+            alert('PDF 生成失败，请重试');
+        } finally {
+            setGenerating(false);
+        }
+    };
 
     return (
         <div className="h-full flex flex-col bg-slate-100 -m-8">
@@ -6431,19 +6578,201 @@ const ReportDetailView = ({ report, onUpdate, onBack }: any) => {
                         )}
                     </div>
                 </div>
-                <button onClick={() => window.print()} className="px-4 py-2 bg-indigo-600 text-white rounded font-bold flex items-center gap-2 hover:bg-indigo-700">
-                    <Printer size={16}/> 打印全部
-                </button>
+                <div className="flex gap-2">
+                    {canEdit && (
+                        <button onClick={handleSave} className="px-4 py-2 border border-slate-200 text-slate-600 rounded font-bold flex items-center gap-2 hover:bg-slate-50">
+                            <Save size={16}/> 保存
+                        </button>
+                    )}
+                    <button 
+                        onClick={generatePDF} 
+                        disabled={generating}
+                        className="px-4 py-2 bg-indigo-600 text-white rounded font-bold flex items-center gap-2 hover:bg-indigo-700 disabled:opacity-50"
+                    >
+                        <Download size={16}/> {generating ? '生成中...' : '导出 PDF'}
+                    </button>
+                </div>
             </div>
             
-            {/* 预览区域 */}
-            <div className="flex-1 overflow-y-auto p-8 flex flex-col items-center gap-8 print:p-0 print:overflow-visible print:gap-0">
-                {/* 报销单 */}
-                {(previewMode === 'all' || previewMode === 'report') && (
-                    <div className="bg-white shadow-lg print:shadow-none">
-                        {report.isTravel ? <TravelReimbursementForm data={report}/> : <GeneralReimbursementForm data={report}/>}
+            {/* 主内容区域 */}
+            <div className="flex-1 overflow-hidden flex relative">
+                {/* 伸缩按钮 - 始终可见，固定在左侧边线上 */}
+                {canEdit && (
+                    <button 
+                        onClick={() => setEditPanelCollapsed(!editPanelCollapsed)}
+                        className={`absolute top-8 w-6 h-6 bg-white border border-slate-200 rounded-full shadow-sm flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-50 transition-all z-50 ${editPanelCollapsed ? 'left-0 -translate-x-1/2' : 'left-80 -translate-x-1/2'}`}
+                        style={{ transition: 'left 0.3s ease' }}
+                        title={editPanelCollapsed ? "展开编辑面板" : "收起编辑面板"}
+                    >
+                        {editPanelCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
+                    </button>
+                )}
+                
+                {/* 左侧编辑面板 - 仅在可编辑时显示，支持伸缩 */}
+                {canEdit && (
+                    <div className={`bg-white border-r border-slate-200 overflow-y-auto flex-shrink-0 transition-all duration-300 ${editPanelCollapsed ? 'w-0 overflow-hidden' : 'w-80'}`}>
+                        {/* 编辑表单 - 收起时隐藏 */}
+                        {!editPanelCollapsed && (
+                            <div className="p-4 space-y-4">
+                                <h3 className="font-bold text-slate-800 flex items-center gap-2 text-sm mb-4">
+                                    <Edit2 size={14} className="text-indigo-600"/> 编辑报销单
+                                </h3>
+                                <div>
+                                    <label className="text-xs font-bold text-slate-500 block mb-1">报销单标题</label>
+                                    <input 
+                                        value={editData.title || ''} 
+                                        onChange={e => setEditData({...editData, title: e.target.value})}
+                                        className="w-full p-2 border border-slate-200 rounded-lg text-sm"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="text-xs font-bold text-slate-500 block mb-1">报销金额</label>
+                                    <input 
+                                        type="number"
+                                        value={editData.totalAmount || 0} 
+                                        onChange={e => setEditData({...editData, totalAmount: parseFloat(e.target.value) || 0})}
+                                        className="w-full p-2 border border-slate-200 rounded-lg text-sm"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="text-xs font-bold text-slate-500 block mb-1">预支金额</label>
+                                    <input 
+                                        type="number"
+                                        value={editData.prepaidAmount || 0} 
+                                        onChange={e => setEditData({...editData, prepaidAmount: parseFloat(e.target.value) || 0})}
+                                        className="w-full p-2 border border-slate-200 rounded-lg text-sm"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="text-xs font-bold text-slate-500 block mb-1">审批单号</label>
+                                    <input 
+                                        value={editData.approvalNumber || ''} 
+                                        onChange={e => setEditData({...editData, approvalNumber: e.target.value})}
+                                        className="w-full p-2 border border-slate-200 rounded-lg text-sm"
+                                    />
+                                </div>
+                                {editData.isTravel && (
+                                    <div>
+                                        <label className="text-xs font-bold text-slate-500 block mb-1">出差事由</label>
+                                        <textarea 
+                                            value={editData.tripReason || ''} 
+                                            onChange={e => setEditData({...editData, tripReason: e.target.value})}
+                                            className="w-full p-2 border border-slate-200 rounded-lg text-sm"
+                                            rows={2}
+                                        />
+                                    </div>
+                                )}
+                                {/* 打车明细编辑 - 差旅报销时显示 */}
+                                {editData.isTravel && (
+                                    <div className="border-t border-slate-100 pt-4">
+                                        <div className="flex items-center justify-between mb-2">
+                                            <label className="text-xs font-bold text-slate-500">🚕 打车明细</label>
+                                            <button
+                                                onClick={() => {
+                                                    const newDetail = { date: '', amount: 0, route: '', reason: editData.tripReason || '' };
+                                                    setEditData({
+                                                        ...editData, 
+                                                        taxiDetails: [...(editData.taxiDetails || []), newDetail]
+                                                    });
+                                                }}
+                                                className="text-xs text-indigo-600 hover:text-indigo-800 flex items-center gap-1"
+                                            >
+                                                <Plus size={12}/> 添加
+                                            </button>
+                                        </div>
+                                        {(editData.taxiDetails || []).length === 0 ? (
+                                            <p className="text-xs text-slate-400 text-center py-2">暂无打车明细，点击"添加"按钮添加</p>
+                                        ) : (
+                                            <>
+                                                {editData.taxiDetails.map((taxi: any, idx: number) => (
+                                                    <div key={idx} className="bg-yellow-50 rounded-lg p-2 mb-2 border border-yellow-200 relative">
+                                                        <button
+                                                            onClick={() => {
+                                                                const details = editData.taxiDetails.filter((_: any, i: number) => i !== idx);
+                                                                setEditData({...editData, taxiDetails: details});
+                                                            }}
+                                                            className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white rounded-full text-xs flex items-center justify-center hover:bg-red-600"
+                                                        >
+                                                            ×
+                                                        </button>
+                                                        <div className="grid grid-cols-2 gap-2 text-xs">
+                                                            <div>
+                                                                <label className="text-slate-500">日期</label>
+                                                                <input 
+                                                                    type="date"
+                                                                    value={taxi.date || ''} 
+                                                                    onChange={e => {
+                                                                        const details = [...editData.taxiDetails];
+                                                                        details[idx].date = e.target.value;
+                                                                        setEditData({...editData, taxiDetails: details});
+                                                                    }}
+                                                                    className="w-full p-1 border rounded text-xs"
+                                                                />
+                                                            </div>
+                                                            <div>
+                                                                <label className="text-slate-500">金额</label>
+                                                                <input 
+                                                                    type="number"
+                                                                    value={taxi.amount || 0} 
+                                                                    onChange={e => {
+                                                                        const details = [...editData.taxiDetails];
+                                                                        details[idx].amount = parseFloat(e.target.value) || 0;
+                                                                        setEditData({...editData, taxiDetails: details});
+                                                                    }}
+                                                                    className="w-full p-1 border rounded text-xs"
+                                                                />
+                                                            </div>
+                                                        </div>
+                                                        <div className="mt-1">
+                                                            <label className="text-slate-500 text-xs">起终点</label>
+                                                            <input 
+                                                                value={taxi.route || ''} 
+                                                                onChange={e => {
+                                                                    const details = [...editData.taxiDetails];
+                                                                    details[idx].route = e.target.value;
+                                                                    setEditData({...editData, taxiDetails: details});
+                                                                }}
+                                                                className="w-full p-1 border rounded text-xs"
+                                                                placeholder="起点 → 终点"
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                                <p className="text-[10px] text-slate-500">
+                                                    打车费总计: ¥{editData.taxiDetails.reduce((sum: number, t: any) => sum + (t.amount || 0), 0).toFixed(2)}
+                                                </p>
+                                            </>
+                                        )}
+                                    </div>
+                                )}
+                                <div className="pt-4 border-t border-slate-100">
+                                    <p className="text-xs text-slate-400">应付金额: ¥{((editData.totalAmount || 0) - (editData.prepaidAmount || 0)).toFixed(2)}</p>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 )}
+                
+                {/* 右侧预览区域 */}
+                <div className="flex-1 overflow-y-auto p-8 flex flex-col items-center gap-8 print:p-0 print:overflow-visible print:gap-0">
+                    {/* 报销单 */}
+                    {(previewMode === 'all' || previewMode === 'report') && (
+                        <div ref={reportRef} className="bg-white shadow-lg print:shadow-none">
+                            {editData.isTravel ? <TravelReimbursementForm data={editData}/> : <GeneralReimbursementForm data={editData}/>}
+                        </div>
+                    )}
+                    
+                    {/* 差旅报销的打车行程表 */}
+                    {(previewMode === 'all' || previewMode === 'report') && editData.isTravel && editData.taxiDetails && editData.taxiDetails.length > 0 && (
+                        <div ref={taxiTableRef} className="bg-white shadow-lg print:shadow-none">
+                            <TaxiExpenseTable data={{
+                                createdDate: editData.createdDate,
+                                userSnapshot: editData.userSnapshot,
+                                tripReason: editData.tripReason,
+                                taxiDetails: editData.taxiDetails,
+                            }} />
+                        </div>
+                    )}
                 
                 {/* 发票附件 - 每张单独一页 */}
                 {(previewMode === 'all' || previewMode === 'invoices') && allInvoices.length > 0 && (
@@ -6489,30 +6818,255 @@ const ReportDetailView = ({ report, onUpdate, onBack }: any) => {
                         ))}
                     </>
                 )}
+                </div>
             </div>
         </div>
     );
 };
 
-// Add LoanDetailView
+// Add LoanDetailView - 借款单详情/编辑视图
 const LoanDetailView = ({ loan, onUpdate, onBack }: any) => {
-     return (
+    const [generating, setGenerating] = useState(false);
+    const [editData, setEditData] = useState({ ...loan });
+    const canEdit = loan.status !== 'paid'; // 未完成借款时可编辑
+    const [editPanelCollapsed, setEditPanelCollapsed] = useState(false); // 编辑面板伸缩状态
+    const loanSheet1Ref = useRef<HTMLDivElement>(null);
+    const loanSheet2Ref = useRef<HTMLDivElement>(null);
+    
+    // 保存编辑
+    const handleSave = () => {
+        if (onUpdate) {
+            onUpdate(editData);
+            alert('保存成功！');
+        }
+    };
+    
+    // 生成 PDF - 直接截取预览页面显示的内容（所见即所得），每联单独一页
+    const generatePDF = async () => {
+        if (generating) return;
+        setGenerating(true);
+        
+        try {
+            const pdf = new jsPDF({
+                orientation: 'landscape',
+                unit: 'mm',
+                format: 'a4',
+                compress: true // 启用压缩
+            });
+            
+            const a4Width = 297;
+            const a4Height = 210;
+            
+            // 截图函数 - 直接截取预览中显示的元素
+            const captureElement = async (element: HTMLElement) => {
+                const canvas = await html2canvas(element, {
+                    scale: 1.5, // 降低分辨率以减小文件大小
+                    useCORS: true,
+                    allowTaint: true,
+                    backgroundColor: '#ffffff',
+                    logging: false,
+                });
+                return canvas;
+            };
+            
+            // 添加图片到 PDF，直接填满页面
+            const addToPDF = (canvas: HTMLCanvasElement, isFirst: boolean) => {
+                if (!isFirst) {
+                    pdf.addPage('a4', 'landscape');
+                }
+                
+                // 使用 JPEG 格式并压缩
+                const imgData = canvas.toDataURL('image/jpeg', 0.85);
+                
+                // 直接填满整个 A4 页面
+                pdf.addImage(imgData, 'JPEG', 0, 0, a4Width, a4Height);
+            };
+            
+            // 1. 添加第一联：财务留存联
+            if (loanSheet1Ref.current) {
+                const canvas = await captureElement(loanSheet1Ref.current);
+                addToPDF(canvas, true);
+            }
+            
+            // 2. 添加第二联：员工留存联
+            if (loanSheet2Ref.current) {
+                const canvas = await captureElement(loanSheet2Ref.current);
+                addToPDF(canvas, false);
+            }
+            
+            // 3. 添加附件页面 - 每张附件单独一页
+            const attachments = editData.attachments || [];
+            for (let i = 0; i < attachments.length; i++) {
+                const attachment = attachments[i];
+                pdf.addPage('a4', 'portrait');
+                
+                const portraitWidth = 210;
+                const portraitHeight = 297;
+                
+                if (attachment.data) {
+                    const img = new Image();
+                    img.src = attachment.data;
+                    await new Promise((resolve, reject) => { 
+                        img.onload = resolve;
+                        img.onerror = reject;
+                    });
+                    
+                    const imgRatio = img.width / img.height;
+                    const pageRatio = portraitWidth / portraitHeight;
+                    
+                    let finalWidth, finalHeight, x, y;
+                    
+                    if (imgRatio > pageRatio) {
+                        finalWidth = portraitWidth - 10;
+                        finalHeight = finalWidth / imgRatio;
+                        x = 5;
+                        y = (portraitHeight - finalHeight) / 2;
+                    } else {
+                        finalHeight = portraitHeight - 10;
+                        finalWidth = finalHeight * imgRatio;
+                        x = (portraitWidth - finalWidth) / 2;
+                        y = 5;
+                    }
+                    
+                    pdf.addImage(attachment.data, 'JPEG', x, y, finalWidth, finalHeight);
+                }
+            }
+            
+            // 保存 PDF
+            const fileName = `借款单_${editData.reason || editData.id}_${new Date().toLocaleDateString('zh-CN').replace(/\//g, '-')}.pdf`;
+            pdf.save(fileName);
+            
+        } catch (error) {
+            console.error('PDF 生成失败:', error);
+            alert('PDF 生成失败，请重试');
+        } finally {
+            setGenerating(false);
+        }
+    };
+    
+    return (
         <div className="h-full flex flex-col bg-slate-100 -m-8">
             <div className="bg-white p-4 flex justify-between items-center shadow-sm print:hidden">
-                <button onClick={onBack} className="flex items-center gap-1 font-bold text-slate-500"><ChevronRight className="rotate-180"/> Back</button>
-                <button onClick={() => window.print()} className="px-4 py-2 bg-amber-500 text-white rounded font-bold flex items-center gap-2"><Printer size={16}/> Print</button>
+                <button onClick={onBack} className="flex items-center gap-1 font-bold text-slate-500"><ChevronRight className="rotate-180"/> 返回</button>
+                <div className="flex gap-2">
+                    {canEdit && (
+                        <button onClick={handleSave} className="px-4 py-2 border border-slate-200 text-slate-600 rounded font-bold flex items-center gap-2 hover:bg-slate-50">
+                            <Save size={16}/> 保存
+                        </button>
+                    )}
+                    <button 
+                        onClick={generatePDF} 
+                        disabled={generating}
+                        className="px-4 py-2 bg-amber-500 text-white rounded font-bold flex items-center gap-2 disabled:opacity-50"
+                    >
+                        <Download size={16}/> {generating ? '生成中...' : '导出 PDF'}
+                    </button>
+                </div>
             </div>
-            <div className="flex-1 overflow-y-auto p-8 flex justify-center print:p-0 print:overflow-visible">
-                <div className="bg-white shadow-lg w-[297mm] min-h-[210mm] p-[15mm] print:shadow-none print:w-full print:h-full">
-                    <LoanForm data={loan}/>
-                    <div className="break-before-page mt-8 pt-8 border-t">
-                         <h2 className="text-center font-bold mb-4">附：审批单据</h2>
-                         <div className="flex flex-col gap-4 items-center">
-                            {loan.attachments.map((f:any, i:number) => (
-                                <img key={i} src={f.data} className="w-full object-contain border"/>
-                            ))}
-                        </div>
+            {/* 主内容区域 */}
+            <div className="flex-1 overflow-hidden flex relative">
+                {/* 伸缩按钮 - 始终可见，固定在左侧边线上 */}
+                {canEdit && (
+                    <button 
+                        onClick={() => setEditPanelCollapsed(!editPanelCollapsed)}
+                        className={`absolute top-8 w-6 h-6 bg-white border border-slate-200 rounded-full shadow-sm flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-50 transition-all z-50 ${editPanelCollapsed ? 'left-0 -translate-x-1/2' : 'left-80 -translate-x-1/2'}`}
+                        style={{ transition: 'left 0.3s ease' }}
+                        title={editPanelCollapsed ? "展开编辑面板" : "收起编辑面板"}
+                    >
+                        {editPanelCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
+                    </button>
+                )}
+                
+                {/* 左侧编辑面板 - 仅在可编辑时显示，支持伸缩 */}
+                {canEdit && (
+                    <div className={`bg-white border-r border-slate-200 overflow-y-auto flex-shrink-0 transition-all duration-300 ${editPanelCollapsed ? 'w-0 overflow-hidden' : 'w-80'}`}>
+                        {/* 编辑表单 - 收起时隐藏 */}
+                        {!editPanelCollapsed && (
+                            <div className="p-4 space-y-4">
+                                <h3 className="font-bold text-slate-800 flex items-center gap-2 text-sm mb-4">
+                                    <Edit2 size={14} className="text-amber-500"/> 编辑借款单
+                                </h3>
+                                <div>
+                                    <label className="text-xs font-bold text-slate-500 block mb-1">借款金额</label>
+                                    <div className="relative">
+                                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">¥</span>
+                                        <input 
+                                            type="number"
+                                            value={editData.amount || 0} 
+                                            onChange={e => setEditData({...editData, amount: parseFloat(e.target.value) || 0})}
+                                            className="w-full pl-7 p-2 border border-slate-200 rounded-lg text-sm font-bold text-amber-600"
+                                        />
+                                    </div>
+                                    <p className="text-[10px] text-slate-400 mt-1">大写：{digitToChinese(editData.amount || 0)}</p>
+                                </div>
+                                <div>
+                                    <label className="text-xs font-bold text-slate-500 block mb-1">借款事由</label>
+                                    <textarea 
+                                        value={editData.reason || ''} 
+                                        onChange={e => setEditData({...editData, reason: e.target.value})}
+                                        className="w-full p-2 border border-slate-200 rounded-lg text-sm"
+                                        rows={3}
+                                    />
+                                </div>
+                                <div>
+                                    <label className="text-xs font-bold text-slate-500 block mb-1">审批单号</label>
+                                    <input 
+                                        value={editData.approvalNumber || ''} 
+                                        onChange={e => setEditData({...editData, approvalNumber: e.target.value})}
+                                        className="w-full p-2 border border-slate-200 rounded-lg text-sm"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="text-xs font-bold text-slate-500 block mb-1">申请日期</label>
+                                    <input 
+                                        type="date"
+                                        value={editData.date || ''} 
+                                        onChange={e => setEditData({...editData, date: e.target.value})}
+                                        className="w-full p-2 border border-slate-200 rounded-lg text-sm"
+                                    />
+                                </div>
+                            </div>
+                        )}
                     </div>
+                )}
+                
+                {/* 右侧预览区域 */}
+                <div className="flex-1 overflow-y-auto p-8 flex flex-col items-center gap-8 print:p-0 print:overflow-visible">
+                    {/* 第一联：财务留存联 */}
+                    <div ref={loanSheet1Ref} className="bg-white shadow-lg print:shadow-none">
+                        <LoanFormSheet 
+                            data={editData}
+                            sheetNumber={1}
+                            sheetName="第一联：财务留存联"
+                            showNote={false}
+                        />
+                    </div>
+                    
+                    {/* 第二联：员工留存联 */}
+                    <div ref={loanSheet2Ref} className="bg-white shadow-lg print:shadow-none">
+                        <LoanFormSheet 
+                            data={editData}
+                            sheetNumber={2}
+                            sheetName="第二联：员工留存联"
+                            showNote={true}
+                        />
+                    </div>
+                    
+                    {/* 附件预览 */}
+                    {editData.attachments && editData.attachments.length > 0 && (
+                        <>
+                            <h3 className="text-lg font-bold text-slate-700">附件资料</h3>
+                            {editData.attachments.map((attachment: any, index: number) => (
+                                <div key={index} className="bg-white shadow-lg print:shadow-none">
+                                    <A4SingleAttachment 
+                                        attachment={attachment} 
+                                        title="审批单" 
+                                        index={index}
+                                    />
+                                </div>
+                            ))}
+                        </>
+                    )}
                 </div>
             </div>
         </div>

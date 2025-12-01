@@ -47,17 +47,30 @@ async function start() {
     console.log('超级管理员 ID:', adminId)
   }
   
-  // 4. 启动 Motia 服务
-  console.log('\n[4/4] 启动 Motia 服务...')
+  // 4. 构建 Motia 服务
+  console.log('\n[4/5] 构建 Motia 服务...')
+  try {
+    const { stdout: buildOut, stderr: buildErr } = await execAsync('npx motia build')
+    if (buildOut) console.log(buildOut)
+    if (buildErr) console.error(buildErr)
+    console.log('Motia 构建完成')
+  } catch (error: any) {
+    console.log('构建跳过或已存在:', error.message)
+  }
+  
+  // 5. 启动 Motia 服务（生产模式）
+  console.log('\n[5/5] 启动 Motia 服务（生产模式）...')
   console.log('========================================\n')
   
-  // 使用 spawn 启动 motia dev，继承 stdio
+  // 使用 spawn 启动 motia start（生产模式），而不是 motia dev
   const { spawn } = require('child_process')
-  const motia = spawn('npx', ['motia', 'dev'], {
+  const motia = spawn('npx', ['motia', 'start'], {
     stdio: 'inherit',
     env: {
       ...process.env,
       ADMIN_USER_ID: adminId || process.env.ADMIN_USER_ID,
+      // 设置 Node.js 内存限制（针对 4G 内存服务器）
+      NODE_OPTIONS: process.env.NODE_OPTIONS || '--max-old-space-size=1024',
     },
   })
   
@@ -75,4 +88,5 @@ start().catch((error) => {
   console.error('启动失败:', error)
   process.exit(1)
 })
+
 

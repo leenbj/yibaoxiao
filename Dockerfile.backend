@@ -1,18 +1,25 @@
-# 易报销 Pro - 后端 Dockerfile
-# 自动初始化数据库和管理员
+# 易报销 Pro - 后端 Dockerfile（生产环境优化版）
+# 针对 2核4G 低配服务器优化
+# 使用多阶段构建减少最终镜像大小
 
-FROM node:20-alpine
+# ==================== 构建阶段 ====================
+FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# 安装构建依赖和运行时工具
-RUN apk add --no-cache python3 make g++ linux-headers tini wget
+# 设置构建时内存限制
+ARG NODE_OPTIONS="--max-old-space-size=2048"
+ENV NODE_OPTIONS=${NODE_OPTIONS}
+
+# 安装构建依赖（精简版）
+RUN apk add --no-cache python3 make g++
 
 # 复制 package 文件
 COPY package*.json ./
 
-# 安装依赖
-RUN npm ci && npm cache clean --force
+# 安装所有依赖（包括 devDependencies）用于构建
+# 使用 --prefer-offline 加速构建
+RUN npm ci --prefer-offline
 
 # 复制源代码
 COPY . .
@@ -20,13 +27,48 @@ COPY . .
 # 生成类型定义
 RUN npm run generate-types || true
 
-# 创建构建缓存目录
+# 预构建 Motia 项目（减少运行时 CPU 占用）
+RUN npm run build || true
+
+# 清理开发依赖，减少镜像大小
+RUN npm prune --production
+
+# 清理不必要的文件
+RUN rm -rf .git .github frontend tests *.md
+
+# ==================== 运行阶段 ====================
+FROM node:20-alpine AS runner
+
+WORKDIR /app
+
+# 设置 Node.js 内存限制环境变量（针对 4G 内存服务器）
+ENV NODE_OPTIONS="--max-old-space-size=1024"
+ENV NODE_ENV=production
+
+# 安装运行时工具（精简版）
+RUN apk add --no-cache tini wget
+
+# 从构建阶段复制必要文件
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/package*.json ./
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/.motia ./.motia
+COPY --from=builder /app/steps ./steps
+COPY --from=builder /app/src ./src
+COPY --from=builder /app/scripts ./scripts
+COPY --from=builder /app/middlewares ./middlewares
+COPY --from=builder /app/drizzle.config.ts ./
+COPY --from=builder /app/motia.config.ts ./
+COPY --from=builder /app/tsconfig.json ./
+COPY --from=builder /app/types.d.ts ./
+
+# 创建必要目录
 RUN mkdir -p /app/.motia /app/dist
 
 # 设置启动脚本权限
 RUN chmod +x /app/scripts/docker-start.sh
 
-# 创建非 root 用户
+# 创建非 root 用户（安全最佳实践）
 RUN addgroup -g 1001 -S nodejs && \
     adduser -S motia -u 1001 -G nodejs && \
     chown -R motia:nodejs /app
@@ -37,11 +79,11 @@ USER motia
 # 暴露端口
 EXPOSE 3000
 
-# 健康检查
-HEALTHCHECK --interval=30s --timeout=10s --start-period=180s --retries=5 \
+# 健康检查（减少频率，降低资源消耗）
+HEALTHCHECK --interval=60s --timeout=10s --start-period=180s --retries=3 \
     CMD wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1
 
-# 使用 tini 作为 init 进程
+# 使用 tini 作为 init 进程（防止僵尸进程）
 ENTRYPOINT ["/sbin/tini", "--"]
 
 # 使用启动脚本（自动初始化数据库和管理员）

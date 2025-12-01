@@ -1,26 +1,5 @@
 [
   {
-    "id": "reimbursement-expenses",
-    "config": {
-      "steps/reimbursement/expenses/list.step.ts": {
-        "x": 30,
-        "y": 0
-      },
-      "steps/reimbursement/expenses/create.step.ts": {
-        "x": 26,
-        "y": 204
-      },
-      "steps/reimbursement/expenses/update.step.ts": {
-        "x": 13,
-        "y": 408
-      },
-      "steps/reimbursement/expenses/delete.step.ts": {
-        "x": 0,
-        "y": 612
-      }
-    }
-  },
-  {
     "id": "reimbursement-settings",
     "config": {
       "steps/reimbursement/settings/payees/list.step.ts": {
@@ -101,6 +80,40 @@
         "x": -175,
         "y": 3,
         "sourceHandlePosition": "right"
+      }
+    }
+  },
+  {
+    "id": "reimbursement-user",
+    "config": {
+      "steps/reimbursement/user/update-profile.step.ts": {
+        "x": 0,
+        "y": 0
+      },
+      "steps/reimbursement/user/get-profile.step.ts": {
+        "x": 0,
+        "y": 204
+      }
+    }
+  },
+  {
+    "id": "reimbursement-expenses",
+    "config": {
+      "steps/reimbursement/expenses/update.step.ts": {
+        "x": -319,
+        "y": 321
+      },
+      "steps/reimbursement/expenses/list.step.ts": {
+        "x": 30,
+        "y": 0
+      },
+      "steps/reimbursement/expenses/delete.step.ts": {
+        "x": 0,
+        "y": 612
+      },
+      "steps/reimbursement/expenses/create.step.ts": {
+        "x": 26,
+        "y": 204
       }
     }
   }

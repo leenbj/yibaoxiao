@@ -29,13 +29,19 @@ const getDatabaseConfig = () => {
   }
 }
 
-// 连接池配置
+// 连接池配置 - 针对低配服务器优化（2核4G）
 const poolConfig = {
   ...getDatabaseConfig(),
-  min: parseInt(process.env.DATABASE_POOL_MIN || '2', 10),
-  max: parseInt(process.env.DATABASE_POOL_MAX || '10', 10),
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 2000,
+  // 减少最小连接数，降低空闲时资源占用
+  min: parseInt(process.env.DATABASE_POOL_MIN || '1', 10),
+  // 限制最大连接数，避免资源耗尽
+  max: parseInt(process.env.DATABASE_POOL_MAX || '5', 10),
+  // 空闲连接超时时间（毫秒）- 更快释放空闲连接
+  idleTimeoutMillis: parseInt(process.env.DATABASE_IDLE_TIMEOUT || '10000', 10),
+  // 连接超时时间（毫秒）
+  connectionTimeoutMillis: parseInt(process.env.DATABASE_CONNECT_TIMEOUT || '5000', 10),
+  // 允许空闲时关闭连接
+  allowExitOnIdle: true,
 }
 
 // 创建连接池
@@ -107,4 +113,5 @@ export { schema }
 
 // 导出类型
 export type Database = ReturnType<typeof getDb>
+
 

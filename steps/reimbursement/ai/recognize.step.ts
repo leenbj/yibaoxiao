@@ -58,23 +58,46 @@ export const handler: Handlers['AIRecognize'] = async (req, { logger }) => {
   
   // 从 token 中提取用户ID，或使用请求体中的 userId
   // Token 格式: token_${userId}_${timestamp}_${random}
-  // userId 格式: user_${timestamp}_${random}
-  // 完整 token 例: token_user_1234567890_abc123_9876543210_xyz789
+  // userId 可能的格式:
+  //   1. user_${timestamp}_${random} (自动生成的)
+  //   2. user_xxx (手动创建的简短ID，如 user_wangbo)
+  //   3. admin_default 等
+  // 完整 token 例: 
+  //   token_user_1234567890_abc123_9876543210_xyz789
+  //   token_user_wangbo_1234567890_xyz789
   let userId = bodyUserId || 'default_user'
   const authHeader = req.headers.authorization
   if (!bodyUserId && authHeader) {
     const auth = Array.isArray(authHeader) ? authHeader[0] : authHeader
     if (auth?.startsWith('Bearer ')) {
       const token = auth.substring(7)
-      // 使用正则匹配 userId (user_开头的部分)
-      const match = token.match(/^token_(user_[^_]+_[^_]+)_/)
-      if (match) {
-        userId = match[1]
-      } else {
-        // 备用方案：取第二到第四部分
-        const parts = token.split('_')
-        if (parts.length >= 4 && parts[0] === 'token' && parts[1] === 'user') {
-          userId = `${parts[1]}_${parts[2]}_${parts[3]}`
+      const parts = token.split('_')
+      
+      // token 格式: token_<userId>_<timestamp>_<random>
+      // 需要从 parts 中提取 userId
+      if (parts.length >= 4 && parts[0] === 'token') {
+        // 检查是否是 user_xxx_timestamp_random 格式（自动生成的用户ID）
+        // 或者是 user_xxx 格式（手动创建的简短ID）
+        
+        // 尝试找到 timestamp 部分（纯数字，长度 >= 10）
+        let timestampIndex = -1
+        for (let i = 2; i < parts.length; i++) {
+          if (/^\d{10,}$/.test(parts[i])) {
+            timestampIndex = i
+            break
+          }
+        }
+        
+        if (timestampIndex > 1) {
+          // userId 是从 parts[1] 到 parts[timestampIndex-1] 的部分
+          userId = parts.slice(1, timestampIndex).join('_')
+        } else {
+          // 备用方案：假设 userId 是 parts[1] 和 parts[2] 组合（如果 parts[2] 不是纯数字）
+          if (parts.length >= 3 && !/^\d{10,}$/.test(parts[2])) {
+            userId = `${parts[1]}_${parts[2]}`
+          } else {
+            userId = parts[1]
+          }
         }
       }
     }

@@ -1,4 +1,5 @@
-# 易报销 Pro - Docker Compose 配置
+# 易报销 Pro - Docker Compose 配置（生产环境优化版）
+# 针对 2核4G 低配服务器优化
 # 包含：PostgreSQL 数据库、Motia 后端、Nginx 前端
 
 services:
@@ -12,18 +13,40 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-yibao123456}
       POSTGRES_DB: ${POSTGRES_DB:-yibao}
       PGDATA: /var/lib/postgresql/data/pgdata
+      # PostgreSQL 性能优化参数
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8"
+    # PostgreSQL 启动参数优化（针对低配服务器）
+    command: >
+      postgres
+      -c shared_buffers=256MB
+      -c effective_cache_size=512MB
+      -c maintenance_work_mem=64MB
+      -c work_mem=4MB
+      -c max_connections=50
+      -c checkpoint_completion_target=0.9
+      -c wal_buffers=16MB
+      -c random_page_cost=1.1
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
       - "5432:5432"  # 可选：暴露到宿主机，方便调试
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-yibao} -d ${POSTGRES_DB:-yibao}"]
-      interval: 10s
+      interval: 30s
       timeout: 5s
       retries: 5
       start_period: 30s
     networks:
       - yibao-network
+    # 资源限制（针对 2核4G 服务器）
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
 
   # ==================== Motia 后端服务 ====================
   backend:
@@ -34,7 +57,14 @@ services:
     restart: unless-stopped
     environment:
       NODE_ENV: production
+      # Node.js 内存限制（针对 4G 内存服务器）
+      NODE_OPTIONS: "--max-old-space-size=1024"
       DATABASE_URL: postgresql://${POSTGRES_USER:-yibao}:${POSTGRES_PASSWORD:-yibao123456}@postgres:5432/${POSTGRES_DB:-yibao}
+      # 数据库连接池优化
+      DATABASE_POOL_MIN: "1"
+      DATABASE_POOL_MAX: "5"
+      DATABASE_IDLE_TIMEOUT: "10000"
+      DATABASE_CONNECT_TIMEOUT: "5000"
       # AI 配置
       DEFAULT_AI_PROVIDER: ${DEFAULT_AI_PROVIDER:-}
       DEFAULT_AI_API_KEY: ${DEFAULT_AI_API_KEY:-}
@@ -57,12 +87,21 @@ services:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
-      interval: 30s
+      interval: 60s
       timeout: 10s
-      retries: 5
-      start_period: 180s
+      retries: 3
+      start_period: 120s
     networks:
       - yibao-network
+    # 资源限制（针对 2核4G 服务器）
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1536M
+        reservations:
+          cpus: '0.5'
+          memory: 512M
 
   # ==================== Nginx 前端服务 ====================
   frontend:
@@ -77,12 +116,21 @@ services:
       - backend
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/health"]
-      interval: 30s
+      interval: 60s
       timeout: 10s
       retries: 3
       start_period: 10s
     networks:
       - yibao-network
+    # 资源限制（Nginx 占用很少）
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 128M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
 
 # ==================== 数据卷 ====================
 volumes:

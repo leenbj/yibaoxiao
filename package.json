@@ -1,10 +1,11 @@
 {
   "name": "yibao",
-  "description": "",
+  "description": "易报销 Pro - 智能报销管理系统",
   "scripts": {
     "postinstall": "motia install",
     "dev": "motia dev",
     "start": "npx ts-node scripts/start.ts",
+    "start:prod": "motia start",
     "generate-types": "motia generate-types",
     "build": "motia build",
     "clean": "rm -rf dist node_modules python_modules .motia .mermaid",

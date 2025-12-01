@@ -1,13 +1,17 @@
 # 易报销 Pro - 生产环境 Docker Compose（使用预构建镜像）
+# 针对 2核4G 低配服务器优化
 # 
 # 使用方法：
-# 1. 登录 GitHub Container Registry: 
-#    echo $GITHUB_TOKEN | docker login ghcr.io -u leenbj --password-stdin
-# 2. 启动服务: 
+# 1. 复制 .env.example 为 .env 并配置
+# 2. 登录 GitHub Container Registry: 
+#    echo $GITHUB_TOKEN | docker login ghcr.io -u USERNAME --password-stdin
+# 3. 启动服务: 
 #    docker-compose -f docker-compose.prod.yml up -d
+#
+# 默认管理员账号: wangbo@knet.cn / 123456
 
 services:
-  # PostgreSQL 数据库
+  # ==================== PostgreSQL 数据库 ====================
   postgres:
     image: postgres:16-alpine
     container_name: yibao-postgres
@@ -16,17 +20,45 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-yibao}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-yibao123456}
       POSTGRES_DB: ${POSTGRES_DB:-yibao}
+      # 设置共享内存大小
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    # PostgreSQL 启动参数优化（针对低配服务器）
+    command: >
+      postgres
+      -c shared_buffers=256MB
+      -c effective_cache_size=512MB
+      -c maintenance_work_mem=64MB
+      -c work_mem=4MB
+      -c max_connections=50
+      -c checkpoint_completion_target=0.9
+      -c wal_buffers=16MB
+      -c random_page_cost=1.1
+      -c effective_io_concurrency=200
+      -c min_wal_size=1GB
+      -c max_wal_size=2GB
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      # 挂载初始化脚本（首次启动时执行）
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
     networks:
       - yibao-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-yibao}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-yibao} -d ${POSTGRES_DB:-yibao}"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 30s
+    # 资源限制（针对 2核4G 服务器）
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
 
-  # Motia 后端服务（使用预构建镜像）
+  # ==================== Motia 后端服务 ====================
   backend:
     image: ghcr.io/leenbj/yibaoxiao-backend:latest
     container_name: yibao-backend
@@ -36,18 +68,29 @@ services:
         condition: service_healthy
     environment:
       NODE_ENV: production
+      # Node.js 内存限制（针对 4G 内存服务器）
+      NODE_OPTIONS: "--max-old-space-size=1024"
+      # 数据库连接
       DATABASE_URL: postgresql://${POSTGRES_USER:-yibao}:${POSTGRES_PASSWORD:-yibao123456}@postgres:5432/${POSTGRES_DB:-yibao}
-      # AI 配置
+      POSTGRES_USER: ${POSTGRES_USER:-yibao}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-yibao123456}
+      POSTGRES_DB: ${POSTGRES_DB:-yibao}
+      # 数据库连接池优化
+      DATABASE_POOL_MIN: "1"
+      DATABASE_POOL_MAX: "5"
+      DATABASE_IDLE_TIMEOUT: "10000"
+      DATABASE_CONNECT_TIMEOUT: "5000"
+      # 超级管理员配置（默认 wangbo@knet.cn）
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-wangbo@knet.cn}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-123456}
+      ADMIN_NAME: ${ADMIN_NAME:-王波}
+      ADMIN_DEPARTMENT: ${ADMIN_DEPARTMENT:-管理部}
+      ADMIN_USER_ID: ${ADMIN_USER_ID:-user_wangbo}
+      # AI 配置（可选）
       DEFAULT_AI_PROVIDER: ${DEFAULT_AI_PROVIDER:-}
       DEFAULT_AI_API_KEY: ${DEFAULT_AI_API_KEY:-}
       DEFAULT_AI_API_URL: ${DEFAULT_AI_API_URL:-}
       DEFAULT_AI_MODEL: ${DEFAULT_AI_MODEL:-}
-      ADMIN_USER_ID: ${ADMIN_USER_ID:-}
-      # 超级管理员配置
-      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@example.com}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123456}
-      ADMIN_NAME: ${ADMIN_NAME:-系统管理员}
-      ADMIN_DEPARTMENT: ${ADMIN_DEPARTMENT:-管理部}
     volumes:
       # 持久化 Motia 构建缓存，加速后续启动
       - motia_cache:/app/.motia
@@ -56,12 +99,21 @@ services:
       - yibao-network
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
-      interval: 30s
+      interval: 60s
       timeout: 10s
       start_period: 180s
-      retries: 5
+      retries: 3
+    # 资源限制（针对 2核4G 服务器）
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1536M
+        reservations:
+          cpus: '0.5'
+          memory: 512M
 
-  # Nginx 前端服务（使用预构建镜像）
+  # ==================== Nginx 前端服务 ====================
   frontend:
     image: ghcr.io/leenbj/yibaoxiao-frontend:latest
     container_name: yibao-frontend
@@ -69,14 +121,23 @@ services:
     depends_on:
       - backend
     ports:
-      - "80:80"
+      - "${FRONTEND_PORT:-80}:80"
     networks:
       - yibao-network
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80"]
-      interval: 30s
+      interval: 60s
       timeout: 10s
       retries: 3
+    # 资源限制（Nginx 占用很少）
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 128M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
 
 networks:
   yibao-network:
@@ -84,5 +145,8 @@ networks:
 
 volumes:
   postgres_data:
+    name: yibao_postgres_data
   motia_cache:
+    name: yibao_motia_cache
   motia_dist:
+    name: yibao_motia_dist
