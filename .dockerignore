@@ -1,19 +1,18 @@
 # 易报销 Pro - Docker 构建忽略文件
-# 减少构建上下文大小，加速构建
+# 通用配置，适用于前端和后端
 
-# 依赖目录
+# 依赖目录（在容器内重新安装）
 node_modules
+frontend/node_modules
 python_modules
 .venv
 venv
 
-# 构建产物
+# 构建产物（在容器内重新生成）
 dist
+frontend/dist
 .motia
 .mermaid
-
-# 前端（后端镜像不需要）
-frontend
 
 # 不必要的 steps（示例代码）
 steps/petstore
@@ -69,7 +68,7 @@ temp/
 *.tar.gz
 *.rar
 
-# 生产配置文件（不需要复制）
-package.prod.json
-motia.config.prod.ts
+# 配置文件（不需要复制到镜像）
 motia-workbench.json
+.dockerignore.backend
+.dockerignore.frontend
