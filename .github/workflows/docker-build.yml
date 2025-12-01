@@ -1,12 +1,7 @@
 name: Build and Push Docker Images
 
 # 易报销 Pro - Docker 镜像构建工作流
-# 针对 2核4G 低配服务器优化的生产镜像
-#
-# 触发条件：
-# - 推送到 main 分支
-# - 创建版本标签 (v*)
-# - 手动触发
+# 优化构建速度，使用多层缓存
 
 on:
   push:
@@ -26,7 +21,7 @@ env:
   FRONTEND_IMAGE: ghcr.io/${{ github.repository }}-frontend
 
 jobs:
-  build-and-push:
+  build-backend:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -36,15 +31,8 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-        with:
-          driver-opts: |
-            image=moby/buildkit:latest
-            network=host
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
@@ -64,6 +52,39 @@ jobs:
             type=sha,prefix=
             type=raw,value=latest,enable={{is_default_branch}}
 
+      - name: Build and push Backend image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile.backend
+          push: true
+          tags: ${{ steps.meta-backend.outputs.tags }}
+          labels: ${{ steps.meta-backend.outputs.labels }}
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
+          build-args: |
+            NODE_OPTIONS=--max-old-space-size=4096
+
+  build-frontend:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Extract metadata for Frontend
         id: meta-frontend
         uses: docker/metadata-action@v5
@@ -75,23 +96,6 @@ jobs:
             type=sha,prefix=
             type=raw,value=latest,enable={{is_default_branch}}
 
-      - name: Build and push Backend image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: ./Dockerfile.backend
-          push: true
-          tags: ${{ steps.meta-backend.outputs.tags }}
-          labels: ${{ steps.meta-backend.outputs.labels }}
-          cache-from: ${{ github.event.inputs.skip_cache == 'true' && '' || 'type=gha' }}
-          cache-to: type=gha,mode=max
-          # 多阶段构建优化参数
-          build-args: |
-            NODE_ENV=production
-            NODE_OPTIONS=--max-old-space-size=2048
-          # 构建平台
-          platforms: linux/amd64
-
       - name: Build and push Frontend image
         uses: docker/build-push-action@v5
         with:
@@ -100,69 +104,30 @@ jobs:
           push: true
           tags: ${{ steps.meta-frontend.outputs.tags }}
           labels: ${{ steps.meta-frontend.outputs.labels }}
-          cache-from: ${{ github.event.inputs.skip_cache == 'true' && '' || 'type=gha' }}
-          cache-to: type=gha,mode=max
-          platforms: linux/amd64
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,mode=max,scope=frontend
 
+  summary:
+    needs: [build-backend, build-frontend]
+    runs-on: ubuntu-latest
+    steps:
       - name: Summary
         run: |
           echo "## 🚀 Docker Images Built Successfully!" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 📦 镜像信息" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Backend Image:**" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-          echo "${{ steps.meta-backend.outputs.tags }}" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "| 镜像 | 标签 |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Backend | \`${{ env.BACKEND_IMAGE }}:latest\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Frontend | \`${{ env.FRONTEND_IMAGE }}:latest\` |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Frontend Image:**" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-          echo "${{ steps.meta-frontend.outputs.tags }}" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "### 👤 默认管理员" >> $GITHUB_STEP_SUMMARY
+          echo "- 邮箱: \`wangbo@knet.cn\`" >> $GITHUB_STEP_SUMMARY
+          echo "- 密码: \`123456\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 🎯 性能优化说明" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "本次构建包含以下生产环境优化：" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ 使用 \`motia start\` 生产模式" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ 预编译 Motia 项目，减少运行时 CPU 占用" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Node.js 内存限制: 1024MB" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ 数据库连接池优化（min:1, max:5）" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ 多阶段构建，减少镜像大小" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ 自动初始化数据库和超级管理员" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 👤 默认管理员账号" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| 项目 | 值 |" >> $GITHUB_STEP_SUMMARY
-          echo "|------|-----|" >> $GITHUB_STEP_SUMMARY
-          echo "| 邮箱 | \`wangbo@knet.cn\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| 密码 | \`123456\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| 角色 | 超级管理员 |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 📋 部署说明" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "在服务器上执行以下命令部署：" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📋 部署命令" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
-          echo "# 1. 登录 GitHub Container Registry" >> $GITHUB_STEP_SUMMARY
-          echo "echo \$GITHUB_TOKEN | docker login ghcr.io -u USERNAME --password-stdin" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "# 2. 拉取最新镜像" >> $GITHUB_STEP_SUMMARY
           echo "docker-compose -f docker-compose.prod.yml pull" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "# 3. 启动服务" >> $GITHUB_STEP_SUMMARY
           echo "docker-compose -f docker-compose.prod.yml up -d" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "# 4. 查看日志" >> $GITHUB_STEP_SUMMARY
-          echo "docker-compose -f docker-compose.prod.yml logs -f" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 🔧 环境变量配置" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "可通过 \`.env\` 文件或环境变量覆盖默认配置：" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| 变量 | 默认值 | 说明 |" >> $GITHUB_STEP_SUMMARY
-          echo "|------|--------|------|" >> $GITHUB_STEP_SUMMARY
-          echo "| ADMIN_EMAIL | wangbo@knet.cn | 管理员邮箱 |" >> $GITHUB_STEP_SUMMARY
-          echo "| ADMIN_PASSWORD | 123456 | 管理员密码 |" >> $GITHUB_STEP_SUMMARY
-          echo "| POSTGRES_USER | yibao | 数据库用户 |" >> $GITHUB_STEP_SUMMARY
-          echo "| POSTGRES_PASSWORD | yibao123456 | 数据库密码 |" >> $GITHUB_STEP_SUMMARY

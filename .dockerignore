@@ -1,63 +1,67 @@
-# 易报销 Pro - Docker 忽略文件
-# 优化构建速度和镜像大小
+# 易报销 Pro - Docker 构建忽略文件
+# 减少构建上下文大小，加速构建
 
-# 依赖目录
-node_modules/
-frontend/node_modules/
-python_modules/
+# 依赖目录（在容器内重新安装）
+node_modules
+python_modules
+.venv
+venv
 
-# 构建产物
-dist/
-frontend/dist/
-.motia/
-.mermaid/
+# 构建产物（在容器内重新生成）
+dist
+.motia
+.mermaid
 
-# 开发文件
-*.log
-*.md
-!README.md
-.git/
+# 前端源码（后端镜像不需要）
+frontend/node_modules
+frontend/dist
+
+# Git
+.git
 .gitignore
-.cursor/
+.gitattributes
 
-# IDE 配置
-.vscode/
-.idea/
+# IDE
+.vscode
+.idea
 *.swp
 *.swo
 
-# 测试文件
+# 测试
+tests
+__tests__
 *.test.ts
 *.spec.ts
-__tests__/
-coverage/
+coverage
 
-# 环境文件（使用 docker-compose 环境变量）
+# 文档
+*.md
+docs
+LICENSE
+
+# 日志
+*.log
+npm-debug.log*
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# 环境变量（敏感信息）
 .env
 .env.local
-.env.development
+.env.*.local
 
 # 临时文件
 *.tmp
 *.temp
-.DS_Store
-Thumbs.db
+tmp/
+temp/
 
-# Redis 数据（开发用）
-appendonlydir/
-dump.rdb
+# Redis dump 文件
+*.rdb
 
-# 其他
-tutorial/
-opencode.json
-motia-workbench.json
-
-# 旧版本代码（不需要）
-yibaoxiao-main/
-yibaoxiao-main.zip
-
-# GitHub 工作流
-.github/
-
-# Claude/Cursor 配置
-.claude/
+# 压缩包
+*.zip
+*.tar.gz
+*.rar
