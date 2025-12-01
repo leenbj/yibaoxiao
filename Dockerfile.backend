@@ -1,13 +1,23 @@
-# 易报销 Pro - 后端 Dockerfile（生产环境极速版）
-# 优化：只构建必要组件，跳过不必要的插件和依赖
+# 易报销 Pro - 后端 Dockerfile（极速精简版）
+# 优化：最小化镜像体积，加速推送
+
+# ==================== 依赖安装阶段 ====================
+FROM node:20-alpine AS deps
+
+WORKDIR /app
+
+# 复制 package 文件
+COPY package*.json ./
+
+# 只安装生产依赖（不安装 devDependencies）
+RUN npm ci --only=production --ignore-scripts && \
+    npm cache clean --force
 
 # ==================== 构建阶段 ====================
 FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# 设置生产环境
-ENV NODE_ENV=production
 ARG NODE_OPTIONS="--max-old-space-size=4096"
 ENV NODE_OPTIONS=${NODE_OPTIONS}
 
@@ -17,14 +27,11 @@ RUN apk add --no-cache python3 make g++
 # 复制 package 文件
 COPY package*.json ./
 
-# 安装依赖（跳过 postinstall 中的 motia install）
+# 安装所有依赖（包括 devDependencies 用于构建）
 RUN npm ci --ignore-scripts && npm cache clean --force
 
 # 只复制必要的源代码文件
-COPY tsconfig.json ./
-COPY drizzle.config.ts ./
-COPY motia.config.ts ./
-COPY types.d.ts ./
+COPY tsconfig.json drizzle.config.ts motia.config.ts types.d.ts ./
 COPY src ./src
 COPY middlewares ./middlewares
 COPY scripts ./scripts
@@ -33,30 +40,32 @@ COPY scripts ./scripts
 COPY steps/health ./steps/health
 COPY steps/reimbursement ./steps/reimbursement
 
-# 跳过 generate-types（生产环境不需要，节省 ~4 分钟）
-# types.d.ts 已提交到仓库，无需重新生成
-RUN echo "Skipping generate-types - using pre-committed types.d.ts"
+# 跳过 generate-types（使用已提交的 types.d.ts）
+RUN echo "Using pre-committed types.d.ts"
 
-# 预构建 Motia（生产模式，只构建必要组件）
+# 预构建 Motia（生产模式）
 RUN NODE_ENV=production npx motia build 2>/dev/null || true
 
-# ==================== 运行阶段（生产环境）====================
+# ==================== 运行阶段（最小化）====================
 FROM node:20-alpine AS runner
 
 WORKDIR /app
 
 # 设置生产环境
 ENV NODE_ENV=production
-ENV NODE_OPTIONS="--max-old-space-size=1024"
+ENV NODE_OPTIONS="--max-old-space-size=512"
 
 # 安装最小运行时依赖
 RUN apk add --no-cache tini wget postgresql-client
 
-# 从构建阶段复制必要文件
-COPY --from=builder /app/node_modules ./node_modules
+# 从 deps 阶段复制生产依赖（比 builder 小很多）
+COPY --from=deps /app/node_modules ./node_modules
 COPY --from=builder /app/package*.json ./
-COPY --from=builder /app/dist ./dist
+
+# 复制构建产物
 COPY --from=builder /app/.motia ./.motia
+
+# 复制必要的运行时文件
 COPY --from=builder /app/steps ./steps
 COPY --from=builder /app/src ./src
 COPY --from=builder /app/scripts ./scripts
@@ -65,6 +74,17 @@ COPY --from=builder /app/drizzle.config.ts ./
 COPY --from=builder /app/motia.config.ts ./
 COPY --from=builder /app/tsconfig.json ./
 COPY --from=builder /app/types.d.ts ./
+
+# 清理不必要的文件，减小镜像体积
+RUN rm -rf /app/node_modules/.cache \
+    /app/node_modules/@types \
+    /app/node_modules/typescript \
+    /app/node_modules/.package-lock.json \
+    /tmp/* /var/cache/apk/* && \
+    find /app/node_modules -name "*.md" -delete 2>/dev/null || true && \
+    find /app/node_modules -name "*.ts" ! -name "*.d.ts" -delete 2>/dev/null || true && \
+    find /app/node_modules -name "LICENSE*" -delete 2>/dev/null || true && \
+    find /app/node_modules -name "CHANGELOG*" -delete 2>/dev/null || true
 
 # 创建目录并设置权限
 RUN mkdir -p /app/.motia /app/dist && \
@@ -79,7 +99,7 @@ USER motia
 
 EXPOSE 3000
 
-# 健康检查
+# 健康检查（减少频率）
 HEALTHCHECK --interval=60s --timeout=10s --start-period=120s --retries=3 \
     CMD wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1
 

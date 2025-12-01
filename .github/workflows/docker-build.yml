@@ -60,7 +60,10 @@ jobs:
           push: true
           tags: ${{ steps.meta-backend.outputs.tags }}
           labels: ${{ steps.meta-backend.outputs.labels }}
-          # 使用多层缓存：Registry 缓存 + GHA 缓存
+          # 禁用 provenance 和 sbom 以减少推送数据量
+          provenance: false
+          sbom: false
+          # 使用多层缓存
           cache-from: |
             type=registry,ref=ghcr.io/${{ github.repository }}-backend:cache
             type=gha,scope=backend
@@ -109,7 +112,10 @@ jobs:
           push: true
           tags: ${{ steps.meta-frontend.outputs.tags }}
           labels: ${{ steps.meta-frontend.outputs.labels }}
-          # 使用多层缓存：Registry 缓存 + GHA 缓存
+          # 禁用 provenance 和 sbom 以减少推送数据量
+          provenance: false
+          sbom: false
+          # 使用多层缓存
           cache-from: |
             type=registry,ref=ghcr.io/${{ github.repository }}-frontend:cache
             type=gha,scope=frontend
