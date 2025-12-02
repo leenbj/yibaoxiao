@@ -8,21 +8,9 @@ on:
     branches: [main]
     tags: ['v*']
   workflow_dispatch:
-    inputs:
-      build_backend:
-        description: '构建后端镜像'
-        required: false
-        default: true
-        type: boolean
-      build_frontend:
-        description: '构建前端镜像'
-        required: false
-        default: true
-        type: boolean
 
 jobs:
   build-backend:
-    if: ${{ github.event.inputs.build_backend != 'false' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     
@@ -32,21 +20,24 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+        with:
+          driver: docker
 
       - name: Build Backend image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: ./Dockerfile.backend
-          tags: yibao-backend:latest
-          outputs: type=docker,dest=/tmp/yibao-backend.tar
-          cache-from: type=gha,scope=backend
-          cache-to: type=gha,mode=max,scope=backend
-          build-args: |
-            NODE_OPTIONS=--max-old-space-size=4096
-
-      - name: Compress image
         run: |
+          echo "🔨 开始构建后端镜像..."
+          docker build \
+            --file Dockerfile.backend \
+            --tag yibao-backend:latest \
+            --build-arg NODE_OPTIONS="--max-old-space-size=4096" \
+            .
+          echo "✅ 构建完成"
+
+      - name: Save and compress image
+        run: |
+          echo "📦 导出镜像..."
+          docker save yibao-backend:latest -o /tmp/yibao-backend.tar
+          echo "🗜️ 压缩镜像..."
           gzip -9 /tmp/yibao-backend.tar
           ls -lh /tmp/yibao-backend.tar.gz
 
@@ -56,22 +47,16 @@ jobs:
           name: yibao-backend-image
           path: /tmp/yibao-backend.tar.gz
           retention-days: 7
-          compression-level: 0  # 已经压缩过了
+          compression-level: 0
 
       - name: Summary
         run: |
           echo "## ✅ 后端镜像构建完成" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "镜像文件: \`yibao-backend.tar.gz\`" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 下载和推送步骤" >> $GITHUB_STEP_SUMMARY
-          echo "1. 在 Actions 页面下载 \`yibao-backend-image\` artifact" >> $GITHUB_STEP_SUMMARY
-          echo "2. 解压并加载: \`gunzip yibao-backend.tar.gz && docker load -i yibao-backend.tar\`" >> $GITHUB_STEP_SUMMARY
-          echo "3. 打标签: \`docker tag yibao-backend:latest YOUR_USERNAME/yibao-backend:latest\`" >> $GITHUB_STEP_SUMMARY
-          echo "4. 推送: \`docker push YOUR_USERNAME/yibao-backend:latest\`" >> $GITHUB_STEP_SUMMARY
+          SIZE=$(ls -lh /tmp/yibao-backend.tar.gz | awk '{print $5}')
+          echo "镜像大小: \`$SIZE\`" >> $GITHUB_STEP_SUMMARY
 
   build-frontend:
-    if: ${{ github.event.inputs.build_frontend != 'false' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     
@@ -81,19 +66,23 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+        with:
+          driver: docker
 
       - name: Build Frontend image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: ./Dockerfile.frontend
-          tags: yibao-frontend:latest
-          outputs: type=docker,dest=/tmp/yibao-frontend.tar
-          cache-from: type=gha,scope=frontend
-          cache-to: type=gha,mode=max,scope=frontend
-
-      - name: Compress image
         run: |
+          echo "🔨 开始构建前端镜像..."
+          docker build \
+            --file Dockerfile.frontend \
+            --tag yibao-frontend:latest \
+            .
+          echo "✅ 构建完成"
+
+      - name: Save and compress image
+        run: |
+          echo "📦 导出镜像..."
+          docker save yibao-frontend:latest -o /tmp/yibao-frontend.tar
+          echo "🗜️ 压缩镜像..."
           gzip -9 /tmp/yibao-frontend.tar
           ls -lh /tmp/yibao-frontend.tar.gz
 
@@ -109,7 +98,8 @@ jobs:
         run: |
           echo "## ✅ 前端镜像构建完成" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "镜像文件: \`yibao-frontend.tar.gz\`" >> $GITHUB_STEP_SUMMARY
+          SIZE=$(ls -lh /tmp/yibao-frontend.tar.gz | awk '{print $5}')
+          echo "镜像大小: \`$SIZE\`" >> $GITHUB_STEP_SUMMARY
 
   summary:
     needs: [build-backend, build-frontend]
@@ -127,7 +117,8 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 🚀 本地推送到 Docker Hub" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
-          echo "# 下载 artifact 后执行" >> $GITHUB_STEP_SUMMARY
+          echo "cd /path/to/yibao" >> $GITHUB_STEP_SUMMARY
+          echo "mv ~/Downloads/yibao-*-image.zip ." >> $GITHUB_STEP_SUMMARY
           echo "./scripts/push-to-dockerhub.sh YOUR_DOCKER_USERNAME" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
