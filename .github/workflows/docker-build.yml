@@ -63,12 +63,13 @@ jobs:
           push: true
           tags: ${{ steps.meta-backend.outputs.tags }}
           labels: ${{ steps.meta-backend.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
           # Docker Hub 尚未完全支持 provenance attestation，关闭以避免推送阶段卡住
           provenance: false
           # 同时关闭 SBOM 生成，避免额外的 attestations 阻塞
           sbom: false
+          # 关闭远程 GHA 缓存上传，避免长时间无日志卡住
+          cache-from: type=local,src=/tmp/.buildx-cache
+          cache-to: type=local,dest=/tmp/.buildx-cache
           build-args: |
             NODE_OPTIONS=--max-old-space-size=4096
 
@@ -80,12 +81,12 @@ jobs:
           push: true
           tags: ${{ steps.meta-frontend.outputs.tags }}
           labels: ${{ steps.meta-frontend.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
           # 同步关闭 provenance，避免推送阻塞
           provenance: false
           # 同步关闭 SBOM，防止 Docker Hub 卡住
           sbom: false
+          cache-from: type=local,src=/tmp/.buildx-cache-frontend
+          cache-to: type=local,dest=/tmp/.buildx-cache-frontend
 
       - name: Summary
         run: |
