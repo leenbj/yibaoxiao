@@ -21,30 +21,14 @@ WORKDIR /app
 ARG NODE_OPTIONS="--max-old-space-size=4096"
 ENV NODE_OPTIONS=${NODE_OPTIONS}
 
-# 安装构建依赖（最小化）
-RUN apk add --no-cache python3 make g++
-
-# 复制 package 文件
-COPY package*.json ./
-
-# 安装所有依赖（包括 devDependencies 用于构建）
-RUN npm ci --ignore-scripts && npm cache clean --force
-
-# 只复制必要的源代码文件
+# 仅拷贝代码和预编译产物（不再安装构建依赖，缩短时间）
 COPY tsconfig.json drizzle.config.ts motia.config.ts types.d.ts ./
 COPY src ./src
 COPY middlewares ./middlewares
 COPY scripts ./scripts
-
-# 只复制必要的 steps（跳过 petstore、hello 等示例）
 COPY steps/health ./steps/health
 COPY steps/reimbursement ./steps/reimbursement
-
-# 跳过 generate-types（使用已提交的 types.d.ts）
-RUN echo "Using pre-committed types.d.ts"
-
-# 预构建 Motia（生产模式）
-RUN NODE_ENV=production npx motia build 2>/dev/null || true
+COPY .motia ./.motia
 
 # ==================== 运行阶段（最小化）====================
 FROM node:20-alpine AS runner

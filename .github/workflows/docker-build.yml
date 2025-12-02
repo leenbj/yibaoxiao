@@ -1,5 +1,9 @@
 name: Build and Push Docker Images
 
+permissions:
+  contents: read
+  packages: write
+
 # 易报销 Pro - Docker 镜像构建工作流
 # 构建镜像并推送到 Docker Hub
 
@@ -22,6 +26,12 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Prepare Motia build artifact
+        run: |
+          npm ci --ignore-scripts --omit=dev
+          NODE_ENV=production npx motia build
+          rm -rf node_modules
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -60,7 +70,7 @@ jobs:
         with:
           context: .
           file: ./Dockerfile.backend
-          push: true
+          push: false
           tags: ${{ steps.meta-backend.outputs.tags }}
           labels: ${{ steps.meta-backend.outputs.labels }}
           # Docker Hub 尚未完全支持 provenance attestation，关闭以避免推送阶段卡住
@@ -70,15 +80,26 @@ jobs:
           # 关闭远程 GHA 缓存上传，避免长时间无日志卡住
           cache-from: type=local,src=/tmp/.buildx-cache
           cache-to: type=local,dest=/tmp/.buildx-cache
+          outputs: type=docker,dest=/tmp/backend-image.tar
           build-args: |
             NODE_OPTIONS=--max-old-space-size=4096
+
+      - name: Load Backend image
+        run: docker load -i /tmp/backend-image.tar
+
+      - name: Push Backend image
+        run: |
+          for tag in ${{ steps.meta-backend.outputs.tags }}; do
+            echo "Pushing $tag"
+            docker push "$tag"
+          done
 
       - name: Build and push Frontend image
         uses: docker/build-push-action@v5
         with:
           context: .
           file: ./Dockerfile.frontend
-          push: true
+          push: false
           tags: ${{ steps.meta-frontend.outputs.tags }}
           labels: ${{ steps.meta-frontend.outputs.labels }}
           # 同步关闭 provenance，避免推送阻塞
@@ -87,6 +108,17 @@ jobs:
           sbom: false
           cache-from: type=local,src=/tmp/.buildx-cache-frontend
           cache-to: type=local,dest=/tmp/.buildx-cache-frontend
+          outputs: type=docker,dest=/tmp/frontend-image.tar
+
+      - name: Load Frontend image
+        run: docker load -i /tmp/frontend-image.tar
+
+      - name: Push Frontend image
+        run: |
+          for tag in ${{ steps.meta-frontend.outputs.tags }}; do
+            echo "Pushing $tag"
+            docker push "$tag"
+          done
 
       - name: Summary
         run: |
