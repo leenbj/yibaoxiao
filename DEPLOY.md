@@ -4,18 +4,81 @@
 
 ## 📋 目录
 
-- [方案概述](#方案概述)
-- [前置要求](#前置要求)
-- [第一步：本地构建镜像](#第一步本地构建镜像)
-- [第二步：服务器环境准备](#第二步服务器环境准备)
-- [第三步：部署应用](#第三步部署应用)
-- [第四步：配置域名（可选）](#第四步配置域名可选)
+- [方案选择](#方案选择)
+- [方案一：GitHub Actions 构建（推荐）](#方案一github-actions-构建推荐)
+- [方案二：本地构建](#方案二本地构建)
+- [服务器部署](#服务器部署)
+- [配置域名（可选）](#配置域名可选)
 - [常用运维命令](#常用运维命令)
 - [故障排查](#故障排查)
 
 ---
 
-## 方案概述
+## 方案选择
+
+| 方案 | 优点 | 缺点 | 推荐场景 |
+|------|------|------|----------|
+| **方案一：GitHub Actions** | 构建快、网络好 | 需要下载 artifact | 网络环境差 |
+| **方案二：本地构建** | 一键完成 | 构建慢、依赖网络 | 网络环境好 |
+
+---
+
+## 方案一：GitHub Actions 构建（推荐）
+
+利用 GitHub 的国外服务器构建镜像，然后下载到本地推送到 Docker Hub。
+
+```
+┌─────────────────┐      ┌─────────────────┐      ┌─────────────────┐      ┌─────────────────┐
+│  GitHub Actions │      │   你的电脑      │      │   Docker Hub    │      │  Linux 服务器   │
+│                 │      │                 │      │                 │      │                 │
+│  构建镜像 ──────┼──────▶ 下载 artifact ──┼──────▶ 推送镜像 ──────┼──────▶  拉取并运行    │
+│                 │ zip  │                 │ push │                 │ pull │                 │
+└─────────────────┘      └─────────────────┘      └─────────────────┘      └─────────────────┘
+```
+
+### 步骤 1：触发 GitHub Actions 构建
+
+推送代码到 main 分支会自动触发构建，或手动触发：
+
+1. 打开 GitHub 仓库页面
+2. 点击 **Actions** 标签
+3. 选择 **Build Docker Images** 工作流
+4. 点击 **Run workflow**
+
+### 步骤 2：下载构建好的镜像
+
+构建完成后（约 5-10 分钟）：
+
+1. 在 Actions 页面点击完成的工作流
+2. 滚动到页面底部的 **Artifacts** 区域
+3. 下载两个文件：
+   - `yibao-backend-image` (后端镜像)
+   - `yibao-frontend-image` (前端镜像)
+
+### 步骤 3：推送到 Docker Hub
+
+```bash
+# 进入项目目录
+cd /Users/wangbo/Desktop/AI建站/yibao
+
+# 将下载的 zip 文件移动到项目目录
+mv ~/Downloads/yibao-backend-image.zip .
+mv ~/Downloads/yibao-frontend-image.zip .
+
+# 运行推送脚本（替换 YOUR_USERNAME 为你的 Docker Hub 用户名）
+./scripts/push-to-dockerhub.sh YOUR_USERNAME
+```
+
+脚本会自动：
+- 解压 artifact
+- 加载镜像到 Docker
+- 打标签并推送到 Docker Hub
+
+---
+
+## 方案二：本地构建
+
+直接在本地 Mac 上构建并推送镜像。
 
 ```
 ┌─────────────────┐      ┌─────────────────┐      ┌─────────────────┐
@@ -26,58 +89,47 @@
 └─────────────────┘      └─────────────────┘      └─────────────────┘
 ```
 
-## 前置要求
+### 前置要求
 
-### 本地环境（Mac）
-- [x] Docker Desktop 已安装并运行
-- [x] Docker Hub 账号（免费注册：https://hub.docker.com）
+- Docker Desktop 已安装并运行
+- Docker Hub 账号（免费注册：https://hub.docker.com）
 
-### 服务器环境
-- [x] Linux 服务器（CentOS/Ubuntu/Debian）
-- [x] 宝塔面板（可选，但推荐）
-- [x] 至少 2GB 内存，10GB 磁盘空间
-- [x] 开放端口：80（前端）、3000（后端）
-
----
-
-## 第一步：本地构建镜像
-
-### 1.1 登录 Docker Hub
-
-```bash
-# 登录 Docker Hub
-docker login
-# 输入用户名和密码
-```
-
-### 1.2 运行构建脚本
+### 运行构建脚本
 
 ```bash
 # 进入项目目录
 cd /Users/wangbo/Desktop/AI建站/yibao
 
-# 运行构建脚本（替换 YOUR_USERNAME 为你的 Docker Hub 用户名）
+# 登录 Docker Hub
+docker login
+
+# 运行构建脚本（替换 YOUR_USERNAME）
 ./scripts/build-and-push.sh YOUR_USERNAME
 ```
 
-### 1.3 等待构建完成
-
-构建过程大约需要 10-15 分钟，完成后会显示：
-- 后端镜像：`YOUR_USERNAME/yibao-backend:latest`
-- 前端镜像：`YOUR_USERNAME/yibao-frontend:latest`
+构建过程约 10-15 分钟（取决于网络）。
 
 ---
 
-## 第二步：服务器环境准备
+## 服务器部署
 
-### 2.1 安装 Docker（宝塔面板方式）
+### 前置要求
+
+- Linux 服务器（CentOS/Ubuntu/Debian）
+- 宝塔面板（可选，但推荐）
+- 至少 2GB 内存，10GB 磁盘空间
+- 开放端口：80（前端）、3000（后端）
+
+### 服务器环境准备
+
+### 安装 Docker（宝塔面板方式）
 
 1. 登录宝塔面板
 2. 进入 **软件商店**
 3. 搜索 **Docker管理器**
 4. 点击安装
 
-### 2.2 安装 Docker（命令行方式）
+### 安装 Docker（命令行方式）
 
 ```bash
 # CentOS
@@ -90,38 +142,39 @@ curl -L "https://github.com/docker/compose/releases/latest/download/docker-compo
 chmod +x /usr/local/bin/docker-compose
 ```
 
-### 2.3 验证安装
+### 验证安装
 
 ```bash
 docker --version
 docker-compose --version
 ```
 
----
+### 部署应用
 
-## 第三步：部署应用
-
-### 方式一：使用部署脚本（推荐）
+#### 方式一：使用部署脚本（推荐）
 
 ```bash
+# 创建部署目录
+mkdir -p /www/wwwroot/yibao && cd /www/wwwroot/yibao
+
 # 下载部署脚本
-curl -O https://raw.githubusercontent.com/YOUR_REPO/main/scripts/deploy-server.sh
+curl -O https://raw.githubusercontent.com/leenbj/yibaoxiao/main/scripts/deploy-server.sh
 chmod +x deploy-server.sh
 
 # 运行部署（替换 YOUR_USERNAME 为你的 Docker Hub 用户名）
 ./deploy-server.sh YOUR_USERNAME
 ```
 
-### 方式二：手动部署
+#### 方式二：手动部署
 
-#### 3.1 创建部署目录
+##### 创建部署目录
 
 ```bash
 mkdir -p /www/wwwroot/yibao
 cd /www/wwwroot/yibao
 ```
 
-#### 3.2 创建 docker-compose.yml
+##### 创建 docker-compose.yml
 
 ```yaml
 # docker-compose.yml
@@ -184,7 +237,7 @@ networks:
     driver: bridge
 ```
 
-#### 3.3 启动服务
+##### 启动服务
 
 ```bash
 # 拉取镜像
@@ -199,9 +252,9 @@ docker-compose ps
 
 ---
 
-## 第四步：配置域名（可选）
+## 配置域名（可选）
 
-### 4.1 宝塔面板配置反向代理
+### 宝塔面板配置反向代理
 
 1. 进入 **网站** → **添加站点**
 2. 输入域名，如 `yibao.example.com`
@@ -210,7 +263,7 @@ docker-compose ps
    - 目标URL：`http://127.0.0.1:80`
    - 发送域名：`$host`
 
-### 4.2 配置 SSL 证书
+### 配置 SSL 证书
 
 1. 站点设置 → **SSL**
 2. 选择 **Let's Encrypt** 免费证书

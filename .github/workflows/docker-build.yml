@@ -1,7 +1,7 @@
-name: Build and Push Docker Images
+name: Build Docker Images
 
 # 易报销 Pro - Docker 镜像构建工作流
-# 优化：添加超时控制，简化缓存策略
+# 构建镜像并导出为 artifact，供本地下载后推送到 Docker Hub
 
 on:
   push:
@@ -9,163 +9,128 @@ on:
     tags: ['v*']
   workflow_dispatch:
     inputs:
-      skip_cache:
-        description: '跳过构建缓存'
+      build_backend:
+        description: '构建后端镜像'
         required: false
-        default: 'false'
+        default: true
         type: boolean
-
-env:
-  REGISTRY: ghcr.io
-  BACKEND_IMAGE: ghcr.io/${{ github.repository }}-backend
-  FRONTEND_IMAGE: ghcr.io/${{ github.repository }}-frontend
+      build_frontend:
+        description: '构建前端镜像'
+        required: false
+        default: true
+        type: boolean
 
 jobs:
   build-backend:
+    if: ${{ github.event.inputs.build_backend != 'false' }}
     runs-on: ubuntu-latest
-    # 设置超时时间为 30 分钟（构建通常只需 5-10 分钟）
     timeout-minutes: 30
-    permissions:
-      contents: read
-      packages: write
-
+    
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-        with:
-          # 使用 docker 驱动而非 docker-container，简化推送过程
-          driver: docker-container
-          driver-opts: |
-            network=host
 
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Extract metadata for Backend
-        id: meta-backend
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.BACKEND_IMAGE }}
-          tags: |
-            type=ref,event=branch
-            type=ref,event=tag
-            type=sha,prefix=
-            type=raw,value=latest,enable={{is_default_branch}}
-
-      - name: Build and push Backend image
+      - name: Build Backend image
         uses: docker/build-push-action@v5
         with:
           context: .
           file: ./Dockerfile.backend
-          push: true
-          tags: ${{ steps.meta-backend.outputs.tags }}
-          labels: ${{ steps.meta-backend.outputs.labels }}
-          # 禁用 provenance 和 sbom 以减少推送数据量和时间
-          provenance: false
-          sbom: false
-          # 只使用 GHA 缓存（更稳定，避免 Registry 缓存问题）
+          tags: yibao-backend:latest
+          outputs: type=docker,dest=/tmp/yibao-backend.tar
           cache-from: type=gha,scope=backend
           cache-to: type=gha,mode=max,scope=backend
           build-args: |
             NODE_OPTIONS=--max-old-space-size=4096
 
-      - name: Print image info
+      - name: Compress image
         run: |
-          echo "✅ Backend image built and pushed successfully!"
-          echo "Image: ${{ env.BACKEND_IMAGE }}"
-          echo "Tags: ${{ steps.meta-backend.outputs.tags }}"
+          gzip -9 /tmp/yibao-backend.tar
+          ls -lh /tmp/yibao-backend.tar.gz
+
+      - name: Upload Backend image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: yibao-backend-image
+          path: /tmp/yibao-backend.tar.gz
+          retention-days: 7
+          compression-level: 0  # 已经压缩过了
+
+      - name: Summary
+        run: |
+          echo "## ✅ 后端镜像构建完成" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "镜像文件: \`yibao-backend.tar.gz\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 下载和推送步骤" >> $GITHUB_STEP_SUMMARY
+          echo "1. 在 Actions 页面下载 \`yibao-backend-image\` artifact" >> $GITHUB_STEP_SUMMARY
+          echo "2. 解压并加载: \`gunzip yibao-backend.tar.gz && docker load -i yibao-backend.tar\`" >> $GITHUB_STEP_SUMMARY
+          echo "3. 打标签: \`docker tag yibao-backend:latest YOUR_USERNAME/yibao-backend:latest\`" >> $GITHUB_STEP_SUMMARY
+          echo "4. 推送: \`docker push YOUR_USERNAME/yibao-backend:latest\`" >> $GITHUB_STEP_SUMMARY
 
   build-frontend:
+    if: ${{ github.event.inputs.build_frontend != 'false' }}
     runs-on: ubuntu-latest
-    # 设置超时时间为 15 分钟（前端构建更快）
     timeout-minutes: 15
-    permissions:
-      contents: read
-      packages: write
-
+    
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-        with:
-          driver: docker-container
-          driver-opts: |
-            network=host
 
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Extract metadata for Frontend
-        id: meta-frontend
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.FRONTEND_IMAGE }}
-          tags: |
-            type=ref,event=branch
-            type=ref,event=tag
-            type=sha,prefix=
-            type=raw,value=latest,enable={{is_default_branch}}
-
-      - name: Build and push Frontend image
+      - name: Build Frontend image
         uses: docker/build-push-action@v5
         with:
           context: .
           file: ./Dockerfile.frontend
-          push: true
-          tags: ${{ steps.meta-frontend.outputs.tags }}
-          labels: ${{ steps.meta-frontend.outputs.labels }}
-          # 禁用 provenance 和 sbom
-          provenance: false
-          sbom: false
-          # 只使用 GHA 缓存
+          tags: yibao-frontend:latest
+          outputs: type=docker,dest=/tmp/yibao-frontend.tar
           cache-from: type=gha,scope=frontend
           cache-to: type=gha,mode=max,scope=frontend
 
-      - name: Print image info
+      - name: Compress image
         run: |
-          echo "✅ Frontend image built and pushed successfully!"
-          echo "Image: ${{ env.FRONTEND_IMAGE }}"
-          echo "Tags: ${{ steps.meta-frontend.outputs.tags }}"
+          gzip -9 /tmp/yibao-frontend.tar
+          ls -lh /tmp/yibao-frontend.tar.gz
+
+      - name: Upload Frontend image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: yibao-frontend-image
+          path: /tmp/yibao-frontend.tar.gz
+          retention-days: 7
+          compression-level: 0
+
+      - name: Summary
+        run: |
+          echo "## ✅ 前端镜像构建完成" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "镜像文件: \`yibao-frontend.tar.gz\`" >> $GITHUB_STEP_SUMMARY
 
   summary:
     needs: [build-backend, build-frontend]
-    runs-on: ubuntu-latest
     if: always()
+    runs-on: ubuntu-latest
     steps:
-      - name: Summary
+      - name: Final Summary
         run: |
-          echo "## 🚀 Docker Images Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "## 🎉 构建完成！" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 📦 镜像信息" >> $GITHUB_STEP_SUMMARY
+          echo "### 📦 下载镜像" >> $GITHUB_STEP_SUMMARY
+          echo "在本页面的 **Artifacts** 区域下载：" >> $GITHUB_STEP_SUMMARY
+          echo "- \`yibao-backend-image\` (后端镜像)" >> $GITHUB_STEP_SUMMARY
+          echo "- \`yibao-frontend-image\` (前端镜像)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| 镜像 | 标签 |" >> $GITHUB_STEP_SUMMARY
-          echo "|------|------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Backend | \`${{ env.BACKEND_IMAGE }}:latest\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| Frontend | \`${{ env.FRONTEND_IMAGE }}:latest\` |" >> $GITHUB_STEP_SUMMARY
+          echo "### 🚀 本地推送到 Docker Hub" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
+          echo "# 下载 artifact 后执行" >> $GITHUB_STEP_SUMMARY
+          echo "./scripts/push-to-dockerhub.sh YOUR_DOCKER_USERNAME" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 👤 默认管理员" >> $GITHUB_STEP_SUMMARY
           echo "- 邮箱: \`wangbo@knet.cn\`" >> $GITHUB_STEP_SUMMARY
           echo "- 密码: \`123456\`" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 📋 部署命令" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
-          echo "# 登录 GitHub Container Registry" >> $GITHUB_STEP_SUMMARY
-          echo "echo \$GITHUB_TOKEN | docker login ghcr.io -u USERNAME --password-stdin" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "# 拉取并启动" >> $GITHUB_STEP_SUMMARY
-          echo "docker-compose -f docker-compose.prod.yml pull" >> $GITHUB_STEP_SUMMARY
-          echo "docker-compose -f docker-compose.prod.yml up -d" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
