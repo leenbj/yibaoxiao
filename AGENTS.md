@@ -1,5 +1,5 @@
 # AGENTS.md
-
+所有的对话必须使用中文
 > AI Development Guide for Motia Projects
 
 This file provides context and instructions for AI coding assistants working on Motia projects.

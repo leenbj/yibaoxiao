@@ -66,6 +66,8 @@ jobs:
           cache-to: type=gha,mode=max
           # Docker Hub 尚未完全支持 provenance attestation，关闭以避免推送阶段卡住
           provenance: false
+          # 同时关闭 SBOM 生成，避免额外的 attestations 阻塞
+          sbom: false
           build-args: |
             NODE_OPTIONS=--max-old-space-size=4096
 
@@ -81,6 +83,8 @@ jobs:
           cache-to: type=gha,mode=max
           # 同步关闭 provenance，避免推送阻塞
           provenance: false
+          # 同步关闭 SBOM，防止 Docker Hub 卡住
+          sbom: false
 
       - name: Summary
         run: |
