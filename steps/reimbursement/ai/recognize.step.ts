@@ -95,7 +95,7 @@ export const handler: Handlers['AIRecognize'] = async (req, { logger }) => {
           // 备用方案：假设 userId 是 parts[1] 和 parts[2] 组合（如果 parts[2] 不是纯数字）
           if (parts.length >= 3 && !/^\d{10,}$/.test(parts[2])) {
             userId = `${parts[1]}_${parts[2]}`
-          } else {
+      } else {
             userId = parts[1]
           }
         }

@@ -640,10 +640,10 @@ const MainApp = ({ user, onLogout }: { user: AppUser, onLogout: () => void }) =>
       }
 
       // 跳转到详情页面（用户可在详情页生成 PDF）
-      setTimeout(() => {
-          setSelectedId(report.id);
-          setView("report-detail");
-      }, 100);
+          setTimeout(() => {
+              setSelectedId(report.id);
+              setView("report-detail");
+          }, 100);
   };
 
   const handleLoanAction = async (loan: LoanRecord, action: 'save' | 'pdf') => {
@@ -663,10 +663,10 @@ const MainApp = ({ user, onLogout }: { user: AppUser, onLogout: () => void }) =>
     }
     
     // 跳转到详情页面（用户可在详情页生成 PDF）
-    setTimeout(() => {
-        setSelectedId(loan.id);
-        setView("loan-detail");
-    }, 100);
+        setTimeout(() => {
+            setSelectedId(loan.id);
+            setView("loan-detail");
+        }, 100);
   };
 
   const deleteRecord = async (id: string, type: 'report' | 'loan') => {
@@ -1655,7 +1655,7 @@ const CreateReportView = ({ settings, expenses, setExpenses, loans, onAction, on
                     invoiceNumber: invoiceData.invoiceNumber,
                     selected: true
                 });
-            }
+                }
             
             console.log('[AI] 解析发票数据', { 
                 rawInvoiceData: invoiceData, 
@@ -2109,9 +2109,9 @@ const CreateReportView = ({ settings, expenses, setExpenses, loans, onAction, on
                                     </span>
                                 );
                             })()}
-                            <button onClick={() => handleSubmit('save')} className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 font-medium text-sm hover:bg-slate-50 flex items-center gap-1.5">
-                                <Save size={14}/> 保存草稿
-                            </button>
+                             <button onClick={() => handleSubmit('save')} className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 font-medium text-sm hover:bg-slate-50 flex items-center gap-1.5">
+                                 <Save size={14}/> 保存草稿
+                             </button>
                             {(() => {
                                 const invoiceTotal = invoiceDetails.filter(inv => inv.selected).reduce((sum, inv) => sum + inv.amount, 0);
                                 const formTotal = form.manualItems.reduce((sum, item) => sum + item.amount, 0);
@@ -2133,10 +2133,10 @@ const CreateReportView = ({ settings, expenses, setExpenses, loans, onAction, on
                                         title={isMatch ? '提交报销单' : '金额审核未通过，无法提交'}
                                     >
                                         <Download size={14}/> 提交报销
-                                    </button>
+                             </button>
                                 );
                             })()}
-                        </div>
+                         </div>
                      </div>
 
                      <div className="flex-1 overflow-hidden flex flex-row relative bg-slate-100">
@@ -2153,9 +2153,9 @@ const CreateReportView = ({ settings, expenses, setExpenses, loans, onAction, on
                          <div className={`bg-white border-r border-slate-200 overflow-y-auto flex-shrink-0 transition-all duration-300 ${formCollapsed ? 'w-0 p-0 overflow-hidden' : 'w-[280px] xl:w-[320px] p-4'}`}>
                              <h3 className="font-bold text-slate-800 mb-3 flex items-center gap-2 text-sm"><Edit2 size={14} className="text-slate-600"/> 填写信息</h3>
                              
-                            <div className="space-y-6">
+                             <div className="space-y-6">
                                 {/* 报销事由列表 - 多条时显示编号 */}
-                                <div>
+                                 <div>
                                     <label className="text-xs font-bold text-slate-500 uppercase block mb-1">
                                         报销事由 {form.manualItems.length > 1 && `(${form.manualItems.length}条)`}
                                     </label>
@@ -2176,7 +2176,7 @@ const CreateReportView = ({ settings, expenses, setExpenses, loans, onAction, on
                                                 className="w-full p-2 border border-slate-200 rounded-lg text-sm font-medium focus:border-indigo-500 outline-none" 
                                                 placeholder="例如：采购办公用品" 
                                             />
-                                            <p className="text-[10px] text-slate-400 mt-1">格式：发票内容（具体事项）</p>
+                                     <p className="text-[10px] text-slate-400 mt-1">格式：发票内容（具体事项）</p>
                                         </>
                                     ) : (
                                         // 多条时显示带编号的列表
@@ -2205,18 +2205,18 @@ const CreateReportView = ({ settings, expenses, setExpenses, loans, onAction, on
                                             <p className="text-[10px] text-slate-400">点击编辑每条报销事由</p>
                                         </div>
                                     )}
-                                </div>
+                                 </div>
 
-                                <div>
-                                    <label className="text-xs font-bold text-slate-500 uppercase block mb-1">审批单编号</label>
-                                    <input value={form.approvalNumber} onChange={e => setForm({...form, approvalNumber: e.target.value})} className="w-full p-2 border border-slate-200 rounded-lg text-sm font-medium focus:border-indigo-500 outline-none" placeholder="钉钉/飞书审批单号" />
-                                </div>
+                                 <div>
+                                     <label className="text-xs font-bold text-slate-500 uppercase block mb-1">审批单编号</label>
+                                     <input value={form.approvalNumber} onChange={e => setForm({...form, approvalNumber: e.target.value})} className="w-full p-2 border border-slate-200 rounded-lg text-sm font-medium focus:border-indigo-500 outline-none" placeholder="钉钉/飞书审批单号" />
+                                 </div>
 
-                                <div>
-                                    <label className="text-xs font-bold text-slate-500 uppercase block mb-1">预算项目</label>
-                                    <select value={form.budgetProjectId} onChange={e => setForm({...form, budgetProjectId: e.target.value})} className="w-full p-2 border border-slate-200 rounded-lg text-sm font-medium focus:border-indigo-500 outline-none bg-white">
-                                        {settings.budgetProjects.map((p:any) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                                    </select>
+                                 <div>
+                                     <label className="text-xs font-bold text-slate-500 uppercase block mb-1">预算项目</label>
+                                     <select value={form.budgetProjectId} onChange={e => setForm({...form, budgetProjectId: e.target.value})} className="w-full p-2 border border-slate-200 rounded-lg text-sm font-medium focus:border-indigo-500 outline-none bg-white">
+                                         {settings.budgetProjects.map((p:any) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                                     </select>
                                     {/* 显示审批单中的预算信息 */}
                                     {aiApprovalResult?.budgetProject && (
                                         <p className="text-[10px] text-green-600 mt-1">
@@ -2224,14 +2224,14 @@ const CreateReportView = ({ settings, expenses, setExpenses, loans, onAction, on
                                             {aiApprovalResult.budgetCode && ` (${aiApprovalResult.budgetCode})`}
                                         </p>
                                     )}
-                                </div>
+                                 </div>
 
-                                <div>
-                                    <label className="text-xs font-bold text-slate-500 uppercase block mb-1">收款账户</label>
-                                    <select value={form.paymentAccountId} onChange={e => setForm({...form, paymentAccountId: e.target.value})} className="w-full p-2 border border-slate-200 rounded-lg text-sm font-medium focus:border-indigo-500 outline-none bg-white">
-                                        {settings.paymentAccounts.map((a:any) => <option key={a.id} value={a.id}>{a.bankName} - {a.accountNumber.slice(-4)}</option>)}
-                                    </select>
-                                </div>
+                                 <div>
+                                     <label className="text-xs font-bold text-slate-500 uppercase block mb-1">收款账户</label>
+                                     <select value={form.paymentAccountId} onChange={e => setForm({...form, paymentAccountId: e.target.value})} className="w-full p-2 border border-slate-200 rounded-lg text-sm font-medium focus:border-indigo-500 outline-none bg-white">
+                                         {settings.paymentAccounts.map((a:any) => <option key={a.id} value={a.id}>{a.bankName} - {a.accountNumber.slice(-4)}</option>)}
+                                     </select>
+                                 </div>
 
                                  {/* 多发票合并选项 - 只在有多张发票时显示 */}
                                  {invoiceDetails.length > 1 && (
@@ -2384,7 +2384,7 @@ const CreateReportView = ({ settings, expenses, setExpenses, loans, onAction, on
                                      )}
 
                                     {/* Ledger Items Status Linking - 关联记账本状态 */}
-                                    {pendingExpenses.length > 0 && (
+                                     {pendingExpenses.length > 0 && (
                                         <div className="border-t border-slate-100 pt-3">
                                             <p className="text-xs font-bold text-slate-500 mb-1 flex items-center gap-1">
                                                 <Briefcase size={12}/> 关联记账本
@@ -2421,7 +2421,7 @@ const CreateReportView = ({ settings, expenses, setExpenses, loans, onAction, on
                                             
                                             {/* 手动选择区域 */}
                                             {pendingExpenses.filter((e:any) => !selectedExpenseIds.includes(e.id)).length > 0 && (
-                                                <div>
+                                         <div>
                                                     <p className="text-[10px] text-slate-400 mb-1">
                                                         手动选择 ({pendingExpenses.filter((e:any) => !selectedExpenseIds.includes(e.id)).length}项未报销)
                                                     </p>
@@ -2436,19 +2436,19 @@ const CreateReportView = ({ settings, expenses, setExpenses, loans, onAction, on
                                                                         className="rounded text-slate-600 focus:ring-slate-500 w-3 h-3"
                                                                     />
                                                                     <span className="text-[11px] text-slate-600 truncate">{e.description}</span>
-                                                                </div>
+                                                        </div>
                                                                 <span className="text-[11px] font-medium text-slate-700">¥{e.amount.toFixed(2)}</span>
-                                                            </label>
-                                                        ))}
-                                                    </div>
-                                                </div>
-                                            )}
+                                                    </label>
+                                                ))}
+                                            </div>
+                                         </div>
+                                     )}
                                             
                                             {/* 选中汇总 */}
                                             {selectedExpenseIds.length > 0 && (
                                                 <div className="mt-2 text-[10px] text-green-700 bg-green-50 rounded px-2 py-1">
                                                     已关联 {selectedExpenseIds.length} 项记账本事项，提交后将变为"报销中"
-                                                </div>
+                                 </div>
                                             )}
                                         </div>
                                     )}
@@ -2539,8 +2539,8 @@ const CreateReportView = ({ settings, expenses, setExpenses, loans, onAction, on
                                         </div>
                                     </div>
                                 )}
-                            </div>
-                        </div>
+                             </div>
+                         </div>
 
                          {/* Right Panel: Preview - 横版A4占据80%宽度 */}
                          <div ref={previewContainerRef} className="flex-1 bg-slate-100 overflow-auto p-2">
@@ -2755,11 +2755,11 @@ const LoanView = ({ settings, onAction, onBack }: any) => {
     return (
         <div className={`mx-auto h-full flex flex-col ${step === 2 ? 'w-full max-w-none' : 'max-w-5xl'}`}>
             {/* Header */}
-            {step === 1 && (
-                <div className="flex items-center gap-4 mb-6">
-                    <button onClick={onBack} className="p-2 hover:bg-slate-100 rounded-full text-slate-500"><ChevronRight className="rotate-180"/></button>
-                    <h2 className="text-2xl font-bold text-slate-800">借款申请</h2>
-                </div>
+             {step === 1 && (
+                    <div className="flex items-center gap-4 mb-6">
+                        <button onClick={onBack} className="p-2 hover:bg-slate-100 rounded-full text-slate-500"><ChevronRight className="rotate-180"/></button>
+                        <h2 className="text-2xl font-bold text-slate-800">借款申请</h2>
+                    </div>
             )}
 
             {/* Step 1: Upload */}
@@ -2778,8 +2778,8 @@ const LoanView = ({ settings, onAction, onBack }: any) => {
                                         {approvalFiles.map((f, i) => (
                                             <div key={i} className="relative group pointer-events-auto">
                                                 <div className="w-20 h-20 bg-slate-100 rounded-lg border border-slate-200 overflow-hidden flex items-center justify-center">
-                                                    <FileText className="text-slate-400"/>
-                                                </div>
+                                                        <FileText className="text-slate-400"/>
+                                                    </div>
                                                 <div className="text-[10px] mt-1 truncate max-w-[80px] text-slate-500">{f.name}</div>
                                                 <button onClick={(e) => { e.stopPropagation(); removeFile(i); }} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 opacity-100 transition-opacity z-20"><X size={10}/></button>
                                             </div>
@@ -2797,41 +2797,41 @@ const LoanView = ({ settings, onAction, onBack }: any) => {
                                     </div>
                                 )}
                             </div>
+                            </div>
                         </div>
-                    </div>
-                    
-                    <button 
-                        onClick={startAnalysis} 
-                        disabled={approvalFiles.length === 0 || analyzing}
+
+                        <button 
+                            onClick={startAnalysis} 
+                            disabled={approvalFiles.length === 0 || analyzing}
                         className={`w-full mt-8 py-4 rounded-xl font-bold shadow-lg transition-all flex items-center justify-center gap-2 text-lg ${approvalFiles.length > 0 ? 'bg-amber-500 text-white shadow-amber-200 hover:bg-amber-600' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`}
-                    >
+                        >
                         {analyzing ? <><Loader2 className="animate-spin"/> AI 正在分析审批单...</> : "开始识别与填单"}
-                    </button>
-                </div>
-            )}
+                        </button>
+                 </div>
+             )}
 
             {/* Step 2: Form & Preview */}
-            {step === 2 && (
+             {step === 2 && (
                 <div className="absolute inset-0 flex flex-col bg-slate-100 z-30">
-                    {/* Toolbar */}
+                     {/* Toolbar */}
                     <div className="bg-white border-b border-slate-200 px-4 py-2.5 flex justify-between items-center shadow-sm flex-shrink-0">
                         <div className="flex items-center gap-3">
                             <button onClick={() => setStep(1)} className="text-slate-500 hover:text-slate-800 flex items-center gap-1 font-medium text-sm">
                                 <ChevronLeft size={16}/> 返回重传
-                            </button>
+                             </button>
                             <div className="h-4 w-px bg-slate-200"></div>
                             <span className="text-sm font-medium text-slate-700">借款单预览 (双联)</span>
-                        </div>
+                         </div>
                         <div className="flex gap-2">
                             <button onClick={() => handleSubmit('save')} className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 font-medium text-sm hover:bg-slate-50 flex items-center gap-1.5">
                                 <Save size={14}/> 保存草稿
-                            </button>
+                             </button>
                             <button onClick={() => handleSubmit('pdf')} className="px-3 py-1.5 rounded-lg bg-amber-500 text-white font-medium text-sm shadow-md shadow-amber-200 hover:bg-amber-600 flex items-center gap-1.5">
                                 <Download size={14}/> 提交借款
-                            </button>
-                        </div>
-                    </div>
-                    
+                             </button>
+                         </div>
+                     </div>
+
                     <div className="flex-1 overflow-hidden flex flex-row relative bg-slate-100">
                         {/* 收缩/展开按钮 */}
                         <button
@@ -2841,7 +2841,7 @@ const LoanView = ({ settings, onAction, onBack }: any) => {
                             {formCollapsed ? <ChevronRight size={14}/> : <ChevronLeft size={14}/>}
                         </button>
                         
-                        {/* Left Panel: Form Controls */}
+                         {/* Left Panel: Form Controls */}
                         <div className={`bg-white border-r border-slate-200 overflow-y-auto flex-shrink-0 transition-all duration-300 ${formCollapsed ? 'w-0 p-0 overflow-hidden' : 'w-[280px] xl:w-[320px] p-4'}`}>
                             <h3 className="font-bold text-slate-800 mb-3 flex items-center gap-2 text-sm">
                                 <Edit2 size={14} className="text-amber-500"/> 确认借款信息
@@ -2849,23 +2849,23 @@ const LoanView = ({ settings, onAction, onBack }: any) => {
                             
                             <div className="space-y-4">
                                 {/* 借款金额 */}
-                                <div>
-                                    <label className="text-xs font-bold text-slate-500 uppercase block mb-1">借款金额</label>
-                                    <div className="relative">
-                                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">¥</span>
-                                        <input 
+                                 <div>
+                                     <label className="text-xs font-bold text-slate-500 uppercase block mb-1">借款金额</label>
+                                     <div className="relative">
+                                         <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">¥</span>
+                                         <input 
                                             type="number" 
                                             value={amount} 
                                             onChange={e => setAmount(parseFloat(e.target.value) || 0)} 
                                             className="w-full pl-7 p-2 border border-slate-200 rounded-lg font-bold text-lg text-amber-600 focus:border-amber-500 outline-none" 
                                         />
-                                    </div>
+                                     </div>
                                     <p className="text-[10px] text-slate-400 mt-1 bg-slate-50 p-1 rounded">大写：{digitToChinese(amount)}</p>
-                                </div>
-                                
+                                 </div>
+                                 
                                 {/* 借款事由 */}
-                                <div>
-                                    <label className="text-xs font-bold text-slate-500 uppercase block mb-1">借款事由</label>
+                                 <div>
+                                     <label className="text-xs font-bold text-slate-500 uppercase block mb-1">借款事由</label>
                                     <textarea 
                                         value={reason} 
                                         onChange={e => setReason(e.target.value)} 
@@ -2873,22 +2873,22 @@ const LoanView = ({ settings, onAction, onBack }: any) => {
                                         rows={2}
                                         placeholder="AI已自动提取，可手动修改"
                                     />
-                                </div>
+                                 </div>
 
                                 {/* 审批单编号 */}
-                                <div>
-                                    <label className="text-xs font-bold text-slate-500 uppercase block mb-1">审批单编号</label>
+                                 <div>
+                                     <label className="text-xs font-bold text-slate-500 uppercase block mb-1">审批单编号</label>
                                     <input 
                                         value={approvalNumber} 
                                         onChange={e => setApprovalNumber(e.target.value)} 
                                         className="w-full p-2 border border-slate-200 rounded-lg text-sm focus:border-amber-500 outline-none"
                                         placeholder="AI已自动提取"
                                     />
-                                </div>
+                                 </div>
 
                                 {/* 收款人账户 */}
-                                <div>
-                                    <label className="text-xs font-bold text-slate-500 uppercase block mb-1">收款人账户</label>
+                                 <div>
+                                     <label className="text-xs font-bold text-slate-500 uppercase block mb-1">收款人账户</label>
                                     <select 
                                         value={paymentAccountId} 
                                         onChange={e => setPaymentAccountId(e.target.value)} 
@@ -2897,11 +2897,11 @@ const LoanView = ({ settings, onAction, onBack }: any) => {
                                         {settings.paymentAccounts.map((a:any) => (
                                             <option key={a.id} value={a.id}>{a.accountName} - {a.bankName}</option>
                                         ))}
-                                    </select>
+                                     </select>
                                     <div className="text-[10px] text-slate-400 mt-1 p-1.5 bg-slate-50 rounded">
-                                        账号: {settings.paymentAccounts.find((a:any) => a.id === paymentAccountId)?.accountNumber}
-                                    </div>
-                                </div>
+                                         账号: {settings.paymentAccounts.find((a:any) => a.id === paymentAccountId)?.accountNumber}
+                                     </div>
+                                 </div>
 
                                 {/* 预算项目 */}
                                 <div>
@@ -2919,19 +2919,19 @@ const LoanView = ({ settings, onAction, onBack }: any) => {
                                 </div>
 
                                 {/* 申请日期 */}
-                                <div>
-                                    <label className="text-xs font-bold text-slate-500 uppercase block mb-1">申请日期</label>
+                                 <div>
+                                     <label className="text-xs font-bold text-slate-500 uppercase block mb-1">申请日期</label>
                                     <input 
                                         type="date" 
                                         value={date} 
                                         onChange={e => setDate(e.target.value)} 
                                         className="w-full p-2 border border-slate-200 rounded-lg text-sm focus:border-amber-500 outline-none"
                                     />
-                                </div>
-                            </div>
-                        </div>
+                                 </div>
+                             </div>
+                         </div>
 
-                        {/* Right Panel: Preview */}
+                         {/* Right Panel: Preview */}
                         <div ref={previewContainerRef} className="flex-1 bg-slate-100 overflow-auto p-2">
                             {/* 缩放控制 */}
                             <div className="sticky top-0 z-20 mb-2 flex justify-center">
@@ -2990,7 +2990,7 @@ const LoanView = ({ settings, onAction, onBack }: any) => {
                                         sheetName="第二联：员工留存联"
                                         showNote={true}
                                     />
-                                </div>
+                                      </div>
                                 
                                 {/* 附件展示 - 竖版 A4 */}
                                 {approvalFiles.map((attachment, idx) => (
@@ -3007,13 +3007,13 @@ const LoanView = ({ settings, onAction, onBack }: any) => {
                                             title="审批单"
                                             index={idx}
                                         />
-                                    </div>
+                                  </div>
                                 ))}
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
+                              </div>
+                         </div>
+                     </div>
+                 </div>
+             )}
         </div>
     );
 };
@@ -4450,26 +4450,26 @@ const GeneralReimbursementForm = ({ data }: any) => {
     
     return (
         <div style={containerStyle} className="general-reimbursement-container">
-        <div style={paperStyle}>
-            {/* 标题区域 */}
-            <div style={titleStyle}>北龙中网（北京）科技有限责任公司</div>
-            <div style={subtitleStyle}>报销单</div>
+            <div style={paperStyle}>
+                {/* 标题区域 */}
+                <div style={titleStyle}>北龙中网（北京）科技有限责任公司</div>
+                <div style={subtitleStyle}>报销单</div>
 
-            {/* 顶部元数据 */}
-            <div style={headerRowStyle}>
-                <div>
-                    报销日期：
+                {/* 顶部元数据 */}
+                <div style={headerRowStyle}>
+                    <div>
+                        报销日期：
                         <span style={{ borderBottom: '1px solid black', padding: '0 8px' }}>{year}</span> 年 
                         <span style={{ borderBottom: '1px solid black', padding: '0 8px' }}>{month}</span> 月 
                         <span style={{ borderBottom: '1px solid black', padding: '0 8px' }}>{day}</span> 日
-                </div>
-                <div>
+                    </div>
+                    <div>
                         附原始单据 <span style={{ display: 'inline-block', width: '32px', borderBottom: '1px solid black', textAlign: 'center' }}>{data.invoiceCount || data.attachments?.length || ''}</span> 张
+                    </div>
                 </div>
-            </div>
 
-            {/* 主表格 */}
-            <table style={tableStyle}>
+                {/* 主表格 */}
+                <table style={tableStyle}>
                 <colgroup>
                     <col style={{ width: '5%' }} />   {/* 序号 */}
                     <col style={{ width: '45%' }} />  {/* 报销事由 */}
@@ -4511,12 +4511,12 @@ const GeneralReimbursementForm = ({ data }: any) => {
                         ))
                     ) : (
                         <tr style={{ height: `${32 * scale}px` }}>
-                            <td style={{ ...cellStyle, textAlign: 'center' }}>1</td>
-                            <td style={cellStyle}>{getExpenseReason()}</td>
-                            <td style={{ ...cellStyle, textAlign: 'center' }}>{(data.totalAmount || 0).toFixed(2)} 元</td>
-                            <td style={cellStyle}>{data.budgetProject?.name || ''}</td>
-                            <td style={cellStyle}>{data.budgetProject?.code || ''}</td>
-                        </tr>
+                        <td style={{ ...cellStyle, textAlign: 'center' }}>1</td>
+                        <td style={cellStyle}>{getExpenseReason()}</td>
+                        <td style={{ ...cellStyle, textAlign: 'center' }}>{(data.totalAmount || 0).toFixed(2)} 元</td>
+                        <td style={cellStyle}>{data.budgetProject?.name || ''}</td>
+                        <td style={cellStyle}>{data.budgetProject?.code || ''}</td>
+                    </tr>
                     )}
 
                     {/* 第4行：提请报销金额 + 预支借款金额 */}
@@ -4618,13 +4618,13 @@ const GeneralReimbursementForm = ({ data }: any) => {
                             所属产品线：
                         </td>
                     </tr>
-                </tbody>
-            </table>
+                    </tbody>
+                </table>
 
-            {/* 底部页脚 */}
+                {/* 底部页脚 */}
                 <div style={{ ...headerRowStyle, marginTop: `${3 * scale}px`, padding: `0 ${6 * scale}px` }}>
-                <div style={{ width: '33%' }}>财务负责人：</div>
-                <div style={{ width: '33%', textAlign: 'center' }}>审核：</div>
+                    <div style={{ width: '33%' }}>财务负责人：</div>
+                    <div style={{ width: '33%', textAlign: 'center' }}>审核：</div>
                     <div style={{ width: '33%', textAlign: 'right', paddingRight: `${32 * scale}px` }}>出纳：</div>
                 </div>
             </div>
@@ -4671,7 +4671,7 @@ const LoanFormSheet = ({ data, sheetNumber, sheetName, showNote }: { data: any, 
                     </h1>
                     <h2 style={{ fontSize: '24px', fontWeight: 'bold', letterSpacing: '1em' }}>借款单</h2>
                 </div>
-                
+            
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', fontSize: '16px' }}>
                     <div style={{ display: 'flex', alignItems: 'flex-end' }}>
                         <span style={{ marginRight: '8px' }}>借款日期：</span>
@@ -4685,7 +4685,7 @@ const LoanFormSheet = ({ data, sheetNumber, sheetName, showNote }: { data: any, 
                     <div>{sheetName}</div>
                 </div>
             </div>
-            
+
             {/* 表格主体 */}
             <div style={{ border: '1px solid black', fontSize: '14px' }}>
                 {/* 第1行：部门和借款人 */}
@@ -4705,7 +4705,7 @@ const LoanFormSheet = ({ data, sheetNumber, sheetName, showNote }: { data: any, 
                         <span style={{ flexGrow: 1, borderBottom: '1px solid black', lineHeight: '1.4' }}>{data.reason || ''}</span>
                     </div>
                 </div>
-                
+
                 {/* 第3行：支付方式 */}
                 <div style={{ display: 'flex', borderBottom: '1px solid black' }}>
                     <div style={{ width: '100%', padding: '4px 8px', display: 'flex', alignItems: 'center' }}>
@@ -4723,7 +4723,7 @@ const LoanFormSheet = ({ data, sheetNumber, sheetName, showNote }: { data: any, 
                         </div>
                     </div>
                 </div>
-                
+
                 {/* 第4行：借款金额 */}
                 <div style={{ display: 'flex', borderBottom: '1px solid black' }}>
                     <div style={{ width: '100%', padding: '4px 8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -4841,9 +4841,9 @@ const LoanFormSheet = ({ data, sheetNumber, sheetName, showNote }: { data: any, 
             {showNote && (
                 <div style={{ marginTop: '8px', padding: '0 8px', fontSize: '14px' }}>
                     <span style={{ fontWeight: 'bold' }}>备注：</span>借款时员工保留此联，报销时需将此联退回财务
-                </div>
-            )}
-        </div>
+                    </div>
+                )}
+            </div>
     );
 };
 
@@ -4899,7 +4899,7 @@ const LoanForm = ({ data }: any) => {
                         北龙中网（北京）科技有限责任公司
                     </h1>
                     <h2 style={{ fontSize: '24px', fontWeight: 'bold', letterSpacing: '1em' }}>借款单</h2>
-                </div>
+            </div>
                 
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', fontSize: '16px' }}>
                     <div style={{ display: 'flex', alignItems: 'flex-end' }}>
@@ -4910,7 +4910,7 @@ const LoanForm = ({ data }: any) => {
                         <span style={{ marginRight: '4px' }}>月</span>
                         <span style={{ ...underlineStyle, width: '40px' }}>{day}</span>
                         <span>日</span>
-                    </div>
+        </div>
                     <div>{sheetName}</div>
                 </div>
             </div>
@@ -5170,12 +5170,12 @@ const TaxiExpenseTable = ({ data }: any) => {
                         </td>
                     </tr>
                 </tbody>
-            </table>
-            
+             </table>
+
             <div style={{ marginTop: '10px', fontSize: '16px', fontWeight: 'bold' }}>
                 填表人（签字）：
-            </div>
-        </div>
+                 </div>
+                 </div>
     );
 };
 
@@ -5248,8 +5248,8 @@ const TravelReimbursementForm = ({ data }: any) => {
                     报销日期：<span style={inputLineStyle}>{year}</span> 年 <span style={inputLineStyle}>{month}</span> 月 <span style={inputLineStyle}>{day}</span> 日
                 </span>
                 <span style={{ marginRight: '20px' }}>附件 {data.invoiceCount || data.attachments?.length || '_____'} 张</span>
-            </div>
-            
+             </div>
+
             <table style={tableStyle}>
                 <colgroup>
                     <col style={{ width: '16%' }} />
@@ -5350,7 +5350,7 @@ const TravelReimbursementForm = ({ data }: any) => {
             <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '20px', padding: '0 20px', fontSize: '16px' }}>
                 <span>财务审核：</span>
                 <span>报销人签字：</span>
-            </div>
+             </div>
         </div>
     );
 };
@@ -5414,7 +5414,7 @@ const CreateTravelReportView = ({ settings, loans, onAction, onBack }: any) => {
             }
         }
     };
-    
+
     // 删除文件
     const removeFile = (type: 'ticket' | 'hotel' | 'taxiInvoice' | 'taxiTrip' | 'approval', index: number) => {
         switch(type) {
@@ -5434,9 +5434,9 @@ const CreateTravelReportView = ({ settings, loans, onAction, onBack }: any) => {
             return;
         }
         
-        setAnalyzing(true);
-        try {
-            const cleanB64 = (d: string) => d.split(',')[1];
+         setAnalyzing(true);
+         try {
+             const cleanB64 = (d: string) => d.split(',')[1];
             
             // 并行识别所有票据，大幅提升速度
             console.log('[AI] 开始并行识别所有票据');
@@ -5450,7 +5450,7 @@ const CreateTravelReportView = ({ settings, loans, onAction, onBack }: any) => {
             
             // 创建并行请求
             const ticketPromise = apiRequest('/api/ai/recognize', {
-                method: 'POST',
+                 method: 'POST',
                 body: JSON.stringify({ type: 'ticket', images: ticketImages, mimeType: 'image/jpeg' }),
             });
             
@@ -5667,9 +5667,9 @@ const CreateTravelReportView = ({ settings, loans, onAction, onBack }: any) => {
             console.error('[AI] 识别失败:', e);
             const errorMsg = e?.message || e?.toString() || '未知错误';
             alert(`AI 识别失败: ${errorMsg}\n\n请检查：\n1. 网络连接是否正常\n2. AI 配置是否正确\n3. 上传的图片是否清晰`);
-        } finally {
-            setAnalyzing(false);
-        }
+         } finally {
+             setAnalyzing(false);
+         }
     };
 
     // 计算总金额
@@ -5738,11 +5738,11 @@ const CreateTravelReportView = ({ settings, loans, onAction, onBack }: any) => {
     return (
         <div className={`mx-auto h-full flex flex-col ${step === 2 ? 'w-full max-w-none' : 'max-w-5xl'}`}>
             {/* Header */}
-            {step === 1 && (
-                <div className="flex items-center gap-4 mb-6">
-                    <button onClick={onBack} className="p-2 hover:bg-slate-100 rounded-full text-slate-500"><ChevronRight className="rotate-180"/></button>
+             {step === 1 && (
+                     <div className="flex items-center gap-4 mb-6">
+                        <button onClick={onBack} className="p-2 hover:bg-slate-100 rounded-full text-slate-500"><ChevronRight className="rotate-180"/></button>
                     <h2 className="text-2xl font-bold text-slate-800">差旅费用报销</h2>
-                </div>
+                    </div>
             )}
 
             {/* Step 1: Upload */}
@@ -5762,22 +5762,22 @@ const CreateTravelReportView = ({ settings, loans, onAction, onBack }: any) => {
                                             <div key={i} className="relative group pointer-events-auto">
                                                 <div className="w-20 h-20 bg-slate-100 rounded-lg border border-slate-200 overflow-hidden flex items-center justify-center">
                                                     <FileText className="text-slate-400"/>
-                                                </div>
+                        </div>
                                                 <div className="text-[10px] mt-1 truncate max-w-[80px] text-slate-500">{f.name}</div>
                                                 <button onClick={(e) => { e.stopPropagation(); removeFile('ticket', i); }} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 opacity-100 transition-opacity z-20"><X size={10}/></button>
-                                            </div>
+                     </div>
                                         ))}
                                         <div className="flex items-center justify-center w-20 h-20 bg-slate-50 rounded-lg border border-slate-200 text-slate-400">
                                             <Plus size={24}/>
-                                        </div>
+                     </div>
                                     </div>
                                 ) : (
                                     <div className="text-center text-slate-400 pointer-events-none">
                                         <Upload size={32} className="mx-auto mb-2 text-red-300"/>
                                         <p className="font-bold text-sm text-slate-600">上传火车票/机票</p>
                                         <p className="text-xs">支持 PDF / 图片</p>
-                                    </div>
-                                )}
+                 </div>
+             )}
                             </div>
                         </div>
 
@@ -5875,9 +5875,9 @@ const CreateTravelReportView = ({ settings, loans, onAction, onBack }: any) => {
             )}
             
             {/* Step 2: 编辑和预览 */}
-            {step === 2 && (
+             {step === 2 && (
                 <div className="absolute inset-0 flex flex-col bg-slate-100 z-30">
-                    {/* Toolbar */}
+                      {/* Toolbar */}
                     <div className="bg-white border-b border-slate-200 px-4 py-2.5 flex justify-between items-center shadow-sm flex-shrink-0">
                         <div className="flex items-center gap-3">
                             <button onClick={() => setStep(1)} className="text-slate-500 hover:text-slate-800 flex items-center gap-1 font-medium text-sm">
@@ -5885,7 +5885,7 @@ const CreateTravelReportView = ({ settings, loans, onAction, onBack }: any) => {
                             </button>
                             <div className="h-4 w-px bg-slate-200"></div>
                             <span className="text-sm font-medium text-slate-700">差旅费报销单预览</span>
-                        </div>
+                          </div>
                         <div className="flex gap-2 items-center">
                             {/* 金额审核状态 */}
                             {validation.isValid ? (
@@ -5910,7 +5910,7 @@ const CreateTravelReportView = ({ settings, loans, onAction, onBack }: any) => {
                             >
                                 <Download size={14}/> 提交报销
                             </button>
-                        </div>
+                      </div>
                     </div>
                     
                     <div className="flex-1 overflow-hidden flex flex-row relative bg-slate-100">
@@ -5928,9 +5928,9 @@ const CreateTravelReportView = ({ settings, loans, onAction, onBack }: any) => {
                                 <Edit2 size={14} className="text-slate-600"/> 填写信息
                             </h3>
                             
-                            <div className="space-y-4">
+                              <div className="space-y-4">
                                 {/* 出差事由 */}
-                                <div>
+                                  <div>
                                     <label className="text-xs font-bold text-slate-500 uppercase block mb-1">出差事由</label>
                                     <textarea 
                                         value={form.tripReason} 
@@ -5940,7 +5940,7 @@ const CreateTravelReportView = ({ settings, loans, onAction, onBack }: any) => {
                                         placeholder="请输入出差事由"
                                     />
                                     <p className="text-[10px] text-amber-600 mt-1">⚠ 请手动填写或确认出差事由</p>
-                                </div>
+                                  </div>
                                 
                                 {/* 审批单编号 */}
                                 <div>
@@ -5951,7 +5951,7 @@ const CreateTravelReportView = ({ settings, loans, onAction, onBack }: any) => {
                                         className="w-full p-2 border border-slate-200 rounded-lg text-sm focus:border-indigo-500 outline-none" 
                                         placeholder="审批单号"
                                     />
-                                </div>
+                                          </div>
                                 
                                 {/* 预算项目 */}
                                 <div>
@@ -5979,9 +5979,9 @@ const CreateTravelReportView = ({ settings, loans, onAction, onBack }: any) => {
                                                     <input 
                                                         value={leg.dateRange || ''} 
                                                         onChange={e => {
-                                                            const legs = [...form.tripLegs];
+                                              const legs = [...form.tripLegs];
                                                             legs[idx].dateRange = e.target.value;
-                                                            setForm({...form, tripLegs: legs});
+                                              setForm({...form, tripLegs: legs});
                                                         }}
                                                         className="w-full p-1 border rounded text-xs"
                                                     />
@@ -5991,9 +5991,9 @@ const CreateTravelReportView = ({ settings, loans, onAction, onBack }: any) => {
                                                     <input 
                                                         value={leg.route || ''} 
                                                         onChange={e => {
-                                                            const legs = [...form.tripLegs];
+                                              const legs = [...form.tripLegs];
                                                             legs[idx].route = e.target.value;
-                                                            setForm({...form, tripLegs: legs});
+                                              setForm({...form, tripLegs: legs});
                                                         }}
                                                         className="w-full p-1 border rounded text-xs"
                                                     />
@@ -6060,8 +6060,8 @@ const CreateTravelReportView = ({ settings, loans, onAction, onBack }: any) => {
                                             <div className="mt-2 text-right text-xs font-bold text-indigo-600">
                                                 小计: ¥{(leg.subTotal || 0).toFixed(2)}
                                             </div>
-                                        </div>
-                                    ))}
+                                      </div>
+                                  ))}
                                     
                                     {/* 添加行程按钮 */}
                                     <button 
@@ -6086,7 +6086,7 @@ const CreateTravelReportView = ({ settings, loans, onAction, onBack }: any) => {
                                     >
                                         + 添加行程
                                     </button>
-                                </div>
+                              </div>
                                 
                                 {/* 出租车费明细 */}
                                 {form.taxiDetails.length > 0 && (
@@ -6106,7 +6106,7 @@ const CreateTravelReportView = ({ settings, loans, onAction, onBack }: any) => {
                                                             }}
                                                             className="w-full p-1 border rounded text-xs"
                                                         />
-                                                    </div>
+                          </div>
                                                     <div>
                                                         <label className="text-slate-500">金额</label>
                                                         <input 
@@ -6223,7 +6223,7 @@ const CreateTravelReportView = ({ settings, loans, onAction, onBack }: any) => {
                                         transformOrigin: 'top center',
                                     }}
                                 >
-                                    <TravelReimbursementForm 
+                                  <TravelReimbursementForm 
                                     data={{
                                         userSnapshot: settings.currentUser,
                                         tripReason: form.tripReason,
@@ -6255,7 +6255,7 @@ const CreateTravelReportView = ({ settings, loans, onAction, onBack }: any) => {
                                           title="火车票/机票"
                                           index={idx}
                                       />
-                                  </div>
+                          </div>
                               ))}
                               
                               {/* 住宿发票附件 */}
@@ -6313,7 +6313,7 @@ const CreateTravelReportView = ({ settings, loans, onAction, onBack }: any) => {
                               ))}
                           </div>
                       </div>
-                    </div>
+                      </div>
                  </div>
              )}
         </div>
@@ -6590,7 +6590,7 @@ const ReportDetailView = ({ report, onUpdate, onBack }: any) => {
                         className="px-4 py-2 bg-indigo-600 text-white rounded font-bold flex items-center gap-2 hover:bg-indigo-700 disabled:opacity-50"
                     >
                         <Download size={16}/> {generating ? '生成中...' : '导出 PDF'}
-                    </button>
+                </button>
                 </div>
             </div>
             
@@ -6754,9 +6754,9 @@ const ReportDetailView = ({ report, onUpdate, onBack }: any) => {
                 )}
                 
                 {/* 右侧预览区域 */}
-                <div className="flex-1 overflow-y-auto p-8 flex flex-col items-center gap-8 print:p-0 print:overflow-visible print:gap-0">
-                    {/* 报销单 */}
-                    {(previewMode === 'all' || previewMode === 'report') && (
+            <div className="flex-1 overflow-y-auto p-8 flex flex-col items-center gap-8 print:p-0 print:overflow-visible print:gap-0">
+                {/* 报销单 */}
+                {(previewMode === 'all' || previewMode === 'report') && (
                         <div ref={reportRef} className="bg-white shadow-lg print:shadow-none">
                             {editData.isTravel ? <TravelReimbursementForm data={editData}/> : <GeneralReimbursementForm data={editData}/>}
                         </div>
@@ -6771,8 +6771,8 @@ const ReportDetailView = ({ report, onUpdate, onBack }: any) => {
                                 tripReason: editData.tripReason,
                                 taxiDetails: editData.taxiDetails,
                             }} />
-                        </div>
-                    )}
+                    </div>
+                )}
                 
                 {/* 发票附件 - 每张单独一页 */}
                 {(previewMode === 'all' || previewMode === 'invoices') && allInvoices.length > 0 && (
@@ -6944,7 +6944,7 @@ const LoanDetailView = ({ loan, onUpdate, onBack }: any) => {
         }
     };
     
-    return (
+     return (
         <div className="h-full flex flex-col bg-slate-100 -m-8">
             <div className="bg-white p-4 flex justify-between items-center shadow-sm print:hidden">
                 <button onClick={onBack} className="flex items-center gap-1 font-bold text-slate-500"><ChevronRight className="rotate-180"/> 返回</button>
@@ -6961,8 +6961,8 @@ const LoanDetailView = ({ loan, onUpdate, onBack }: any) => {
                     >
                         <Download size={16}/> {generating ? '生成中...' : '导出 PDF'}
                     </button>
-                </div>
             </div>
+                        </div>
             {/* 主内容区域 */}
             <div className="flex-1 overflow-hidden flex relative">
                 {/* 伸缩按钮 - 始终可见，固定在左侧边线上 */}
@@ -6996,9 +6996,9 @@ const LoanDetailView = ({ loan, onUpdate, onBack }: any) => {
                                             onChange={e => setEditData({...editData, amount: parseFloat(e.target.value) || 0})}
                                             className="w-full pl-7 p-2 border border-slate-200 rounded-lg text-sm font-bold text-amber-600"
                                         />
-                                    </div>
+                    </div>
                                     <p className="text-[10px] text-slate-400 mt-1">大写：{digitToChinese(editData.amount || 0)}</p>
-                                </div>
+                </div>
                                 <div>
                                     <label className="text-xs font-bold text-slate-500 block mb-1">借款事由</label>
                                     <textarea 
