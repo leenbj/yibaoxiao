@@ -1,7 +1,7 @@
 name: Build and Push Docker Images
 
 # 易报销 Pro - Docker 镜像构建工作流
-# 优化构建速度，使用多层缓存
+# 优化：添加超时控制，简化缓存策略
 
 on:
   push:
@@ -23,6 +23,8 @@ env:
 jobs:
   build-backend:
     runs-on: ubuntu-latest
+    # 设置超时时间为 30 分钟（构建通常只需 5-10 分钟）
+    timeout-minutes: 30
     permissions:
       contents: read
       packages: write
@@ -33,6 +35,11 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+        with:
+          # 使用 docker 驱动而非 docker-container，简化推送过程
+          driver: docker-container
+          driver-opts: |
+            network=host
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
@@ -60,21 +67,25 @@ jobs:
           push: true
           tags: ${{ steps.meta-backend.outputs.tags }}
           labels: ${{ steps.meta-backend.outputs.labels }}
-          # 禁用 provenance 和 sbom 以减少推送数据量
+          # 禁用 provenance 和 sbom 以减少推送数据量和时间
           provenance: false
           sbom: false
-          # 使用多层缓存
-          cache-from: |
-            type=registry,ref=ghcr.io/${{ github.repository }}-backend:cache
-            type=gha,scope=backend
-          cache-to: |
-            type=registry,ref=ghcr.io/${{ github.repository }}-backend:cache,mode=max
-            type=gha,mode=max,scope=backend
+          # 只使用 GHA 缓存（更稳定，避免 Registry 缓存问题）
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
           build-args: |
             NODE_OPTIONS=--max-old-space-size=4096
 
+      - name: Print image info
+        run: |
+          echo "✅ Backend image built and pushed successfully!"
+          echo "Image: ${{ env.BACKEND_IMAGE }}"
+          echo "Tags: ${{ steps.meta-backend.outputs.tags }}"
+
   build-frontend:
     runs-on: ubuntu-latest
+    # 设置超时时间为 15 分钟（前端构建更快）
+    timeout-minutes: 15
     permissions:
       contents: read
       packages: write
@@ -85,6 +96,10 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+        with:
+          driver: docker-container
+          driver-opts: |
+            network=host
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
@@ -112,24 +127,27 @@ jobs:
           push: true
           tags: ${{ steps.meta-frontend.outputs.tags }}
           labels: ${{ steps.meta-frontend.outputs.labels }}
-          # 禁用 provenance 和 sbom 以减少推送数据量
+          # 禁用 provenance 和 sbom
           provenance: false
           sbom: false
-          # 使用多层缓存
-          cache-from: |
-            type=registry,ref=ghcr.io/${{ github.repository }}-frontend:cache
-            type=gha,scope=frontend
-          cache-to: |
-            type=registry,ref=ghcr.io/${{ github.repository }}-frontend:cache,mode=max
-            type=gha,mode=max,scope=frontend
+          # 只使用 GHA 缓存
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,mode=max,scope=frontend
+
+      - name: Print image info
+        run: |
+          echo "✅ Frontend image built and pushed successfully!"
+          echo "Image: ${{ env.FRONTEND_IMAGE }}"
+          echo "Tags: ${{ steps.meta-frontend.outputs.tags }}"
 
   summary:
     needs: [build-backend, build-frontend]
     runs-on: ubuntu-latest
+    if: always()
     steps:
       - name: Summary
         run: |
-          echo "## 🚀 Docker Images Built Successfully!" >> $GITHUB_STEP_SUMMARY
+          echo "## 🚀 Docker Images Build Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 📦 镜像信息" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
@@ -144,6 +162,10 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 📋 部署命令" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
+          echo "# 登录 GitHub Container Registry" >> $GITHUB_STEP_SUMMARY
+          echo "echo \$GITHUB_TOKEN | docker login ghcr.io -u USERNAME --password-stdin" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "# 拉取并启动" >> $GITHUB_STEP_SUMMARY
           echo "docker-compose -f docker-compose.prod.yml pull" >> $GITHUB_STEP_SUMMARY
           echo "docker-compose -f docker-compose.prod.yml up -d" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
