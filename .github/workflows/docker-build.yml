@@ -64,6 +64,8 @@ jobs:
           labels: ${{ steps.meta-backend.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          # Docker Hub 尚未完全支持 provenance attestation，关闭以避免推送阶段卡住
+          provenance: false
           build-args: |
             NODE_OPTIONS=--max-old-space-size=4096
 
@@ -77,6 +79,8 @@ jobs:
           labels: ${{ steps.meta-frontend.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          # 同步关闭 provenance，避免推送阻塞
+          provenance: false
 
       - name: Summary
         run: |
