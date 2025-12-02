@@ -1,81 +1,31 @@
-# 易报销 Pro - 后端 Dockerfile（极速精简版）
-# 优化：最小化镜像体积，加速推送
+# 易报销 Pro - 后端 Dockerfile（稳定构建版）
+# 特点：在镜像内完整安装/构建，减少外部依赖，提升成功率
 
-# ==================== 依赖安装阶段 ====================
-FROM node:20-alpine AS deps
-
-WORKDIR /app
-
-# 复制 package 文件
-COPY package*.json ./
-
-# 只安装生产依赖（不安装 devDependencies）
-RUN npm ci --only=production --ignore-scripts && \
-    npm cache clean --force
-
-# ==================== 构建阶段 ====================
-FROM node:20-alpine AS builder
+FROM node:20-alpine
 
 WORKDIR /app
 
+ENV NODE_ENV=production
 ARG NODE_OPTIONS="--max-old-space-size=4096"
 ENV NODE_OPTIONS=${NODE_OPTIONS}
 
-# 仅拷贝代码和预编译产物（不再安装构建依赖，缩短时间）
-COPY tsconfig.json drizzle.config.ts motia.config.ts types.d.ts ./
-COPY src ./src
-COPY middlewares ./middlewares
-COPY scripts ./scripts
-COPY steps/health ./steps/health
-COPY steps/reimbursement ./steps/reimbursement
-COPY .motia ./.motia
+# 安装构建与运行必需依赖（含 tini、wget、postgresql-client 便于启动脚本）
+RUN apk add --no-cache python3 make g++ linux-headers tini wget postgresql-client
 
-# ==================== 运行阶段（最小化）====================
-FROM node:20-alpine AS runner
+# 复制 package 文件并安装依赖（保留 postinstall 的 motia install）
+COPY package*.json ./
+RUN npm ci && npm cache clean --force
 
-WORKDIR /app
+# 复制全部源代码
+COPY . .
 
-# 设置生产环境
-ENV NODE_ENV=production
-ENV NODE_OPTIONS="--max-old-space-size=512"
+# 生成类型（容忍失败但保留日志）
+RUN npm run generate-types || true
 
-# 安装最小运行时依赖
-RUN apk add --no-cache tini wget postgresql-client
-
-# 从 deps 阶段复制生产依赖（比 builder 小很多）
-COPY --from=deps /app/node_modules ./node_modules
-COPY --from=builder /app/package*.json ./
-
-# 复制构建产物
-COPY --from=builder /app/.motia ./.motia
-
-# 复制必要的运行时文件
-COPY --from=builder /app/steps ./steps
-COPY --from=builder /app/src ./src
-COPY --from=builder /app/scripts ./scripts
-COPY --from=builder /app/middlewares ./middlewares
-COPY --from=builder /app/drizzle.config.ts ./
-COPY --from=builder /app/motia.config.ts ./
-COPY --from=builder /app/tsconfig.json ./
-COPY --from=builder /app/types.d.ts ./
-
-# 清理不必要的文件，减小镜像体积
-RUN rm -rf /app/node_modules/.cache \
-    /app/node_modules/@types \
-    /app/node_modules/typescript \
-    /app/node_modules/.package-lock.json \
-    /tmp/* /var/cache/apk/* && \
-    find /app/node_modules -name "*.md" -delete 2>/dev/null || true && \
-    find /app/node_modules -name "*.ts" ! -name "*.d.ts" -delete 2>/dev/null || true && \
-    find /app/node_modules -name "LICENSE*" -delete 2>/dev/null || true && \
-    find /app/node_modules -name "CHANGELOG*" -delete 2>/dev/null || true
-
-# 创建目录并设置权限
+# 创建目录与权限
 RUN mkdir -p /app/.motia /app/dist && \
-    chmod +x /app/scripts/docker-start.sh
-
-# 创建非 root 用户
-RUN addgroup -g 1001 -S nodejs && \
+    chmod +x /app/scripts/docker-start.sh && \
+    addgroup -g 1001 -S nodejs && \
     adduser -S motia -u 1001 -G nodejs && \
     chown -R motia:nodejs /app
 
@@ -83,9 +33,8 @@ USER motia
 
 EXPOSE 3000
 
-# 健康检查（减少频率）
 HEALTHCHECK --interval=60s --timeout=10s --start-period=120s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1
+  CMD wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1
 
 ENTRYPOINT ["/sbin/tini", "--"]
 CMD ["/app/scripts/docker-start.sh"]
