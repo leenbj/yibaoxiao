@@ -50,9 +50,7 @@ services:
 
   # ==================== Motia 后端服务 ====================
   backend:
-    build:
-      context: .
-      dockerfile: Dockerfile.backend
+    image: ghcr.io/leenbj/yibaoxiao-backend:latest
     container_name: yibao-backend
     restart: unless-stopped
     # 增加系统限制，解决 E2BIG 错误（图片 Base64 数据处理）
@@ -66,12 +64,12 @@ services:
     environment:
       NODE_ENV: production
       # Node.js 内存限制（针对 4G 内存服务器）
-      NODE_OPTIONS: "--max-old-space-size=1024"
+      NODE_OPTIONS: "--max-old-space-size=512 --optimize_for_size --max_semi_space_size=16"
       DATABASE_URL: postgresql://${POSTGRES_USER:-yibao}:${POSTGRES_PASSWORD:-yibao123456}@postgres:5432/${POSTGRES_DB:-yibao}
       # 数据库连接池优化
-      DATABASE_POOL_MIN: "1"
-      DATABASE_POOL_MAX: "5"
-      DATABASE_IDLE_TIMEOUT: "10000"
+      DATABASE_POOL_MIN: "0"
+      DATABASE_POOL_MAX: "3"
+      DATABASE_IDLE_TIMEOUT: "5000"
       DATABASE_CONNECT_TIMEOUT: "5000"
       # AI 配置
       DEFAULT_AI_PROVIDER: ${DEFAULT_AI_PROVIDER:-}
@@ -84,10 +82,6 @@ services:
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123456}
       ADMIN_NAME: ${ADMIN_NAME:-系统管理员}
       ADMIN_DEPARTMENT: ${ADMIN_DEPARTMENT:-管理部}
-    volumes:
-      # 持久化 Motia 构建缓存，加速后续启动
-      - motia_cache:/app/.motia
-      - motia_dist:/app/dist
     ports:
       - "3000:3000"  # 可选：暴露到宿主机，方便调试
     depends_on:
@@ -113,9 +107,7 @@ services:
 
   # ==================== Nginx 前端服务 ====================
   frontend:
-    build:
-      context: .
-      dockerfile: Dockerfile.frontend
+    image: ghcr.io/leenbj/yibaoxiao-frontend:latest
     container_name: yibao-frontend
     restart: unless-stopped
     ports:
@@ -144,14 +136,9 @@ services:
 volumes:
   postgres_data:
     name: yibao_postgres_data
-  motia_cache:
-    name: yibao_motia_cache
-  motia_dist:
-    name: yibao_motia_dist
 
 # ==================== 网络 ====================
 networks:
   yibao-network:
     name: yibao-network
     driver: bridge
-

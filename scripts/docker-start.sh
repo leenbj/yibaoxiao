@@ -17,7 +17,8 @@ echo "=========================================="
 echo ""
 
 # 设置 Node.js 内存限制（针对 4G 内存服务器优化）
-export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=1024}"
+# 强制覆盖 NODE_OPTIONS，移除不允许的参数（如 --optimize_for_size）
+export NODE_OPTIONS="--max-old-space-size=1024"
 
 # 设置默认管理员信息（如果环境变量未设置）
 export ADMIN_EMAIL="${ADMIN_EMAIL:-wangbo@knet.cn}"

@@ -14,6 +14,7 @@ import { AIRecognizeResultSchema, ErrorResponseSchema, TokenUsage } from '../typ
 import { recognizeWithConfig, AIConfig } from '../../../src/services/ai-recognition'
 import { MODEL_PRICING } from '../../../src/config/model-pricing'
 import { aiConfigRepository, tokenUsageRepository } from '../../../src/db/repositories'
+import { compressImages } from '../../../src/utils/image-compress'
 
 // 请求体 Schema
 const bodySchema = z.object({
@@ -65,7 +66,8 @@ export const handler: Handlers['AIRecognize'] = async (req, { logger }) => {
   // 完整 token 例: 
   //   token_user_1234567890_abc123_9876543210_xyz789
   //   token_user_wangbo_1234567890_xyz789
-  let userId = bodyUserId || 'default_user'
+  const fallbackUserId = process.env.ADMIN_USER_ID || 'default_user'
+  let userId = bodyUserId || fallbackUserId
   const authHeader = req.headers.authorization
   if (!bodyUserId && authHeader) {
     const auth = Array.isArray(authHeader) ? authHeader[0] : authHeader
@@ -181,9 +183,25 @@ export const handler: Handlers['AIRecognize'] = async (req, { logger }) => {
       logger.warn('读取 AI 配置失败，使用模拟数据', { error: configError.message })
     }
 
+    // 压缩图片以避免 E2BIG 错误
+    logger.info('压缩图片', { imageCount: images.length })
+    let compressedImages: string[]
+    try {
+      compressedImages = await compressImages(images, {
+        maxWidth: 1600,
+        maxHeight: 1600,
+        quality: 80,
+        maxSizeKB: 500,
+      })
+      logger.info('图片压缩完成', { compressedCount: compressedImages.length })
+    } catch (compressError: any) {
+      logger.warn('图片压缩失败，使用原图', { error: compressError.message })
+      compressedImages = images
+    }
+
     // 调用 AI 识别服务（如果无配置会返回模拟数据）
     logger.info('调用 AI 识别服务', { provider: aiConfig?.provider, model: aiConfig?.model })
-    const result = await recognizeWithConfig(images, type, aiConfig)
+    const result = await recognizeWithConfig(compressedImages, type, aiConfig)
 
     // 详细记录识别结果，帮助调试
     const resultStr = JSON.stringify(result)
