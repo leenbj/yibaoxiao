@@ -64,7 +64,7 @@ services:
     environment:
       NODE_ENV: production
       # Node.js 内存限制（针对 4G 内存服务器）
-      NODE_OPTIONS: "--max-old-space-size=512 --optimize_for_size --max_semi_space_size=16"
+      NODE_OPTIONS: "--max-old-space-size=1024"
       DATABASE_URL: postgresql://${POSTGRES_USER:-yibao}:${POSTGRES_PASSWORD:-yibao123456}@postgres:5432/${POSTGRES_DB:-yibao}
       # 数据库连接池优化
       DATABASE_POOL_MIN: "0"
