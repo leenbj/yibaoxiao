@@ -1,6 +1,8 @@
 import path from 'path';
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
+import tailwindcss from 'tailwindcss';
+import autoprefixer from 'autoprefixer';
 
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, '.', '');
@@ -14,6 +16,11 @@ export default defineConfig(({ mode }) => {
             target: 'http://localhost:3000', // 后端 Motia 地址
             changeOrigin: true,
           },
+        },
+      },
+      css: {
+        postcss: {
+          plugins: [tailwindcss(), autoprefixer()],
         },
       },
       plugins: [react()],

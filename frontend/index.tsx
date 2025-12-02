@@ -58,6 +58,7 @@ import {
   AlertTriangle,
   Search
 } from "lucide-react";
+import "./src/index.css";
 
 // --- Types ---
 
@@ -289,6 +290,8 @@ const AppLogo = ({ className = "w-8 h-8" }: { className?: string }) => (
 // --- API 请求工具 ---
 // 生产环境使用相对路径（通过 Nginx 代理），开发环境使用本地后端
 const API_BASE_URL = import.meta.env.PROD ? '' : 'http://localhost:3000';
+const DEFAULT_USER_ID = 'user_wangbo'; // 缺省用户兜底，避免 400
+const getUserId = (user?: AppUser | null) => user?.id || DEFAULT_USER_ID;
 
 const apiRequest = async (path: string, options: RequestInit = {}) => {
   const token = localStorage.getItem('reimb_token');
@@ -538,23 +541,33 @@ const MainApp = ({ user, onLogout }: { user: AppUser, onLogout: () => void }) =>
     return { ...initialSettings, currentUser, users: [currentUser] };
   });
   
-  const [expenses, setExpenses] = useState<ExpenseItem[]>([]);
-  const [reports, setReports] = useState<Report[]>([]);
-  const [loans, setLoans] = useState<LoanRecord[]>([]);
+  const [expenses, setExpenses] = useState<ExpenseItem[]>(() => {
+    const saved = localStorage.getItem('reimb_expenses_v1');
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [reports, setReports] = useState<Report[]>(() => {
+    const saved = localStorage.getItem('reimb_reports_v1');
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [loans, setLoans] = useState<LoanRecord[]>(() => {
+    const saved = localStorage.getItem('reimb_loans_v1');
+    return saved ? JSON.parse(saved) : [];
+  });
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   // 从后端加载数据
   useEffect(() => {
     const loadData = async () => {
+      const userId = getUserId(user);
       setDataLoading(true);
       try {
         // 并行加载所有数据
         const [expensesRes, reportsRes, loansRes, payeesRes, projectsRes] = await Promise.all([
-          apiRequest('/api/expenses').catch(() => ({ expenses: [] })),
-          apiRequest('/api/reports').catch(() => ({ reports: [] })),
-          apiRequest('/api/loans').catch(() => ({ loans: [] })),
-          apiRequest('/api/settings/payees').catch(() => ({ payees: [] })),
-          apiRequest('/api/settings/projects').catch(() => ({ projects: [] })),
+          apiRequest(`/api/expenses?userId=${userId}`).catch(() => ({ expenses: [] })),
+          apiRequest(`/api/reports?userId=${userId}`).catch(() => ({ reports: [] })),
+          apiRequest(`/api/loans?userId=${userId}`).catch(() => ({ loans: [] })),
+          apiRequest(`/api/settings/payees?userId=${userId}`).catch(() => ({ payees: [] })),
+          apiRequest(`/api/settings/projects?userId=${userId}`).catch(() => ({ projects: [] })),
         ]);
         
         setExpenses((expensesRes as any).expenses || []);
@@ -579,16 +592,20 @@ const MainApp = ({ user, onLogout }: { user: AppUser, onLogout: () => void }) =>
   
   // 保存设置到本地存储（收款人和项目通过 API 管理）
   useEffect(() => localStorage.setItem("reimb_settings_v8", JSON.stringify(settings)), [settings]);
+  useEffect(() => localStorage.setItem("reimb_expenses_v1", JSON.stringify(expenses)), [expenses]);
+  useEffect(() => localStorage.setItem("reimb_reports_v1", JSON.stringify(reports)), [reports]);
+  useEffect(() => localStorage.setItem("reimb_loans_v1", JSON.stringify(loans)), [loans]);
 
   // --- Logic Hooks (with backend API sync) ---
   const addExpense = async (expense: ExpenseItem) => {
+    const userId = getUserId(user);
     try {
       // 调用后端 API 创建费用
       const result = await apiRequest('/api/expenses', {
         method: 'POST',
-        body: JSON.stringify(expense),
+        body: JSON.stringify({ ...expense, userId }),
       }) as { expense: ExpenseItem };
-      setExpenses((prev) => [result.expense || expense, ...prev]);
+      setExpenses((prev) => [result.expense || { ...expense, userId: DEFAULT_USER_ID }, ...prev]);
     } catch (error) {
       console.error('创建费用失败:', error);
       // 即使 API 失败，也更新本地状态以保持用户体验
@@ -603,10 +620,11 @@ const MainApp = ({ user, onLogout }: { user: AppUser, onLogout: () => void }) =>
     
     // 异步同步到后端
     try {
+      const userId = getUserId(user);
       await Promise.all(ids.map(id => 
         apiRequest(`/api/expenses/${id}`, {
           method: 'PUT',
-          body: JSON.stringify({ status }),
+          body: JSON.stringify({ status, userId }),
         })
       ));
     } catch (error) {
@@ -615,6 +633,7 @@ const MainApp = ({ user, onLogout }: { user: AppUser, onLogout: () => void }) =>
   };
 
   const handleReportAction = async (report: Report, action: 'save' | 'pdf') => {
+      const userId = getUserId(user);
       const status: ReportStatus = action === 'pdf' ? 'submitted' : 'draft';
       const expenseStatus: ExpenseStatus = action === 'pdf' ? 'processing' : 'pending';
       
@@ -624,9 +643,9 @@ const MainApp = ({ user, onLogout }: { user: AppUser, onLogout: () => void }) =>
       // 调用后端 API 创建报销单
       const result = await apiRequest('/api/reports', {
         method: 'POST',
-        body: JSON.stringify(newReport),
+        body: JSON.stringify({ ...newReport, userId }),
       }) as { report: Report };
-      setReports(prev => [result.report || newReport, ...prev]);
+      setReports(prev => [result.report || { ...newReport, userId: DEFAULT_USER_ID }, ...prev]);
     } catch (error) {
       console.error('创建报销单失败:', error);
       setReports(prev => [newReport, ...prev]);

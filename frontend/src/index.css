@@ -1,0 +1,9 @@
+@import "tailwindcss/base";
+@import "tailwindcss/components";
+@import "tailwindcss/utilities";
+
+/* 全局基础样式，可按需扩展 */
+body {
+  margin: 0;
+  padding: 0;
+}
