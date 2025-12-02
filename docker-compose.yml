@@ -55,6 +55,14 @@ services:
       dockerfile: Dockerfile.backend
     container_name: yibao-backend
     restart: unless-stopped
+    # 增加系统限制，解决 E2BIG 错误（图片 Base64 数据处理）
+    ulimits:
+      stack:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
     environment:
       NODE_ENV: production
       # Node.js 内存限制（针对 4G 内存服务器）
@@ -97,11 +105,11 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '1.0'
-          memory: 1536M
+          cpus: '1.5'
+          memory: 2048M
         reservations:
           cpus: '0.5'
-          memory: 512M
+          memory: 768M
 
   # ==================== Nginx 前端服务 ====================
   frontend:
