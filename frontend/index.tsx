@@ -1059,7 +1059,7 @@ const MainApp = ({ user, onLogout }: { user: AppUser, onLogout: () => void }) =>
             <button onClick={() => setView("settings")} className="p-2 text-slate-600 bg-slate-50 rounded-full"><Settings size={20} /></button>
         </header>
 
-        <div className="flex-1 overflow-y-auto p-4 md:p-8 print:p-0">
+        <div className="flex-1 overflow-y-auto p-4 md:p-8 pb-24 md:pb-8 print:p-0">
             <div className="max-w-7xl mx-auto print:max-w-none print:mx-0">
                 {view === "dashboard" && <OverviewView expenses={expenses} reports={reports} loans={loans} onNavigate={setView} />}
                 {view === "ledger" && <LedgerView expenses={expenses} setExpenses={setExpenses} />}
