@@ -10,8 +10,7 @@ ARG NODE_OPTIONS="--max-old-space-size=4096"
 ENV NODE_OPTIONS=${NODE_OPTIONS}
 
 # 安装构建与运行必需依赖（含 tini、wget、postgresql-client 便于启动脚本）
-# vips-dev: sharp 图片处理库所需
-RUN apk add --no-cache python3 make g++ linux-headers tini wget postgresql-client vips-dev
+RUN apk add --no-cache python3 make g++ linux-headers tini wget postgresql-client
 
 # 复制 package 文件并安装依赖（保留 postinstall 的 motia install）
 COPY package*.json ./

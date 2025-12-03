@@ -209,22 +209,138 @@ const initialSettings: UserSettings = {
 };
 
 // --- Helpers ---
-const fileToBase64 = (file: File): Promise<string> => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = (error) => reject(error);
-  });
+import imageCompression from 'browser-image-compression';
+
+/**
+ * 图片压缩配置
+ * 使用 browser-image-compression 库（多线程 Web Worker，更高效）
+ * 服务器限制：59KB（E2BIG 错误阈值）
+ * 目标大小：40KB（留 ~32% 安全余量，确保 PDF 也能安全通过）
+ */
+const COMPRESS_CONFIG = {
+  maxSizeMB: 0.04,           // 目标 40KB（低于 59KB 限制，留更大安全余量）
+  maxWidthOrHeight: 1600,    // 最大尺寸
+  useWebWorker: true,        // 使用 Web Worker 多线程（不阻塞 UI）
+  initialQuality: 0.8,       // 初始质量
+  fileType: 'image/jpeg',    // 输出格式
+  serverLimitKB: 59,         // 服务器限制（KB）
+  minQualityForRetry: 0.3,   // 二次压缩最低质量
+  maxRetries: 3,             // 最大重试次数
+  maxIteration: 10,          // 压缩库内部最大迭代次数（避免无限循环）
 };
 
+/**
+ * 文件转 Base64（使用 browser-image-compression 高效压缩）
+ * 特点：
+ * - 多线程 Web Worker，不阻塞 UI
+ * - 自动智能迭代，精确控制输出大小
+ * - 强制保障：如果压缩后仍大于服务器限制，进行二次压缩
+ */
+const fileToBase64 = async (file: File): Promise<string> => {
+  const originalSizeKB = file.size / 1024;
+  const targetSizeKB = COMPRESS_CONFIG.maxSizeMB * 1024;
+  const serverLimitKB = COMPRESS_CONFIG.serverLimitKB;
+  
+  // 如果文件已经很小且低于服务器限制，直接转换
+  if (originalSizeKB <= targetSizeKB && originalSizeKB <= serverLimitKB) {
+    console.log(`[上传] ${file.name}: ${originalSizeKB.toFixed(1)}KB (无需压缩)`);
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = reject;
+    });
+  }
+
+  /**
+   * 压缩图片到指定大小
+   */
+  const compressToSize = async (inputFile: File, maxSizeMB: number, quality: number): Promise<File> => {
+    return imageCompression(inputFile, {
+      maxSizeMB,
+      maxWidthOrHeight: COMPRESS_CONFIG.maxWidthOrHeight,
+      useWebWorker: COMPRESS_CONFIG.useWebWorker,
+      initialQuality: quality,
+      fileType: COMPRESS_CONFIG.fileType,
+      maxIteration: COMPRESS_CONFIG.maxIteration,  // 限制压缩迭代次数
+    });
+  };
+
+  try {
+    // 第一次压缩
+    let compressedFile = await compressToSize(file, COMPRESS_CONFIG.maxSizeMB, COMPRESS_CONFIG.initialQuality);
+    let compressedSizeKB = compressedFile.size / 1024;
+    let retryCount = 0;
+
+    // 如果压缩后仍大于服务器限制，进行二次压缩
+    while (compressedSizeKB > serverLimitKB && retryCount < COMPRESS_CONFIG.maxRetries) {
+      retryCount++;
+      const newMaxSizeMB = (serverLimitKB * 0.8) / 1024; // 目标设为限制的 80%
+      const newQuality = Math.max(COMPRESS_CONFIG.minQualityForRetry, COMPRESS_CONFIG.initialQuality - retryCount * 0.2);
+      
+      console.warn(`[压缩] ${file.name}: ${compressedSizeKB.toFixed(1)}KB 仍超过限制(${serverLimitKB}KB)，第${retryCount}次重试...`);
+      
+      compressedFile = await compressToSize(compressedFile, newMaxSizeMB, newQuality);
+      compressedSizeKB = compressedFile.size / 1024;
+    }
+
+    // 最终检查
+    if (compressedSizeKB > serverLimitKB) {
+      console.error(`[压缩] ${file.name}: 无法压缩到 ${serverLimitKB}KB 以下 (当前 ${compressedSizeKB.toFixed(1)}KB)，请更换更小的图片`);
+      alert(`图片 "${file.name}" 无法压缩到服务器限制(${serverLimitKB}KB)以下，请更换更小或更低分辨率的图片`);
+      throw new Error(`图片过大无法处理: ${file.name}`);
+    }
+
+    const savedPercent = ((1 - compressedSizeKB / originalSizeKB) * 100).toFixed(0);
+    console.log(`[压缩] ${file.name}: ${originalSizeKB.toFixed(1)}KB → ${compressedSizeKB.toFixed(1)}KB (节省 ${savedPercent}%${retryCount > 0 ? `, 重试${retryCount}次` : ''})`);
+
+    // 转换为 Base64
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(compressedFile);
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = reject;
+    });
+  } catch (error: any) {
+    if (error.message?.includes('图片过大')) {
+      throw error; // 重新抛出大小错误
+    }
+    console.warn('[压缩] 压缩失败，尝试使用原图', error);
+    // 如果原图小于限制，使用原图
+    if (originalSizeKB <= serverLimitKB) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+      });
+    }
+    throw new Error(`图片 "${file.name}" 处理失败，请重试`);
+  }
+};
+
+/**
+ * PDF 转图片（带压缩和强制大小保障）
+ */
 const pdfToImage = async (file: File): Promise<string> => {
+    const serverLimitKB = COMPRESS_CONFIG.serverLimitKB;
+    
     try {
         const arrayBuffer = await file.arrayBuffer();
         // @ts-ignore
         const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
         const page = await pdf.getPage(1);
-        const viewport = page.getViewport({ scale: 2 });
+        
+        // 动态计算缩放比例，确保输出尺寸合理
+        const originalViewport = page.getViewport({ scale: 1 });
+        const maxDim = COMPRESS_CONFIG.maxWidthOrHeight;
+        const scale = Math.min(
+          maxDim / originalViewport.width,
+          maxDim / originalViewport.height,
+          1.5 // 降低最大缩放到 1.5 倍，减少输出大小
+        );
+        
+        const viewport = page.getViewport({ scale });
         const canvas = document.createElement("canvas");
         const context = canvas.getContext("2d");
         canvas.height = viewport.height;
@@ -232,10 +348,73 @@ const pdfToImage = async (file: File): Promise<string> => {
         
         if (context) {
             await page.render({ canvasContext: context, viewport: viewport }).promise;
-            return canvas.toDataURL("image/jpeg", 0.8);
+            
+            // 将 Canvas 转换为 Blob
+            const blob = await new Promise<Blob>((resolve) => {
+              canvas.toBlob((b) => resolve(b!), 'image/jpeg', 0.8);
+            });
+            
+            const tempFile = new File([blob], file.name.replace('.pdf', '.jpg'), { type: 'image/jpeg' });
+            let currentSizeKB = tempFile.size / 1024;
+            
+            // 如果已经小于服务器限制，直接返回
+            if (currentSizeKB <= serverLimitKB) {
+              const base64 = canvas.toDataURL('image/jpeg', 0.8);
+              const base64SizeKB = base64.length / 1024 * 0.75; // Base64 约为原始的 1.33 倍
+              console.log(`[PDF] ${file.name}: 转换为 ${currentSizeKB.toFixed(1)}KB`);
+              return base64;
+            }
+            
+            // 使用 browser-image-compression 压缩
+            let compressedFile = await imageCompression(tempFile, {
+              maxSizeMB: COMPRESS_CONFIG.maxSizeMB,
+              maxWidthOrHeight: COMPRESS_CONFIG.maxWidthOrHeight,
+              useWebWorker: COMPRESS_CONFIG.useWebWorker,
+              initialQuality: COMPRESS_CONFIG.initialQuality,
+            });
+            
+            let compressedSizeKB = compressedFile.size / 1024;
+            let retryCount = 0;
+            
+            // 如果仍大于限制，进行二次压缩
+            while (compressedSizeKB > serverLimitKB && retryCount < COMPRESS_CONFIG.maxRetries) {
+              retryCount++;
+              const newMaxSizeMB = (serverLimitKB * 0.7) / 1024; // 目标设为限制的 70%
+              const newQuality = Math.max(0.2, 0.6 - retryCount * 0.15);
+              
+              console.warn(`[PDF] ${file.name}: ${compressedSizeKB.toFixed(1)}KB 仍超过限制，第${retryCount}次重试...`);
+              
+              compressedFile = await imageCompression(compressedFile, {
+                maxSizeMB: newMaxSizeMB,
+                maxWidthOrHeight: Math.round(COMPRESS_CONFIG.maxWidthOrHeight * (1 - retryCount * 0.2)),
+                useWebWorker: COMPRESS_CONFIG.useWebWorker,
+                initialQuality: newQuality,
+              });
+              compressedSizeKB = compressedFile.size / 1024;
+            }
+            
+            // 最终检查
+            if (compressedSizeKB > serverLimitKB) {
+              console.error(`[PDF] ${file.name}: 无法压缩到 ${serverLimitKB}KB 以下`);
+              alert(`PDF "${file.name}" 内容过于复杂，无法压缩到服务器限制以下，请尝试：\n1. 使用更简单的 PDF\n2. 截图后上传图片`);
+              throw new Error(`PDF 过大无法处理: ${file.name}`);
+            }
+            
+            const savedPercent = ((1 - compressedSizeKB / currentSizeKB) * 100).toFixed(0);
+            console.log(`[PDF] ${file.name}: ${currentSizeKB.toFixed(1)}KB → ${compressedSizeKB.toFixed(1)}KB (节省 ${savedPercent}%${retryCount > 0 ? `, 重试${retryCount}次` : ''})`);
+            
+            return new Promise((resolve, reject) => {
+              const reader = new FileReader();
+              reader.readAsDataURL(compressedFile);
+              reader.onload = () => resolve(reader.result as string);
+              reader.onerror = reject;
+            });
         }
         return "";
-    } catch (e) {
+    } catch (e: any) {
+        if (e.message?.includes('PDF 过大')) {
+          throw e;
+        }
         console.error("PDF Render Error", e);
         return "";
     }
