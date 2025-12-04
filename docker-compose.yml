@@ -63,8 +63,8 @@ services:
         hard: 65536
     environment:
       NODE_ENV: production
-      # Node.js 内存限制（针对 4G 内存服务器）
-      NODE_OPTIONS: "--max-old-space-size=1024"
+      # Node.js 内存限制（优化版：增加到 1.5GB 以支持更大的图片处理）
+      NODE_OPTIONS: "--max-old-space-size=1536"
       DATABASE_URL: postgresql://${POSTGRES_USER:-yibao}:${POSTGRES_PASSWORD:-yibao123456}@postgres:5432/${POSTGRES_DB:-yibao}
       # 数据库连接池优化（性能优化版）
       DATABASE_POOL_MIN: "2"            # 保持2个预热连接，避免冷启动延迟

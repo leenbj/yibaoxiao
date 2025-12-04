@@ -207,16 +207,16 @@ export const ReportDetailView = ({ report, onUpdate, onBack }: ReportDetailViewP
                 </div>
                 <div className="flex gap-2">
                     {canEdit && (
-                        <button onClick={handleSave} className="px-4 py-2 border border-slate-200 text-slate-600 rounded font-bold flex items-center gap-2 hover:bg-slate-50">
-                            <Save size={16}/> 保存
+                        <button onClick={handleSave} className="px-3 py-1.5 border border-slate-200 text-slate-600 rounded-md text-sm font-medium flex items-center gap-1.5 hover:bg-slate-50 transition-colors">
+                            <Save size={14} strokeWidth={2}/> 保存
                         </button>
                     )}
                     <button
                         onClick={generatePDF}
                         disabled={generating}
-                        className="px-4 py-2 bg-indigo-600 text-white rounded font-bold flex items-center gap-2 hover:bg-indigo-700 disabled:opacity-50"
+                        className="px-3 py-1.5 bg-indigo-600 text-white rounded-md text-sm font-medium flex items-center gap-1.5 hover:bg-indigo-700 disabled:opacity-50 transition-colors"
                     >
-                        <Download size={16}/> {generating ? '生成中...' : '导出 PDF'}
+                        <Download size={14} strokeWidth={2}/> {generating ? '生成中...' : '导出 PDF'}
                     </button>
                 </div>
             </div>

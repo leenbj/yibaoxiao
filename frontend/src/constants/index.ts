@@ -48,14 +48,13 @@ export const checkWebPSupport = (): boolean => {
  * 图片压缩配置
  *
  * 服务器配置：2核4G Linux
- * - Node.js 堆内存限制：1GB (docker-compose 中配置)
- * - Base64 编码会使图片增大约 33%
- * - 需要平衡图片质量与服务器内存占用
+ * - Node.js 堆内存限制：1.5GB (docker-compose 中配置)
+ * - 使用 FormData 直接传输（不用 Base64，节省 33% 带宽和内存）
  * 
- * 压缩策略（使用 WebP 格式）：
+ * 压缩策略（使用 WebP 格式 + FormData 上传）：
  * 1. WebP 比 JPEG 压缩效率高 30-50%，同等大小下质量更高
- * 2. 第一阶段：保持分辨率，只降质量（优先保清晰）
- * 3. 第二阶段：如果质量降到最低仍超限，再降分辨率
+ * 2. FormData 直接传输文件，不经过 Base64 编码
+ * 3. 两阶段压缩：先降质量保分辨率，再降分辨率
  * 
  * 分辨率下限：1400px（保证发票文字可读）
  * 质量下限：0.55（保证文字边缘清晰）
@@ -72,18 +71,20 @@ export const COMPRESS_CONFIG: {
   minQuality: number;
   maxRetries: number;
   maxIteration: number;
+  useFormData: boolean;  // 新增：是否使用 FormData 上传
 } = {
-  maxSizeMB: 0.14,             // 目标140KB（留余量给150KB限制）
-  maxWidthOrHeight: 1600,      // 初始最大尺寸
+  maxSizeMB: 0.28,             // 目标280KB（FormData不用Base64，可提高限制）
+  maxWidthOrHeight: 1800,      // 初始最大尺寸（可更大）
   minWidthOrHeight: 1400,      // 最小尺寸（保证文字可读）
   useWebWorker: true,          // 使用Web Worker多线程
-  initialQuality: 0.82,        // 初始质量（WebP下效果更好）
-  fileType: 'image/webp',      // 优先使用 WebP 格式（压缩效率高30-50%）
+  initialQuality: 0.85,        // 初始质量（更高质量）
+  fileType: 'image/webp',      // 优先使用 WebP 格式
   fallbackFileType: 'image/jpeg', // WebP 不支持时降级为 JPEG
-  serverLimitKB: 150,          // 服务器限制提高到150KB（平衡质量与内存）
+  serverLimitKB: 300,          // 服务器限制提高到300KB（FormData节省33%）
   minQuality: 0.55,            // 最低质量（保证文字可读）
   maxRetries: 8,               // 最大重试次数
   maxIteration: 12,            // 压缩库内部最大迭代次数
+  useFormData: true,           // 启用 FormData 上传（不用 Base64）
 };
 
 // ==================== 初始数据 ====================
