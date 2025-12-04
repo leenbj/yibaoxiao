@@ -7,3 +7,15 @@ body {
   margin: 0;
   padding: 0;
 }
+
+/* 移动端快捷菜单动画 */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 20px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}

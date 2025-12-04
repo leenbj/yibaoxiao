@@ -103,7 +103,7 @@ const ConfigForm: React.FC<{
   config?: AIConfig
   onSave: (config: Omit<AIConfig, 'createdAt' | 'updatedAt'>) => Promise<void>
   onCancel: () => void
-  onTest: (config: { provider: string; apiKey: string; apiUrl?: string; model?: string }) => Promise<void>
+  onTest: (config: { provider: string; apiKey: string; apiUrl?: string; model?: string }) => Promise<any>
   testing: boolean
   testResult: { success: boolean; message?: string; responseTime?: number } | null
 }> = ({ config, onSave, onCancel, onTest, testing, testResult }) => {
@@ -491,6 +491,7 @@ export const AIConfigPage: React.FC<AIConfigPageProps> = ({ userId, onBack }) =>
 }
 
 export default AIConfigPage
+
 
 
 

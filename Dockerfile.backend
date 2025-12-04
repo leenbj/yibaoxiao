@@ -34,7 +34,7 @@ USER motia
 EXPOSE 3000
 
 HEALTHCHECK --interval=60s --timeout=10s --start-period=120s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1
+    CMD wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1
 
 ENTRYPOINT ["/sbin/tini", "--"]
 CMD ["/app/scripts/docker-start.sh"]

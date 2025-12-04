@@ -104,7 +104,13 @@ export const handler: Handlers['AIRecognize'] = async (req, { logger }) => {
     }
   }
   
-  logger.info('开始 AI 识别', { userId, type, imageCount: images.length })
+  logger.info('开始 AI 识别', { 
+    userId, 
+    type, 
+    imageCount: images.length,
+    authHeader: authHeader ? authHeader.substring(0, 50) + '...' : 'none',
+    bodyUserId: bodyUserId || 'none'
+  })
 
   try {
     // 按优先级获取 AI 配置
@@ -114,7 +120,11 @@ export const handler: Handlers['AIRecognize'] = async (req, { logger }) => {
     try {
       // 1. 首先尝试获取用户自己的配置
       const userConfigs = await aiConfigRepository.getByUserId(userId)
-      logger.info('读取用户 AI 配置', { userId, configCount: userConfigs?.length || 0 })
+      logger.info('读取用户 AI 配置', { 
+        userId, 
+        configCount: userConfigs?.length || 0,
+        configs: userConfigs?.map((c: any) => ({ id: c.id, provider: c.provider, isActive: c.isActive })) || []
+      })
       
       if (userConfigs && Array.isArray(userConfigs) && userConfigs.length > 0) {
         const activeConfig = userConfigs.find((c: any) => c.isActive === true) || userConfigs[0]
@@ -147,6 +157,36 @@ export const handler: Handlers['AIRecognize'] = async (req, { logger }) => {
               }
               configSource = '管理员共享配置'
             }
+          }
+        }
+      }
+      
+      // 3. 如果仍然没有配置，尝试查询数据库中所有激活的配置（解决 userId 不匹配问题）
+      if (!aiConfig) {
+        logger.info('尝试查找任意激活的 AI 配置')
+        const db = (await import('../../../src/db/index')).getDb()
+        const { aiConfigs } = await import('../../../src/db/schema')
+        const { eq } = await import('drizzle-orm')
+        
+        const allActiveConfigs = await db.select().from(aiConfigs)
+          .where(eq(aiConfigs.isActive, true))
+          .limit(1)
+        
+        if (allActiveConfigs && allActiveConfigs.length > 0) {
+          const activeConfig = allActiveConfigs[0]
+          if (activeConfig.apiKey) {
+            aiConfig = {
+              provider: activeConfig.provider,
+              apiKey: activeConfig.apiKey,
+              apiUrl: activeConfig.apiUrl || undefined,
+              model: activeConfig.model || undefined,
+            }
+            configSource = '全局激活配置'
+            logger.info('找到全局激活配置', { 
+              provider: activeConfig.provider, 
+              model: activeConfig.model,
+              configUserId: activeConfig.userId 
+            })
           }
         }
       }
