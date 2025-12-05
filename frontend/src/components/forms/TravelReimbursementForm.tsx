@@ -52,12 +52,12 @@ export const TravelReimbursementForm: React.FC<TravelReimbursementFormProps> = (
   const totalOther = tripLegs.reduce((sum, leg) => sum + (leg.otherFee || 0), 0);
   const grandTotal = data.totalAmount || (totalTransport + totalHotel + totalCityTraffic + totalMeal + totalOther);
   
-  // 外层容器 - A4 竖版页面
+  // 外层容器 - A4 横版页面
   const containerStyle: React.CSSProperties = {
-    width: '210mm',
-    height: '297mm',
+    width: '297mm',   // A4 横版宽度
+    height: '210mm',  // A4 横版高度
     backgroundColor: 'white',
-    padding: '15mm 12mm',
+    padding: '10mm 12mm',
     boxSizing: 'border-box',
     fontFamily: '"SimSun", "Songti SC", serif',
     display: 'flex',

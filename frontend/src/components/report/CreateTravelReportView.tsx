@@ -58,7 +58,8 @@ export const CreateTravelReportView = ({
 
   // ============ 表单数据状态 ============
   const [form, setForm] = useState({
-    tripReason: "",
+    tripReason: "",           // 差旅报销：出差事项
+    taxiProjectName: "",      // 打车发票的货物或应税劳务名称（日常打车报销用）
     approvalNumber: "",
     budgetProjectId: settings.budgetProjects.find((p: any) => p.isDefault)?.id || "",
     paymentAccountId: settings.paymentAccounts.find((a: any) => a.isDefault)?.id || "",
@@ -152,9 +153,12 @@ export const CreateTravelReportView = ({
   const handleStartAnalysis = async () => {
     const result = await startAIAnalysis();
     if (result.success) {
-      // 判断是否是打车报销模式
+      // 判断是否是打车报销模式（只有打车票据，没有火车票/机票）
       const taxiOnly = (result as any).isTaxiOnlyMode || false;
       setIsTaxiOnlyMode(taxiOnly);
+      
+      // 获取打车发票的项目名称（货物或应税劳务名称）
+      const taxiProjectName = (result as any).taxiInvoiceProjectName || '运输服务';
       
       // 如果是打车报销模式，创建一个虚拟的行程段来存储打车总金额
       let tripLegsToSet = result.tripLegs;
@@ -177,7 +181,10 @@ export const CreateTravelReportView = ({
 
       setForm(prev => ({
         ...prev,
-        tripReason: result.tripReason || (taxiOnly ? '打车费' : ''),
+        // 日常打车报销：使用发票项目名称作为报销事由
+        // 差旅报销：tripReason 存储出差事项（由用户手动填写）
+        tripReason: taxiOnly ? taxiProjectName : (result.tripReason || ''),
+        taxiProjectName: taxiProjectName,  // 保存发票项目名称
         approvalNumber: result.approvalNumber || prev.approvalNumber,
         budgetProjectId: result.autoSelectedBudgetId,
         tripLegs: tripLegsToSet,
@@ -216,7 +223,7 @@ export const CreateTravelReportView = ({
     }
 
     if (!form.tripReason) {
-      alert(isTaxiOnlyMode ? '请输入报销事由' : '请输入差旅事由');
+      alert(isTaxiOnlyMode ? '请输入报销事由' : '请输入出差事项');
       return;
     }
 
@@ -235,9 +242,16 @@ export const CreateTravelReportView = ({
       email: settings.currentUser?.email || `${settings.currentUser?.id || 'user'}@example.com`
     };
 
+    // 生成报销单标题
+    // - 日常打车报销：使用发票内容（如"运输服务*网约车服务费"）
+    // - 差旅报销：格式为"差旅费（出差事项）"
+    const reportTitle = isTaxiOnlyMode 
+      ? form.tripReason  // 发票内容
+      : `差旅费（${form.tripReason}）`;  // 差旅费（出差事项）
+
     const reportData: Report = {
       id: `travel-report-${Date.now()}`,
-      title: form.tripReason,
+      title: reportTitle,
       totalAmount: totalAmount,
       prepaidAmount: form.prepaidAmount,
       payableAmount: paymentAmount,
@@ -249,13 +263,15 @@ export const CreateTravelReportView = ({
       status: action === 'save' ? 'draft' : 'submitted',
       createdDate: new Date().toISOString(),
       userSnapshot: userSnapshot,
-      isTravel: true,
-      tripReason: form.tripReason,
-      tripLegs: form.tripLegs,
+      isTravel: !isTaxiOnlyMode,  // 日常打车报销不是差旅报销
+      tripReason: form.tripReason,  // 原始出差事项
+      tripLegs: isTaxiOnlyMode ? [] : form.tripLegs,  // 日常打车报销没有行程段
       taxiDetails: form.taxiDetails,
     };
 
     console.warn('[CreateTravelReportView] 提交报销单, action:', action);
+    console.warn('[CreateTravelReportView] isTaxiOnlyMode:', isTaxiOnlyMode);
+    console.warn('[CreateTravelReportView] reportTitle:', reportTitle);
     console.warn('[CreateTravelReportView] userSnapshot:', JSON.stringify(userSnapshot));
     console.warn('[CreateTravelReportView] tripLegs:', JSON.stringify(form.tripLegs));
     console.warn('[CreateTravelReportView] taxiDetails:', JSON.stringify(form.taxiDetails));
@@ -598,17 +614,28 @@ export const CreateTravelReportView = ({
           </h3>
 
           <div className="space-y-4">
-            {/* 出差事由 */}
+            {/* 报销事由 - 根据模式显示不同内容 */}
             <div>
-              <label className="text-xs font-bold text-slate-500 uppercase block mb-1">出差事由</label>
+              <label className="text-xs font-bold text-slate-500 uppercase block mb-1">
+                {isTaxiOnlyMode ? '报销事由（发票内容）' : '出差事项'}
+              </label>
               <textarea
                 value={form.tripReason}
                 onChange={e => setForm({ ...form, tripReason: e.target.value })}
                 className="w-full p-2 border border-slate-200 rounded-lg text-sm focus:border-indigo-500 outline-none resize-none"
                 rows={2}
-                placeholder="请输入出差事由"
+                placeholder={isTaxiOnlyMode ? '以发票开具内容为准' : '请输入出差事项，如：太原商标节活动'}
               />
-              <p className="text-[10px] text-amber-600 mt-1">⚠ 请手动填写或确认出差事由</p>
+              {isTaxiOnlyMode ? (
+                <p className="text-[10px] text-green-600 mt-1">✓ 已从发票提取：{form.taxiProjectName || '运输服务'}</p>
+              ) : (
+                <>
+                  <p className="text-[10px] text-amber-600 mt-1">⚠ 请手动填写出差事项，生成格式：差旅费（出差事项）</p>
+                  {form.tripReason && (
+                    <p className="text-[10px] text-indigo-600 mt-1">预览：差旅费（{form.tripReason}）</p>
+                  )}
+                </>
+              )}
             </div>
 
             {/* 审批单编号 */}
@@ -922,13 +949,13 @@ export const CreateTravelReportView = ({
         {/* 右侧预览区 */}
         <div className="flex-1 overflow-y-auto p-8 flex flex-col items-center gap-8">
           {/* 报销单预览 - 根据模式显示不同表单 */}
-          <div ref={previewContainerRef} style={{ transform: `scale(${previewScale})`, transformOrigin: 'top center' }} className="bg-white shadow-lg">
-            {isTaxiOnlyMode ? (
-              // 打车报销模式：显示通用报销单
+          {isTaxiOnlyMode ? (
+            // 日常打车报销模式：只显示通用报销单
+            <div ref={previewContainerRef} style={{ transform: `scale(${previewScale})`, transformOrigin: 'top center' }} className="bg-white shadow-lg">
               <GeneralReimbursementForm
                 data={{
-                  title: form.tripReason || '打车费',
-                  amount: totalAmount,
+                  title: form.tripReason || form.taxiProjectName || '运输服务',
+                  totalAmount: totalAmount,
                   prepaidAmount: form.prepaidAmount,
                   items: form.taxiDetails.map((t: any, idx: number) => ({
                     id: t.id || `taxi-item-${idx}`,
@@ -940,26 +967,57 @@ export const CreateTravelReportView = ({
                     status: 'pending' as const,
                   })),
                   approvalNumber: form.approvalNumber,
+                  budgetProject: settings.budgetProjects.find((p: any) => p.id === form.budgetProjectId),
+                  paymentAccount: settings.paymentAccounts.find((a: any) => a.id === form.paymentAccountId),
                   userSnapshot: settings.currentUser,
                   createdDate: new Date().toISOString(),
                 }}
               />
-            ) : (
-              // 差旅报销模式：显示差旅费报销单
-              <TravelReimbursementForm
-                data={{
-                  tripReason: form.tripReason,
-                  tripLegs: form.tripLegs,
-                  totalAmount: totalAmount,
-                  approvalNumber: form.approvalNumber,
-                  userSnapshot: settings.currentUser,
-                  invoiceCount: ticketFiles.length + hotelFiles.length + taxiInvoiceFiles.length,
-                  attachments: allAttachments,
-                  createdDate: new Date().toISOString(),
-                }}
-              />
-            )}
-          </div>
+            </div>
+          ) : (
+            // 差旅报销模式：同时显示差旅费报销单 + 通用报销单
+            <>
+              {/* 1. 差旅费报销单 */}
+              <div ref={previewContainerRef} style={{ transform: `scale(${previewScale})`, transformOrigin: 'top center' }} className="bg-white shadow-lg">
+                <TravelReimbursementForm
+                  data={{
+                    tripReason: form.tripReason,
+                    tripLegs: form.tripLegs,
+                    totalAmount: totalAmount,
+                    approvalNumber: form.approvalNumber,
+                    userSnapshot: settings.currentUser,
+                    invoiceCount: ticketFiles.length + hotelFiles.length + taxiInvoiceFiles.length,
+                    attachments: allAttachments,
+                    createdDate: new Date().toISOString(),
+                    prepaidAmount: form.prepaidAmount,
+                  }}
+                />
+              </div>
+              
+              {/* 2. 通用报销单 - 显示差旅费（出差事项）格式 */}
+              <div style={{ transform: `scale(${previewScale})`, transformOrigin: 'top center' }} className="bg-white shadow-lg">
+                <GeneralReimbursementForm
+                  data={{
+                    title: `差旅费（${form.tripReason || ''}）`,
+                    totalAmount: totalAmount,
+                    prepaidAmount: form.prepaidAmount,
+                    items: [{
+                      id: 'travel-expense-1',
+                      description: `差旅费（${form.tripReason || ''}）`,
+                      amount: totalAmount,
+                      date: new Date().toISOString().split('T')[0],
+                      category: '差旅费',
+                    }],
+                    approvalNumber: form.approvalNumber,
+                    budgetProject: settings.budgetProjects.find((p: any) => p.id === form.budgetProjectId),
+                    paymentAccount: settings.paymentAccounts.find((a: any) => a.id === form.paymentAccountId),
+                    userSnapshot: settings.currentUser,
+                    createdDate: new Date().toISOString(),
+                  }}
+                />
+              </div>
+            </>
+          )}
 
           {/* 打车明细表 - 有打车明细时都显示 */}
           {form.taxiDetails && form.taxiDetails.length > 0 && (

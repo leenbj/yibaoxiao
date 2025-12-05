@@ -17,6 +17,7 @@ interface TaxiDetailItem {
   endPoint: string;
   amount: number;
   employeeName: string;
+  projectName?: string; // 发票上的货物或应税劳务名称
 }
 
 interface UseTravelAnalysisParams {
@@ -47,6 +48,9 @@ interface UseTravelAnalysisReturn {
     tripReason: string;
     autoSelectedBudgetId: string;
     approvalNumber?: string;
+    isTaxiOnlyMode?: boolean;
+    taxiTotalAmount?: number;
+    taxiInvoiceProjectName?: string; // 打车发票的货物或应税劳务名称
   }>;
 }
 
@@ -206,6 +210,9 @@ export const useTravelAnalysis = ({
       // 获取事由
       const reason = t.reason || t.purpose || t.remark || t.note || 
         approvalData.eventSummary || '出差';
+      
+      // 获取发票上的货物或应税劳务名称
+      const projectName = t.projectName || t.serviceName || t.itemName || '';
 
       const processedItem: TaxiDetailItem = {
         id: `taxi-${Date.now()}-${idx}`,
@@ -216,6 +223,7 @@ export const useTravelAnalysis = ({
         endPoint: endPoint,
         amount: amount,
         employeeName: passenger,
+        projectName: projectName, // 发票项目名称
       };
 
       console.log(`[AI] 打车明细 ${idx + 1}:`, { 
@@ -309,13 +317,15 @@ export const useTravelAnalysis = ({
     try {
       const ticketImages = ticketFiles.map(f => cleanB64(f.data));
       const hotelImages = hotelFiles.map(f => cleanB64(f.data));
-      const taxiImages = [...taxiInvoiceFiles, ...taxiTripFiles].map(f => cleanB64(f.data));
+      // 分开处理打车发票和打车行程单
+      const taxiInvoiceImages = taxiInvoiceFiles.map(f => cleanB64(f.data));
+      const taxiTripImages = taxiTripFiles.map(f => cleanB64(f.data));
       const approvalImages = approvalFiles.map(f => cleanB64(f.data));
 
       console.log('[AI] 开始并行识别所有票据');
       const startTime = Date.now();
 
-      // 创建 4 并行请求（仅对有图片的类型发送请求）
+      // 创建 5 并行请求（仅对有图片的类型发送请求）
       const ticketPromise = ticketImages.length > 0
         ? apiRequest('/api/ai/recognize', {
             method: 'POST',
@@ -338,12 +348,25 @@ export const useTravelAnalysis = ({
         })
         : Promise.resolve({ result: {} });
 
-      const taxiPromise = taxiImages.length > 0
+      // 打车发票识别 - 包含 projectName（货物或应税劳务名称）
+      const taxiInvoicePromise = taxiInvoiceImages.length > 0
         ? apiRequest('/api/ai/recognize', {
           method: 'POST',
           body: JSON.stringify({
             type: 'taxi',
-            images: taxiImages,
+            images: taxiInvoiceImages,
+            mimeType: 'image/jpeg',
+          }),
+        })
+        : Promise.resolve({ result: { details: [] } });
+
+      // 打车行程单识别 - 只有路线信息
+      const taxiTripPromise = taxiTripImages.length > 0
+        ? apiRequest('/api/ai/recognize', {
+          method: 'POST',
+          body: JSON.stringify({
+            type: 'taxi',
+            images: taxiTripImages,
             mimeType: 'image/jpeg',
           }),
         })
@@ -361,10 +384,11 @@ export const useTravelAnalysis = ({
         : Promise.resolve({ result: {} });
 
       // 等待所有请求完成
-      const [ticketResponse, hotelResponse, taxiResponse, approvalResponse] = await Promise.all([
+      const [ticketResponse, hotelResponse, taxiInvoiceResponse, taxiTripResponse, approvalResponse] = await Promise.all([
         ticketPromise,
         hotelPromise,
-        taxiPromise,
+        taxiInvoicePromise,
+        taxiTripPromise,
         approvalPromise,
       ]) as any[];
 
@@ -373,7 +397,8 @@ export const useTravelAnalysis = ({
       // 处理各类识别结果
       const ticketData = ticketResponse.result || {};
       const hotelData = hotelResponse.result || {};
-      const rawTaxiData = taxiResponse.result || { details: [] };
+      const rawTaxiInvoiceData = taxiInvoiceResponse.result || { details: [] };
+      const rawTaxiTripData = taxiTripResponse.result || { details: [] };
       const approvalData = approvalResponse.result || {};
 
       setAiTicketResult(ticketData);
@@ -381,19 +406,45 @@ export const useTravelAnalysis = ({
       setAiApprovalResult(approvalData);
 
       // 详细记录打车数据，便于调试
-      console.log('[AI] 打车识别原始返回:', JSON.stringify(taxiResponse, null, 2));
-      console.log('[AI] rawTaxiData:', JSON.stringify(rawTaxiData, null, 2));
+      console.log('[AI] 打车发票识别原始返回:', JSON.stringify(taxiInvoiceResponse, null, 2));
+      console.log('[AI] 打车行程单识别原始返回:', JSON.stringify(taxiTripResponse, null, 2));
+
+      // 分别规范化打车发票和行程单数据
+      const taxiInvoiceData = normalizeTaxiData(rawTaxiInvoiceData);
+      const taxiTripData = normalizeTaxiData(rawTaxiTripData);
+      
+      // 判断是否有火车票/机票（后面用于决定使用哪些数据）
+      const hasTicketsOrHotel = ticketFiles.length > 0 || hotelFiles.length > 0;
+      const hasTaxiInvoice = taxiInvoiceFiles.length > 0;
+      
+      // 日常打车报销模式：只使用打车发票数据（不合并行程单）
+      // 差旅报销模式：合并发票和行程单数据（行程单补充路线信息）
+      let taxiData;
+      if (!hasTicketsOrHotel && hasTaxiInvoice) {
+        // 日常打车报销：只使用发票数据，报销事由和金额以发票为准
+        taxiData = { details: taxiInvoiceData.details || [] };
+        console.log('[AI] 日常打车报销模式：只使用发票数据');
+      } else {
+        // 差旅报销：合并发票和行程单数据（发票优先）
+        const mergedTaxiDetails = [
+          ...(taxiInvoiceData.details || []),
+          ...(taxiTripData.details || []),
+        ];
+        taxiData = { details: mergedTaxiDetails };
+        console.log('[AI] 差旅报销模式：合并发票和行程单数据');
+      }
+      setAiTaxiResult(taxiData);
 
       console.log('[AI] 识别结果汇总', {
         ticket: ticketData,
         hotel: hotelData,
-        taxi: rawTaxiData,
+        taxiInvoice: taxiInvoiceData,
+        taxiTrip: taxiTripData,
+        finalTaxi: taxiData,
         approval: approvalData,
+        hasTicketsOrHotel,
+        hasTaxiInvoice,
       });
-
-      // 规范化打车数据格式
-      const taxiData = normalizeTaxiData(rawTaxiData);
-      setAiTaxiResult(taxiData);
 
       // 提取数据
       const tickets = Array.isArray(ticketData) ? ticketData : (ticketData.tickets || [ticketData]);
@@ -464,17 +515,51 @@ export const useTravelAnalysis = ({
       const tripReason = approvalData.eventSummary || ticketData.tripReason || '';
 
       // 判断报销类型：
-      // - 如果只有打车票据（没有火车票/机票/住宿），则为"打车报销"
-      // - 如果有出差票据（火车票/机票/住宿），则为"差旅报销"
+      // - 如果只有打车发票（没有火车票/机票），则为"日常打车报销"
+      // - 如果有火车票/机票，则为"差旅报销"
       const hasTickets = ticketFiles.length > 0;
       const hasHotel = hotelFiles.length > 0;
-      const hasTaxi = taxiInvoiceFiles.length > 0 || taxiTripFiles.length > 0;
+      const hasTaxiInvoiceOnly = taxiInvoiceFiles.length > 0;
       
-      // 打车报销模式：只有打车票据，没有火车票/机票/住宿
-      const isTaxiOnlyMode = hasTaxi && !hasTickets && !hasHotel;
+      // 日常打车报销模式：只有打车发票，没有火车票/机票
+      // 注意：即使有打车行程单，只要有打车发票且没有火车票/机票，就是日常打车报销
+      const isTaxiOnlyMode = hasTaxiInvoiceOnly && !hasTickets && !hasHotel;
       
       // 计算打车总金额
-      const taxiTotalAmount = processedTaxiDetails.reduce((sum, t) => sum + (t.amount || 0), 0);
+      // 日常打车报销模式：只使用发票金额
+      // 差旅报销模式：使用所有打车明细金额
+      let taxiTotalAmount: number;
+      if (isTaxiOnlyMode) {
+        // 日常打车报销：只计算发票金额
+        const invoiceDetails = taxiInvoiceData.details || [];
+        taxiTotalAmount = invoiceDetails.reduce((sum: number, t: any) => 
+          sum + (parseFloat(t.amount) || parseFloat(t.totalAmount) || parseFloat(t.price) || 0), 0);
+        console.log('[AI] 日常打车报销金额（仅发票）:', taxiTotalAmount);
+      } else {
+        // 差旅报销：计算所有打车明细金额
+        taxiTotalAmount = processedTaxiDetails.reduce((sum, t) => sum + (t.amount || 0), 0);
+      }
+
+      // 提取打车发票的货物或应税劳务名称（用于日常打车报销的报销事由）
+      // 优先从打车发票识别结果中获取 projectName（因为发票才有"货物或应税劳务名称"）
+      const invoiceProjectNames = (taxiInvoiceData.details || [])
+        .map((t: any) => t.projectName)
+        .filter(Boolean);
+      
+      // 如果发票识别没有返回 projectName，从处理后的打车明细中获取
+      const allProjectNames = invoiceProjectNames.length > 0 
+        ? invoiceProjectNames
+        : processedTaxiDetails.map(t => t.projectName).filter(Boolean);
+      
+      // 去重并合并项目名称
+      const uniqueProjectNames = [...new Set(allProjectNames)];
+      const taxiInvoiceProjectName = uniqueProjectNames.join('、') || '运输服务';
+      
+      console.log('[AI] 打车发票项目名称提取:', {
+        invoiceProjectNames,
+        allProjectNames,
+        taxiInvoiceProjectName,
+      });
 
       console.log('[AI] 差旅数据处理完成', {
         tripLegsCount: tripLegsData.length,
@@ -486,19 +571,34 @@ export const useTravelAnalysis = ({
         hasTickets,
         hasHotel,
         hasTaxi,
+        taxiInvoiceProjectName,
       });
+
+      // 日常打车报销模式下，只返回发票的打车明细（不包含行程单）
+      let finalTaxiDetails = processedTaxiDetails;
+      if (isTaxiOnlyMode) {
+        // 日常打车报销：只使用发票数据
+        const invoiceOnlyDetails = processTaxiDetails(taxiInvoiceData.details || [], approvalData);
+        finalTaxiDetails = invoiceOnlyDetails;
+        console.log('[AI] 日常打车报销：使用发票明细', {
+          count: finalTaxiDetails.length,
+          total: taxiTotalAmount,
+        });
+      }
 
       return {
         success: true,
         tripLegs: tripLegsData,
-        taxiDetails: processedTaxiDetails,
+        taxiDetails: finalTaxiDetails,  // 日常打车报销只返回发票明细
         matchedLoans: potentialLoans,
-        tripReason: isTaxiOnlyMode ? '打车费' : tripReason,
+        // 日常打车报销使用发票项目名称，差旅报销使用出差事由（需手动填写）
+        tripReason: isTaxiOnlyMode ? taxiInvoiceProjectName : tripReason,
         autoSelectedBudgetId,
         approvalNumber: approvalData?.approvalNumber || '',
         // 新增字段
         isTaxiOnlyMode,
         taxiTotalAmount,
+        taxiInvoiceProjectName, // 打车发票的货物或应税劳务名称
       };
 
     } catch (e: any) {

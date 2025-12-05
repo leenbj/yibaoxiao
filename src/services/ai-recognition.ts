@@ -870,6 +870,7 @@ function getPromptForType(type: 'invoice' | 'approval' | 'travel' | 'ticket' | '
     "endPoint": "下车地点（精简，如：公司、会展中心）",
     "route": "起终点（格式：起点-终点，如：酒店-机场）",
     "amount": 金额（数字）,
+    "projectName": "发票上的货物或应税劳务名称（如：运输服务*网约车服务费、出租车运输服务、交通运输服务等）",
     "distance": "行程距离（如有）",
     "waitTime": "等待时间（如有）",
     "invoiceNumber": "发票号码（如有）",
@@ -883,6 +884,7 @@ function getPromptForType(type: 'invoice' | 'approval' | 'travel' | 'ticket' | '
 - 所有金额必须是数字，不要包含货币符号
 - startPoint和endPoint要精简，去掉详细地址，只保留关键地点名称
 - route格式为"起点-终点"
+- projectName必须从发票上提取货物或应税劳务名称（*号后面的内容）
 - 如果无法识别某字段，返回空字符串或0
 - 日期格式可以是YYYYMMDD或YYYY-MM-DD
 `
