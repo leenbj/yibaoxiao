@@ -13,7 +13,10 @@ interface TaxiDetailItem {
   date: string;
   reason: string;
   route: string;
+  startPoint: string;
+  endPoint: string;
   amount: number;
+  employeeName: string;
 }
 
 interface UseTravelAnalysisParams {
@@ -76,8 +79,9 @@ export const useTravelAnalysis = ({
   const [taxiDetails, setTaxiDetails] = useState<TaxiDetailItem[]>([]);
   const [matchedLoans, setMatchedLoans] = useState<any[]>([]);
 
-  // 辅助函数：清理 Base64 编码
-  const cleanB64 = (data: string) => data.split(',')[1];
+  // 辅助函数：保留完整的 data URL（包括 mimeType）
+  // 后端需要完整的 data URL 来正确识别图片格式
+  const cleanB64 = (data: string) => data;  // 不再去掉前缀，保留完整的 data URL
 
   /**
    * 配对往返票据算法
@@ -164,52 +168,133 @@ export const useTravelAnalysis = ({
 
   /**
    * 处理打车明细数据
+   * 支持多种字段名称，确保正确提取所有信息
    */
   const processTaxiDetails = (rawTaxiDetails: any[], approvalData: any): TaxiDetailItem[] => {
-    console.log('[AI] 打车明细数据:', rawTaxiDetails);
+    console.log('[AI] 处理打车明细数据, 数量:', rawTaxiDetails.length);
+
+    // 获取当前用户姓名
+    const employeeName = settings.currentUser?.name || '王波';
 
     return rawTaxiDetails.map((t: any, idx: number) => {
       // 支持多种可能的金额字段名
-      const amount = parseFloat(t.amount || t.price || t.totalAmount || t.fare || 0);
+      const amount = parseFloat(
+        t.amount || t.price || t.totalAmount || t.fare || 
+        t.total || t.money || t.cost || 0
+      );
 
-      // 获取起终点信息
-      const route = t.route || `${t.startPoint || ''}-${t.endPoint || ''}`;
+      // 支持多种日期字段名
+      const date = t.date || t.invoiceDate || t.tripDate || t.orderDate || 
+        t.createTime || t.time || new Date().toISOString().split('T')[0];
 
-      const processedItem = {
+      // 获取起终点信息 - 支持更多字段名
+      const startPoint = t.startPoint || t.start || t.from || t.origin || 
+        t.departure || t.pickupLocation || t.startAddress || '';
+      const endPoint = t.endPoint || t.end || t.to || t.destination || 
+        t.dropoffLocation || t.endAddress || '';
+      
+      // 构建路线
+      let route = t.route || t.path || t.trip || '';
+      if (!route && (startPoint || endPoint)) {
+        route = `${startPoint}-${endPoint}`;
+      }
+
+      // 获取乘客/员工姓名
+      const passenger = t.passengerName || t.employeeName || t.passenger || 
+        t.name || t.rider || employeeName;
+
+      // 获取事由
+      const reason = t.reason || t.purpose || t.remark || t.note || 
+        approvalData.eventSummary || '出差';
+
+      const processedItem: TaxiDetailItem = {
         id: `taxi-${Date.now()}-${idx}`,
-        date: t.date || t.invoiceDate || '',
-        reason: approvalData.eventSummary || '',
+        date: date,
+        reason: reason,
         route: route,
+        startPoint: startPoint,
+        endPoint: endPoint,
         amount: amount,
+        employeeName: passenger,
       };
 
-      console.log(`[AI] 打车明细 ${idx + 1}:`, { raw: t, processed: processedItem });
+      console.log(`[AI] 打车明细 ${idx + 1}:`, { 
+        原始: JSON.stringify(t).substring(0, 200), 
+        处理后: processedItem 
+      });
       return processedItem;
     });
   };
 
   /**
    * 规范化打车数据格式
+   * 支持多种 AI 返回格式，确保正确提取所有打车明细
    */
   const normalizeTaxiData = (rawTaxiData: any): any => {
-    // 支持多种返回格式
+    console.log('[AI] 原始打车数据:', JSON.stringify(rawTaxiData, null, 2));
+    
+    let details: any[] = [];
+
+    // 情况1: 直接是数组
     if (Array.isArray(rawTaxiData)) {
-      return { details: rawTaxiData };
-    } else if (rawTaxiData.details && Array.isArray(rawTaxiData.details)) {
-      return rawTaxiData;
-    } else if (typeof rawTaxiData === 'object' && rawTaxiData.amount !== undefined) {
-      return { details: [rawTaxiData] };
-    } else {
-      return { details: [] };
+      details = rawTaxiData;
     }
+    // 情况2: 有 details 数组
+    else if (rawTaxiData.details && Array.isArray(rawTaxiData.details)) {
+      details = rawTaxiData.details;
+    }
+    // 情况3: 有 trips/rides/records 等数组
+    else if (rawTaxiData.trips && Array.isArray(rawTaxiData.trips)) {
+      details = rawTaxiData.trips;
+    }
+    else if (rawTaxiData.rides && Array.isArray(rawTaxiData.rides)) {
+      details = rawTaxiData.rides;
+    }
+    else if (rawTaxiData.records && Array.isArray(rawTaxiData.records)) {
+      details = rawTaxiData.records;
+    }
+    else if (rawTaxiData.items && Array.isArray(rawTaxiData.items)) {
+      details = rawTaxiData.items;
+    }
+    // 情况4: 单个对象且有金额字段
+    else if (typeof rawTaxiData === 'object' && (
+      rawTaxiData.amount !== undefined || 
+      rawTaxiData.totalAmount !== undefined ||
+      rawTaxiData.fare !== undefined ||
+      rawTaxiData.price !== undefined
+    )) {
+      details = [rawTaxiData];
+    }
+    // 情况5: 对象包含多个票据数据（遍历所有属性）
+    else if (typeof rawTaxiData === 'object') {
+      // 遍历对象属性，查找可能的票据数组
+      for (const key of Object.keys(rawTaxiData)) {
+        const value = rawTaxiData[key];
+        if (Array.isArray(value) && value.length > 0 && typeof value[0] === 'object') {
+          // 检查数组元素是否像票据数据（有金额或日期字段）
+          const firstItem = value[0];
+          if (firstItem.amount !== undefined || firstItem.date !== undefined || 
+              firstItem.totalAmount !== undefined || firstItem.fare !== undefined) {
+            details = [...details, ...value];
+          }
+        }
+      }
+    }
+
+    console.log('[AI] 规范化后打车明细数量:', details.length);
+    console.log('[AI] 规范化后打车明细:', details);
+    
+    return { details };
   };
 
   /**
    * 开始 AI 分析流程
    */
   const startAnalysis = async () => {
-    if (ticketFiles.length === 0) {
-      alert('请上传火车票或机票！这是必须的票据。');
+    // 检查是否上传了任何文件
+    const totalFiles = ticketFiles.length + hotelFiles.length + taxiInvoiceFiles.length + taxiTripFiles.length + approvalFiles.length;
+    if (totalFiles === 0) {
+      alert('请至少上传一种票据！');
       return {
         success: false,
         tripLegs: [],
@@ -230,15 +315,17 @@ export const useTravelAnalysis = ({
       console.log('[AI] 开始并行识别所有票据');
       const startTime = Date.now();
 
-      // 创建 4 并行请求
-      const ticketPromise = apiRequest('/api/ai/recognize', {
-        method: 'POST',
-        body: JSON.stringify({
-          type: 'ticket',
-          images: ticketImages,
-          mimeType: 'image/jpeg',
-        }),
-      });
+      // 创建 4 并行请求（仅对有图片的类型发送请求）
+      const ticketPromise = ticketImages.length > 0
+        ? apiRequest('/api/ai/recognize', {
+            method: 'POST',
+            body: JSON.stringify({
+              type: 'ticket',
+              images: ticketImages,
+              mimeType: 'image/jpeg',
+            }),
+          })
+        : Promise.resolve({ result: {} });
 
       const hotelPromise = hotelImages.length > 0
         ? apiRequest('/api/ai/recognize', {
@@ -293,9 +380,14 @@ export const useTravelAnalysis = ({
       setAiHotelResult(hotelData);
       setAiApprovalResult(approvalData);
 
+      // 详细记录打车数据，便于调试
+      console.log('[AI] 打车识别原始返回:', JSON.stringify(taxiResponse, null, 2));
+      console.log('[AI] rawTaxiData:', JSON.stringify(rawTaxiData, null, 2));
+
       console.log('[AI] 识别结果汇总', {
         ticket: ticketData,
         hotel: hotelData,
+        taxi: rawTaxiData,
         approval: approvalData,
       });
 
@@ -371,11 +463,29 @@ export const useTravelAnalysis = ({
 
       const tripReason = approvalData.eventSummary || ticketData.tripReason || '';
 
+      // 判断报销类型：
+      // - 如果只有打车票据（没有火车票/机票/住宿），则为"打车报销"
+      // - 如果有出差票据（火车票/机票/住宿），则为"差旅报销"
+      const hasTickets = ticketFiles.length > 0;
+      const hasHotel = hotelFiles.length > 0;
+      const hasTaxi = taxiInvoiceFiles.length > 0 || taxiTripFiles.length > 0;
+      
+      // 打车报销模式：只有打车票据，没有火车票/机票/住宿
+      const isTaxiOnlyMode = hasTaxi && !hasTickets && !hasHotel;
+      
+      // 计算打车总金额
+      const taxiTotalAmount = processedTaxiDetails.reduce((sum, t) => sum + (t.amount || 0), 0);
+
       console.log('[AI] 差旅数据处理完成', {
         tripLegsCount: tripLegsData.length,
         taxiDetailsCount: processedTaxiDetails.length,
+        taxiTotalAmount,
         matchedLoansCount: potentialLoans.length,
         tripReason,
+        isTaxiOnlyMode,
+        hasTickets,
+        hasHotel,
+        hasTaxi,
       });
 
       return {
@@ -383,9 +493,12 @@ export const useTravelAnalysis = ({
         tripLegs: tripLegsData,
         taxiDetails: processedTaxiDetails,
         matchedLoans: potentialLoans,
-        tripReason,
+        tripReason: isTaxiOnlyMode ? '打车费' : tripReason,
         autoSelectedBudgetId,
         approvalNumber: approvalData?.approvalNumber || '',
+        // 新增字段
+        isTaxiOnlyMode,
+        taxiTotalAmount,
       };
 
     } catch (e: any) {

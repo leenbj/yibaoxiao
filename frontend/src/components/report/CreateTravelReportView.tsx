@@ -12,6 +12,7 @@ import { Attachment, TripLeg, Report } from '../../types';
 import { fileToBase64, pdfToImage } from '../../utils/image';
 import { useTravelAnalysis } from '../../hooks/useTravelAnalysis';
 import { TravelReimbursementForm } from '../forms/TravelReimbursementForm';
+import { GeneralReimbursementForm } from '../forms/GeneralReimbursementForm';
 import { TaxiExpenseTable } from '../forms/TaxiExpenseTable';
 import { A4SingleAttachment } from '../shared/A4SingleAttachment';
 
@@ -144,16 +145,42 @@ export const CreateTravelReportView = ({
     if (type === 'approval') setApprovalFiles(prev => prev.filter((_, i) => i !== index));
   };
 
+  // 打车报销模式标志
+  const [isTaxiOnlyMode, setIsTaxiOnlyMode] = useState(false);
+
   // ============ Step 1: 开始分析 ============
   const handleStartAnalysis = async () => {
     const result = await startAIAnalysis();
     if (result.success) {
+      // 判断是否是打车报销模式
+      const taxiOnly = (result as any).isTaxiOnlyMode || false;
+      setIsTaxiOnlyMode(taxiOnly);
+      
+      // 如果是打车报销模式，创建一个虚拟的行程段来存储打车总金额
+      let tripLegsToSet = result.tripLegs;
+      if (taxiOnly && result.taxiDetails.length > 0) {
+        const taxiTotal = (result as any).taxiTotalAmount || 
+          result.taxiDetails.reduce((sum: number, t: any) => sum + (t.amount || 0), 0);
+        tripLegsToSet = [{
+          dateRange: new Date().toISOString().split('T')[0],
+          route: '市内打车',
+          hotelLocation: '',
+          transportFee: 0,
+          hotelDays: 0,
+          hotelFee: 0,
+          cityTrafficFee: taxiTotal,
+          mealFee: 0,
+          otherFee: 0,
+          subTotal: taxiTotal,
+        }];
+      }
+
       setForm(prev => ({
         ...prev,
-        tripReason: result.tripReason,
+        tripReason: result.tripReason || (taxiOnly ? '打车费' : ''),
         approvalNumber: result.approvalNumber || prev.approvalNumber,
         budgetProjectId: result.autoSelectedBudgetId,
-        tripLegs: result.tripLegs,
+        tripLegs: tripLegsToSet,
         taxiDetails: result.taxiDetails,
       }));
       setStep(2);
@@ -162,20 +189,34 @@ export const CreateTravelReportView = ({
 
   // ============ 计算总金额 ============
   const calculateTotal = (): number => {
-    return form.tripLegs.reduce((acc, leg) => acc + (leg.subTotal || 0), 0);
+    // 优先使用行程段的小计
+    const tripTotal = form.tripLegs.reduce((acc, leg) => acc + (leg.subTotal || 0), 0);
+    if (tripTotal > 0) return tripTotal;
+    
+    // 如果没有行程段，使用打车明细的总额
+    return form.taxiDetails.reduce((acc: number, t: any) => acc + (t.amount || 0), 0);
   };
 
   const totalAmount = calculateTotal();
 
   // ============ 提交报销单 ============
   const handleSubmit = async (action: 'save' | 'print') => {
-    if (form.tripLegs.length === 0) {
-      alert('请至少添加一条出差行程');
-      return;
+    // 打车报销模式只需要有打车明细
+    if (isTaxiOnlyMode) {
+      if (form.taxiDetails.length === 0) {
+        alert('请至少添加一条打车明细');
+        return;
+      }
+    } else {
+      // 差旅报销模式需要出差行程
+      if (form.tripLegs.length === 0 && form.taxiDetails.length === 0) {
+        alert('请至少添加一条出差行程或打车明细');
+        return;
+      }
     }
 
     if (!form.tripReason) {
-      alert('请输入差旅事由');
+      alert(isTaxiOnlyMode ? '请输入报销事由' : '请输入差旅事由');
       return;
     }
 
@@ -187,6 +228,12 @@ export const CreateTravelReportView = ({
       ...taxiTripFiles,
       ...approvalFiles,
     ];
+
+    // 确保 userSnapshot 包含 email 字段
+    const userSnapshot = {
+      ...settings.currentUser,
+      email: settings.currentUser?.email || `${settings.currentUser?.id || 'user'}@example.com`
+    };
 
     const reportData: Report = {
       id: `travel-report-${Date.now()}`,
@@ -201,13 +248,18 @@ export const CreateTravelReportView = ({
       attachments: allAttachments,
       status: action === 'save' ? 'draft' : 'submitted',
       createdDate: new Date().toISOString(),
-      userSnapshot: settings.currentUser,
+      userSnapshot: userSnapshot,
       isTravel: true,
       tripReason: form.tripReason,
       tripLegs: form.tripLegs,
       taxiDetails: form.taxiDetails,
     };
 
+    console.warn('[CreateTravelReportView] 提交报销单, action:', action);
+    console.warn('[CreateTravelReportView] userSnapshot:', JSON.stringify(userSnapshot));
+    console.warn('[CreateTravelReportView] tripLegs:', JSON.stringify(form.tripLegs));
+    console.warn('[CreateTravelReportView] taxiDetails:', JSON.stringify(form.taxiDetails));
+    console.warn('[CreateTravelReportView] reportData:', JSON.stringify(reportData, null, 2).substring(0, 2000));
     await onAction(reportData, action);
   };
 
@@ -215,13 +267,39 @@ export const CreateTravelReportView = ({
   const validateAmounts = () => {
     const taxiTotal = form.taxiDetails.reduce((sum: number, t: any) => sum + (t.amount || 0), 0);
     const cityTrafficTotal = form.tripLegs.reduce((sum: number, leg: TripLeg) => sum + (leg.cityTrafficFee || 0), 0);
-    const isTaxiMatch = Math.abs(taxiTotal - cityTrafficTotal) < 0.01;
     
+    // 只有当有打车明细时才需要校对
+    const hasTaxiDetails = form.taxiDetails && form.taxiDetails.length > 0;
+    const hasTripLegs = form.tripLegs && form.tripLegs.length > 0;
+    
+    // 校对逻辑：
+    // 1. 如果有打车明细和行程，需要校对打车金额与市内交通费是否匹配
+    // 2. 如果只有打车明细没有行程，金额自动通过（允许单独报销打车费）
+    // 3. 如果只有行程没有打车明细，金额自动通过
+    // 4. 如果都没有，需要有事由才能通过
+    let isValid = true;
+    let message = '';
+
+    if (hasTaxiDetails && hasTripLegs) {
+      // 有打车明细和行程时，需要校对
+      isValid = Math.abs(taxiTotal - cityTrafficTotal) < 0.01;
+      if (!isValid) {
+        message = `打车发票 ¥${taxiTotal.toFixed(2)} ≠ 市内交通费 ¥${cityTrafficTotal.toFixed(2)}`;
+      }
+    } else if (!hasTaxiDetails && !hasTripLegs && !form.tripReason) {
+      // 什么都没有且没有事由，不允许提交
+      isValid = false;
+      message = '请填写差旅事由或上传相关票据';
+    }
+
     return {
-      isValid: isTaxiMatch,
+      isValid,
       taxiTotal,
       cityTrafficTotal,
       diff: taxiTotal - cityTrafficTotal,
+      message,
+      hasTaxiDetails,
+      hasTripLegs,
     };
   };
 
@@ -241,13 +319,13 @@ export const CreateTravelReportView = ({
 
         <div className="flex-1 overflow-y-auto pb-20">
           <div className="grid md:grid-cols-2 gap-6">
-            {/* 火车票/机票 - 必须 */}
+            {/* 火车票/机票 - 可选 */}
             <div className="col-span-2">
               <h3 className="font-bold text-slate-700 mb-2 flex items-center gap-2">
-                <Plane size={20} className="text-red-500" /> 火车票/机票{" "}
-                <span className="bg-red-100 text-red-600 text-[10px] px-2 py-0.5 rounded-full font-bold">强制上传</span>
+                <Plane size={20} className="text-indigo-500" /> 火车票/机票{" "}
+                <span className="bg-indigo-100 text-indigo-600 text-[10px] px-2 py-0.5 rounded-full font-bold">可选</span>
               </h3>
-              <div className="bg-white rounded-2xl border-2 border-dashed border-red-200 p-6 flex flex-col items-center justify-center min-h-[160px] hover:bg-red-50/20 transition-colors relative">
+              <div className="bg-white rounded-2xl border-2 border-dashed border-indigo-200 p-6 flex flex-col items-center justify-center min-h-[160px] hover:bg-indigo-50/20 transition-colors relative">
                 <input
                   type="file"
                   multiple
@@ -280,9 +358,9 @@ export const CreateTravelReportView = ({
                   </div>
                 ) : (
                   <div className="text-center text-slate-400 pointer-events-none">
-                    <Upload size={32} className="mx-auto mb-2 text-red-300" />
+                    <Upload size={32} className="mx-auto mb-2 text-indigo-300" />
                     <p className="font-bold text-sm text-slate-600">上传火车票/机票</p>
-                    <p className="text-xs">支持 PDF / 图片</p>
+                    <p className="text-xs">支持 PDF / 图片（可选）</p>
                   </div>
                 )}
               </div>
@@ -416,23 +494,29 @@ export const CreateTravelReportView = ({
           </div>
 
           {/* 开始识别按钮 */}
-          <button
-            onClick={handleStartAnalysis}
-            disabled={ticketFiles.length === 0 || analyzing}
-            className={`w-full mt-8 py-4 rounded-xl font-bold shadow-lg transition-all flex items-center justify-center gap-2 text-lg ${
-              ticketFiles.length > 0
-                ? 'bg-indigo-600 text-white shadow-indigo-200 hover:bg-indigo-700'
-                : 'bg-slate-200 text-slate-400 cursor-not-allowed'
-            }`}
-          >
-            {analyzing ? (
-              <>
-                <Loader2 className="animate-spin" /> AI 正在分析票据...
-              </>
-            ) : (
-              '开始识别与填单'
-            )}
-          </button>
+          {(() => {
+            const totalFiles = ticketFiles.length + hotelFiles.length + taxiInvoiceFiles.length + taxiTripFiles.length + approvalFiles.length;
+            const hasFiles = totalFiles > 0;
+            return (
+              <button
+                onClick={handleStartAnalysis}
+                disabled={!hasFiles || analyzing}
+                className={`w-full mt-8 py-4 rounded-xl font-bold shadow-lg transition-all flex items-center justify-center gap-2 text-lg ${
+                  hasFiles
+                    ? 'bg-indigo-600 text-white shadow-indigo-200 hover:bg-indigo-700'
+                    : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                }`}
+              >
+                {analyzing ? (
+                  <>
+                    <Loader2 className="animate-spin" /> AI 正在分析票据...
+                  </>
+                ) : (
+                  '开始识别与填单'
+                )}
+              </button>
+            );
+          })()}
         </div>
       </div>
     );
@@ -468,20 +552,20 @@ export const CreateTravelReportView = ({
               ✓ 金额审核通过
             </span>
           ) : (
-            <span className="text-xs text-red-600 bg-red-50 px-2 py-1 rounded-full font-medium">
-              ⚠ 金额不匹配
+            <span className="text-xs text-red-600 bg-red-50 px-2 py-1 rounded-full font-medium" title={validation.message}>
+              ⚠ {validation.message || '金额不匹配'}
             </span>
           )}
           <button
             onClick={() => handleSubmit('save')}
             className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 font-medium text-sm hover:bg-slate-50 flex items-center gap-1.5"
           >
-            <Save size={14} /> 保存草稿
+            <Save size={14} /> 保存
           </button>
           <button
             onClick={() => {
               if (!validation.isValid) {
-                alert('金额审核未通过！\n\n打车发票金额与市内交通费不匹配，请调整后再提交。');
+                alert(`金额审核未通过！\n\n${validation.message || '请检查金额是否匹配'}`);
                 return;
               }
               handleSubmit('print');
@@ -491,8 +575,9 @@ export const CreateTravelReportView = ({
                 ? 'bg-indigo-600 text-white hover:bg-indigo-700'
                 : 'bg-slate-300 text-slate-500 cursor-not-allowed'
             }`}
+            title={validation.isValid ? '保存PDF' : `金额审核未通过：${validation.message}`}
           >
-            <Download size={14} /> 提交报销
+            <Download size={14} /> 保存PDF
           </button>
         </div>
       </div>
@@ -551,6 +636,110 @@ export const CreateTravelReportView = ({
                       <div className="text-[10px] text-slate-500 mt-1">{leg.dateRange}</div>
                     </div>
                   ))}
+                </div>
+              </div>
+            )}
+
+            {/* 打车明细编辑 */}
+            {form.taxiDetails && form.taxiDetails.length > 0 && (
+              <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                <label className="text-xs font-bold text-green-700 uppercase block mb-2">打车明细 ({form.taxiDetails.length}条)</label>
+                <div className="space-y-2 max-h-64 overflow-y-auto">
+                  {form.taxiDetails.map((taxi: any, i: number) => (
+                    <div key={i} className="bg-white p-2 rounded border border-green-100 space-y-1.5">
+                      <div className="flex justify-between items-center">
+                        <span className="text-[10px] text-slate-400 font-medium">第 {i + 1} 条</span>
+                        <span className="text-xs font-bold text-green-600">¥{(taxi.amount || 0).toFixed(2)}</span>
+                      </div>
+                      <div className="flex gap-1 items-center">
+                        <span className="text-[10px] text-slate-500 w-8">日期:</span>
+                        <input
+                          value={taxi.date || ''}
+                          onChange={e => {
+                            const newTaxiDetails = [...form.taxiDetails];
+                            newTaxiDetails[i] = { ...newTaxiDetails[i], date: e.target.value };
+                            setForm(prev => ({ ...prev, taxiDetails: newTaxiDetails }));
+                          }}
+                          className="flex-1 p-1 text-xs border border-slate-200 rounded focus:border-green-500 outline-none"
+                        />
+                      </div>
+                      <div className="flex gap-1 items-center">
+                        <span className="text-[10px] text-slate-500 w-8">事由:</span>
+                        <input
+                          value={taxi.reason || ''}
+                          onChange={e => {
+                            const newTaxiDetails = [...form.taxiDetails];
+                            newTaxiDetails[i] = { ...newTaxiDetails[i], reason: e.target.value };
+                            setForm(prev => ({ ...prev, taxiDetails: newTaxiDetails }));
+                          }}
+                          placeholder="外出事由"
+                          className="flex-1 p-1 text-xs border border-slate-200 rounded focus:border-green-500 outline-none"
+                        />
+                      </div>
+                      <div className="flex gap-1 items-center">
+                        <span className="text-[10px] text-slate-500 w-8">起点:</span>
+                        <input
+                          value={taxi.startPoint || ''}
+                          onChange={e => {
+                            const newTaxiDetails = [...form.taxiDetails];
+                            newTaxiDetails[i] = { 
+                              ...newTaxiDetails[i], 
+                              startPoint: e.target.value,
+                              route: `${e.target.value}-${newTaxiDetails[i].endPoint || ''}`
+                            };
+                            setForm(prev => ({ ...prev, taxiDetails: newTaxiDetails }));
+                          }}
+                          placeholder="起点地址"
+                          className="flex-1 p-1 text-xs border border-slate-200 rounded focus:border-green-500 outline-none"
+                        />
+                      </div>
+                      <div className="flex gap-1 items-center">
+                        <span className="text-[10px] text-slate-500 w-8">终点:</span>
+                        <input
+                          value={taxi.endPoint || ''}
+                          onChange={e => {
+                            const newTaxiDetails = [...form.taxiDetails];
+                            newTaxiDetails[i] = { 
+                              ...newTaxiDetails[i], 
+                              endPoint: e.target.value,
+                              route: `${newTaxiDetails[i].startPoint || ''}-${e.target.value}`
+                            };
+                            setForm(prev => ({ ...prev, taxiDetails: newTaxiDetails }));
+                          }}
+                          placeholder="终点地址"
+                          className="flex-1 p-1 text-xs border border-slate-200 rounded focus:border-green-500 outline-none"
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* 金额审核详情 */}
+            {(form.taxiDetails.length > 0 || form.tripLegs.length > 0) && (
+              <div className={`rounded-lg p-3 border ${validation.isValid ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                <label className={`text-xs font-bold uppercase block mb-2 flex items-center gap-1 ${validation.isValid ? 'text-green-700' : 'text-red-700'}`}>
+                  {validation.isValid ? '✓ 金额审核通过' : '⚠ 金额审核未通过'}
+                </label>
+                <div className="space-y-1.5 text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-slate-600">打车发票总额:</span>
+                    <span className="font-bold">¥{validation.taxiTotal.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-600">市内交通费:</span>
+                    <span className="font-bold">¥{validation.cityTrafficTotal.toFixed(2)}</span>
+                  </div>
+                  {!validation.isValid && validation.hasTaxiDetails && validation.hasTripLegs && (
+                    <div className={`flex justify-between pt-1.5 border-t ${validation.isValid ? 'border-green-200' : 'border-red-200'}`}>
+                      <span className="text-red-600 font-medium">差额:</span>
+                      <span className="text-red-600 font-bold">¥{Math.abs(validation.diff).toFixed(2)}</span>
+                    </div>
+                  )}
+                  {validation.message && !validation.isValid && (
+                    <p className="text-red-600 text-[10px] mt-1">{validation.message}</p>
+                  )}
                 </div>
               </div>
             )}
@@ -732,23 +921,47 @@ export const CreateTravelReportView = ({
 
         {/* 右侧预览区 */}
         <div className="flex-1 overflow-y-auto p-8 flex flex-col items-center gap-8">
-          {/* 差旅报销单 */}
+          {/* 报销单预览 - 根据模式显示不同表单 */}
           <div ref={previewContainerRef} style={{ transform: `scale(${previewScale})`, transformOrigin: 'top center' }} className="bg-white shadow-lg">
-            <TravelReimbursementForm
-              data={{
-                tripReason: form.tripReason,
-                tripLegs: form.tripLegs,
-                totalAmount: totalAmount,
-                approvalNumber: form.approvalNumber,
-                userSnapshot: settings.currentUser,
-                invoiceCount: ticketFiles.length + hotelFiles.length + taxiInvoiceFiles.length,
-                attachments: allAttachments,
-                createdDate: new Date().toISOString(),
-              }}
-            />
+            {isTaxiOnlyMode ? (
+              // 打车报销模式：显示通用报销单
+              <GeneralReimbursementForm
+                data={{
+                  title: form.tripReason || '打车费',
+                  amount: totalAmount,
+                  prepaidAmount: form.prepaidAmount,
+                  items: form.taxiDetails.map((t: any, idx: number) => ({
+                    id: t.id || `taxi-item-${idx}`,
+                    userId: settings.currentUser?.id || '',
+                    date: t.date || new Date().toISOString().split('T')[0],
+                    description: `${t.startPoint || ''} → ${t.endPoint || ''} (${t.reason || '打车'})`,
+                    amount: t.amount || 0,
+                    category: '交通费',
+                    status: 'pending' as const,
+                  })),
+                  approvalNumber: form.approvalNumber,
+                  userSnapshot: settings.currentUser,
+                  createdDate: new Date().toISOString(),
+                }}
+              />
+            ) : (
+              // 差旅报销模式：显示差旅费报销单
+              <TravelReimbursementForm
+                data={{
+                  tripReason: form.tripReason,
+                  tripLegs: form.tripLegs,
+                  totalAmount: totalAmount,
+                  approvalNumber: form.approvalNumber,
+                  userSnapshot: settings.currentUser,
+                  invoiceCount: ticketFiles.length + hotelFiles.length + taxiInvoiceFiles.length,
+                  attachments: allAttachments,
+                  createdDate: new Date().toISOString(),
+                }}
+              />
+            )}
           </div>
 
-          {/* 打车明细表 */}
+          {/* 打车明细表 - 有打车明细时都显示 */}
           {form.taxiDetails && form.taxiDetails.length > 0 && (
             <div style={{ transform: `scale(${previewScale})`, transformOrigin: 'top center' }} className="bg-white shadow-lg">
               <TaxiExpenseTable

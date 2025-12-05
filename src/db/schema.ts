@@ -18,7 +18,16 @@ export const reportStatusEnum = pgEnum('report_status', ['draft', 'submitted', '
 export const userRoleEnum = pgEnum('user_role', ['admin', 'user'])
 
 // 附件类型枚举
-export const attachmentTypeEnum = pgEnum('attachment_type', ['invoice', 'approval', 'voucher', 'other'])
+export const attachmentTypeEnum = pgEnum('attachment_type', [
+  'invoice',      // 发票
+  'approval',     // 审批单
+  'voucher',      // 凭证
+  'other',        // 其他
+  'ticket',       // 火车票/机票
+  'hotel',        // 住宿发票
+  'taxi-invoice', // 打车发票
+  'taxi-trip',    // 打车行程单
+])
 
 // AI 厂商枚举
 export const aiProviderEnum = pgEnum('ai_provider', [

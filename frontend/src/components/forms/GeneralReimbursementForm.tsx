@@ -90,7 +90,7 @@ export const GeneralReimbursementForm: React.FC<GeneralReimbursementFormProps> =
     padding: '4px 3px',
     verticalAlign: 'middle',
     fontSize: '12px',
-    lineHeight: '1.3',
+    lineHeight: '1.4',
     overflow: 'hidden',
     textAlign: 'center',
   };
@@ -140,13 +140,7 @@ export const GeneralReimbursementForm: React.FC<GeneralReimbursementFormProps> =
 
         {/* 主表格 */}
         <table style={tableStyle}>
-          <colgroup>
-            <col style={{ width: '5%' }} />   {/* 序号 */}
-            <col style={{ width: '45%' }} />  {/* 报销事由 */}
-            <col style={{ width: '15%' }} />  {/* 报销金额 */}
-            <col style={{ width: '20%' }} />  {/* 预算项目 */}
-            <col style={{ width: '15%' }} />  {/* 预算编码 */}
-          </colgroup>
+          <colgroup><col style={{ width: '5%' }} /><col style={{ width: '45%' }} /><col style={{ width: '15%' }} /><col style={{ width: '20%' }} /><col style={{ width: '15%' }} /></colgroup>
           <tbody>
             {/* 第1行：部门 + 报销人 */}
             <tr>
@@ -248,20 +242,7 @@ export const GeneralReimbursementForm: React.FC<GeneralReimbursementFormProps> =
             <tr>
               <td colSpan={5} style={{ ...cellStyle, padding: 0 }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', border: 'none', height: `${48 * scale}px` }}>
-                  <colgroup>
-                    <col style={{ width: '8%' }} />
-                    <col style={{ width: '8%' }} />
-                    <col style={{ width: '8%' }} />
-                    <col style={{ width: '8%' }} />
-                    <col style={{ width: '10%' }} />
-                    <col style={{ width: '8%' }} />
-                    <col style={{ width: '10%' }} />
-                    <col style={{ width: '8%' }} />
-                    <col style={{ width: '8%' }} />
-                    <col style={{ width: '8%' }} />
-                    <col style={{ width: '8%' }} />
-                    <col style={{ width: '8%' }} />
-                  </colgroup>
+                  <colgroup><col style={{ width: '8%' }} /><col style={{ width: '8%' }} /><col style={{ width: '8%' }} /><col style={{ width: '8%' }} /><col style={{ width: '10%' }} /><col style={{ width: '8%' }} /><col style={{ width: '10%' }} /><col style={{ width: '8%' }} /><col style={{ width: '8%' }} /><col style={{ width: '8%' }} /><col style={{ width: '8%' }} /><col style={{ width: '8%' }} /></colgroup>
                   <tbody>
                     <tr style={{ height: '100%' }}>
                       <td style={{ border: 'none', borderRight: '1px solid black', textAlign: 'center', padding: `${3 * scale}px`, fontSize: `${12 * scale}px` }}>董事长<br/>签字</td>

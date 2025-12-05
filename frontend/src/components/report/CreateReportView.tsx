@@ -207,6 +207,12 @@ export const CreateReportView = ({
 
     setExpenses(updatedExpenses);
 
+    // 确保 userSnapshot 包含 email 字段
+    const userSnapshot = {
+      ...settings.currentUser,
+      email: settings.currentUser?.email || `${settings.currentUser?.id || 'user'}@example.com`
+    };
+
     const reportData: Report = {
       id: `report-${Date.now()}`,
       title: form.title,
@@ -220,10 +226,11 @@ export const CreateReportView = ({
       attachments: [...invoiceFiles, ...approvalFiles, ...voucherFiles],
       status: action === 'save' ? 'draft' : 'submitted',
       createdDate: new Date().toISOString(),
-      userSnapshot: settings.currentUser,
+      userSnapshot: userSnapshot,
       isTravel: false, // 显式标记为非差旅报销
     };
 
+    console.warn('[CreateReportView] 提交报销单, action:', action, 'userSnapshot:', JSON.stringify(userSnapshot));
     await onAction(reportData, action);
   };
 
@@ -451,7 +458,7 @@ export const CreateReportView = ({
             onClick={() => handleSubmit('save')}
             className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 font-medium text-sm hover:bg-slate-50 flex items-center gap-1.5"
           >
-            <Save size={14} /> 保存草稿
+            <Save size={14} /> 保存
           </button>
           {(() => {
             const invoiceTotal = invoiceDetails.filter(inv => inv.selected).reduce((sum, inv) => sum + inv.amount, 0);
@@ -471,10 +478,10 @@ export const CreateReportView = ({
                     ? 'bg-indigo-600 text-white hover:bg-indigo-700'
                     : 'bg-slate-300 text-slate-500 cursor-not-allowed'
                 }`}
-                title={isMatch ? '提交报销单' : '金额审核未通过，无法提交'}
+                title={isMatch ? '打印/保存 PDF' : '金额审核未通过，无法打印'}
               >
-                <Download size={14} /> 提交报销
-        </button>
+                <Download size={14} /> 打印/保存 PDF
+              </button>
             );
           })()}
         </div>

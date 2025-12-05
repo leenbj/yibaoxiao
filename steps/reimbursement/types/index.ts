@@ -27,7 +27,7 @@ export const AppUserSchema = z.object({
   id: z.string(),
   name: z.string(),
   department: z.string(),
-  email: z.string().email(),
+  email: z.string(), // 允许任意字符串，不强制邮箱格式
   role: UserRoleSchema,
   password: z.string().optional(), // 存储时加密
   isCurrent: z.boolean().optional(),
@@ -83,7 +83,16 @@ export type ExpenseItem = z.infer<typeof ExpenseItemSchema>
 // ==================== 附件 ====================
 
 /** 附件类型 */
-export const AttachmentTypeSchema = z.enum(['invoice', 'approval', 'voucher', 'other'])
+export const AttachmentTypeSchema = z.enum([
+  'invoice',      // 发票
+  'approval',     // 审批单
+  'voucher',      // 凭证
+  'other',        // 其他
+  'ticket',       // 火车票/机票
+  'hotel',        // 住宿发票
+  'taxi-invoice', // 打车发票
+  'taxi-trip',    // 打车行程单
+])
 
 /** 附件 */
 export const AttachmentSchema = z.object({
@@ -99,8 +108,9 @@ export type Attachment = z.infer<typeof AttachmentSchema>
 export const TaxiDetailSchema = z.object({
   date: z.string(),
   reason: z.string(),
-  startPoint: z.string(),
-  endPoint: z.string(),
+  route: z.string(),         // 行程路线，如 "酒店-机场"
+  startPoint: z.string(),    // 起点
+  endPoint: z.string(),      // 终点
   amount: z.number(),
   employeeName: z.string(),
 })

@@ -224,7 +224,20 @@ export const handler: Handlers['AIRecognize'] = async (req, { logger }) => {
 
     // 调用 AI 识别服务（如果无配置会返回模拟数据）
     // 注意：图片应在前端压缩后再上传，以避免 E2BIG 错误
-    logger.info('调用 AI 识别服务', { provider: aiConfig?.provider, model: aiConfig?.model, imageCount: images.length })
+    logger.info('调用 AI 识别服务', { 
+      provider: aiConfig?.provider, 
+      model: aiConfig?.model, 
+      imageCount: images.length,
+      hasApiKey: !!aiConfig?.apiKey,
+      configSource,
+    })
+    console.log('[DEBUG] AI 配置详情:', { 
+      provider: aiConfig?.provider, 
+      model: aiConfig?.model, 
+      hasApiKey: !!aiConfig?.apiKey,
+      apiKeyLength: aiConfig?.apiKey?.length || 0,
+      configSource,
+    })
     const result = await recognizeWithConfig(images, type, aiConfig)
 
     // 详细记录识别结果，帮助调试

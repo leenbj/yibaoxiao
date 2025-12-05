@@ -72,8 +72,9 @@ export const useInvoiceAnalysis = ({
   const [matchedLoans, setMatchedLoans] = useState<any[]>([]);
   const [manualItems, setManualItems] = useState<ExpenseItem[]>([]);
 
-  // 辅助函数：清理 Base64 编码
-  const cleanB64 = (data: string) => data.split(',')[1];
+  // 辅助函数：保留完整的 data URL（包括 mimeType）
+  // 后端需要完整的 data URL 来正确识别图片格式
+  const cleanB64 = (data: string) => data;  // 不再去掉前缀，保留完整的 data URL
 
   // 辅助函数：格式化日期
   const formatDate = (dateStr: string | undefined): string => {
@@ -228,10 +229,12 @@ export const useInvoiceAnalysis = ({
     merge: boolean
   ): ExpenseItem[] => {
     const eventSuffix = approvalData.eventSummary ? `（${approvalData.eventSummary}）` : '';
+    const userId = settings.currentUser?.id || 'user_default';
 
     return (invoiceList.length === 1 || merge)
       ? [{
         id: `extracted-${Date.now()}`,
+        userId: userId, // 添加 userId 字段
         date: invoiceList[0]?.invoiceDate || new Date().toISOString(),
         description: reimbursementTitle || invoiceList[0]?.projectName || '费用报销',
         amount: totalAmount,
@@ -240,6 +243,7 @@ export const useInvoiceAnalysis = ({
       }]
       : invoiceList.map((inv, idx) => ({
         id: `extracted-${Date.now()}-${idx}`,
+        userId: userId, // 添加 userId 字段
         date: inv.invoiceDate,
         description: `${inv.projectName}${eventSuffix}`,
         amount: inv.amount,

@@ -79,6 +79,7 @@ const MainApp = ({ user, onLogout }: { user: AppUser; onLogout: () => void }) =>
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [autoPrint, setAutoPrint] = useState(false); // 是否自动触发打印
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false); // 移动端快捷菜单
 
   // ============ 设置状态 ============
@@ -89,14 +90,16 @@ const MainApp = ({ user, onLogout }: { user: AppUser; onLogout: () => void }) =>
       const currentUser = {
         ...parsed.currentUser,
         ...user,
-        role: user.role || parsed.currentUser?.role || 'admin'
+        role: user.role || parsed.currentUser?.role || 'admin',
+        email: user.email || parsed.currentUser?.email || `${user.id}@example.com` // 确保 email 字段存在
       };
       return { ...parsed, currentUser };
     }
     const currentUser = {
       ...INITIAL_SETTINGS.currentUser,
       ...user,
-      role: user.role || 'admin'
+      role: user.role || 'admin',
+      email: user.email || `${user.id}@example.com` // 确保 email 字段存在
     };
     return { ...INITIAL_SETTINGS, currentUser, users: [currentUser] };
   });
@@ -121,20 +124,45 @@ const MainApp = ({ user, onLogout }: { user: AppUser; onLogout: () => void }) =>
   useEffect(() => {
     const loadData = async () => {
       const userId = getUserId(user);
+      console.log('[数据加载] 开始加载数据, userId:', userId);
       setDataLoading(true);
       try {
         // 并行加载所有数据
         const [expensesRes, reportsRes, loansRes, payeesRes, projectsRes] = await Promise.all([
-          apiRequest(`/api/expenses?userId=${userId}`).catch(() => ({ expenses: [] })),
-          apiRequest(`/api/reports?userId=${userId}`).catch(() => ({ reports: [] })),
-          apiRequest(`/api/loans?userId=${userId}`).catch(() => ({ loans: [] })),
+          apiRequest(`/api/expenses?userId=${userId}`).catch((e) => {
+            console.error('[数据加载] 加载费用失败:', e);
+            return { expenses: null };
+          }),
+          apiRequest(`/api/reports?userId=${userId}`).catch((e) => {
+            console.error('[数据加载] 加载报销单失败:', e);
+            return { reports: null };
+          }),
+          apiRequest(`/api/loans?userId=${userId}`).catch((e) => {
+            console.error('[数据加载] 加载借款单失败:', e);
+            return { loans: null };
+          }),
           apiRequest(`/api/settings/payees?userId=${userId}`).catch(() => ({ payees: [] })),
           apiRequest(`/api/settings/projects?userId=${userId}`).catch(() => ({ projects: [] })),
         ]);
 
-        setExpenses((expensesRes as any).expenses || []);
-        setReports((reportsRes as any).reports || []);
-        setLoans((loansRes as any).loans || []);
+        // API 返回的数据
+        const apiExpenses = (expensesRes as any).expenses;
+        const apiReports = (reportsRes as any).reports;
+        const apiLoans = (loansRes as any).loans;
+        
+        console.log('[数据加载] API 返回: expenses=' + (apiExpenses?.length ?? 'null') + ', reports=' + (apiReports?.length ?? 'null') + ', loans=' + (apiLoans?.length ?? 'null'));
+
+        // 如果 API 成功返回数据（包括空数组），使用 API 数据
+        // 如果 API 失败（返回 null），保持本地数据
+        if (apiExpenses !== null) {
+          setExpenses(apiExpenses);
+        }
+        if (apiReports !== null) {
+          setReports(apiReports);
+        }
+        if (apiLoans !== null) {
+          setLoans(apiLoans);
+        }
 
         setSettings(prev => ({
           ...prev,
@@ -142,7 +170,7 @@ const MainApp = ({ user, onLogout }: { user: AppUser; onLogout: () => void }) =>
           projects: (projectsRes as any).projects || prev.projects,
         }));
       } catch (error) {
-        console.error('数据加载失败:', error);
+        console.error('[数据加载] 数据加载失败:', error);
       } finally {
         setDataLoading(false);
       }
@@ -196,15 +224,27 @@ const MainApp = ({ user, onLogout }: { user: AppUser; onLogout: () => void }) =>
     const expenseStatus: 'pending' | 'processing' | 'done' = action === 'print' ? 'processing' : 'pending';
 
     const newReport = { ...report, status };
+    let savedReport = newReport;
+
+    console.warn('[保存报销单] 开始保存, action:', action, 'userId:', userId);
+    console.warn('[保存报销单] userSnapshot:', JSON.stringify(newReport.userSnapshot));
 
     try {
+      const requestBody = { ...newReport, userId };
+      console.warn('[保存报销单] 请求体大小:', JSON.stringify(requestBody).length, '字节');
+      
       const result = await apiRequest('/api/reports', {
         method: 'POST',
-        body: JSON.stringify({ ...newReport, userId }),
+        body: JSON.stringify(requestBody),
       }) as { report: Report };
-      setReports(prev => [result.report || { ...newReport, userId: DEFAULT_USER_ID }, ...prev]);
-    } catch (error) {
-      console.error('创建报销单失败:', error);
+      
+      console.warn('[保存报销单] 保存成功, id:', result.report?.id);
+      savedReport = result.report || { ...newReport, userId: DEFAULT_USER_ID };
+      setReports(prev => [savedReport, ...prev]);
+    } catch (error: any) {
+      console.error('[保存报销单] 创建失败:', error?.message || error);
+      console.error('[保存报销单] 错误详情:', JSON.stringify(error));
+      // 即使失败也添加到本地列表（便于用户看到）
       setReports(prev => [newReport, ...prev]);
     }
 
@@ -214,7 +254,15 @@ const MainApp = ({ user, onLogout }: { user: AppUser; onLogout: () => void }) =>
       updateExpensesStatus(linkedExpenseIds, expenseStatus);
     }
 
-    setView('history');
+    if (action === 'print') {
+      // 打印模式：跳转到报销单详情页面，自动触发打印
+      setSelectedId(savedReport.id);
+      setAutoPrint(true);
+      setView('report-detail');
+    } else {
+      // 保存模式：跳转到历史记录
+      setView('history');
+    }
   };
 
   const handleLoanAction = async (loan: LoanRecord, action: 'save' | 'print') => {
@@ -222,19 +270,37 @@ const MainApp = ({ user, onLogout }: { user: AppUser; onLogout: () => void }) =>
     const status: ReportStatus = action === 'print' ? 'submitted' : 'draft';
 
     const newLoan = { ...loan, status };
+    let savedLoan = newLoan;
+
+    console.warn('[保存借款单] 开始保存, action:', action, 'userId:', userId);
+    console.warn('[保存借款单] userSnapshot:', JSON.stringify(newLoan.userSnapshot));
 
     try {
+      const requestBody = { ...newLoan, userId };
+      console.warn('[保存借款单] 请求体大小:', JSON.stringify(requestBody).length, '字节');
+      
       const result = await apiRequest('/api/loans', {
         method: 'POST',
-        body: JSON.stringify({ ...newLoan, userId }),
+        body: JSON.stringify(requestBody),
       }) as { loan: LoanRecord };
-      setLoans(prev => [result.loan || { ...newLoan, userId: DEFAULT_USER_ID }, ...prev]);
-    } catch (error) {
-      console.error('创建借款单失败:', error);
+      
+      console.warn('[保存借款单] 保存成功, id:', result.loan?.id);
+      savedLoan = result.loan || { ...newLoan, userId: DEFAULT_USER_ID };
+      setLoans(prev => [savedLoan, ...prev]);
+    } catch (error: any) {
+      console.error('[保存借款单] 创建失败:', error?.message || error);
       setLoans(prev => [newLoan, ...prev]);
     }
 
-    setView('history');
+    if (action === 'print') {
+      // 打印模式：跳转到借款单详情页面
+      setSelectedId(savedLoan.id);
+      setAutoPrint(true);
+      setView('loan-detail');
+    } else {
+      // 保存模式：跳转到历史记录
+      setView('history');
+    }
   };
 
   const deleteRecord = async (id: string, type: 'report' | 'loan') => {
@@ -257,6 +323,9 @@ const MainApp = ({ user, onLogout }: { user: AppUser; onLogout: () => void }) =>
   };
 
   const completeReimbursement = async (id: string, type: 'report' | 'loan') => {
+    const userId = getUserId(user);
+    console.warn(`[完成报销] 开始更新, id: ${id}, type: ${type}, userId: ${userId}`);
+    
     if (type === 'report') {
       setReports(prev => prev.map(r => r.id === id ? { ...r, status: 'paid' } : r));
       const report = reports.find((r: any) => r.id === id);
@@ -268,22 +337,24 @@ const MainApp = ({ user, onLogout }: { user: AppUser; onLogout: () => void }) =>
         }
       }
       try {
-        await apiRequest(`/api/reports/${id}/status`, {
+        const result = await apiRequest(`/api/reports/${id}/status`, {
           method: 'PATCH',
-          body: JSON.stringify({ status: 'paid' }),
+          body: JSON.stringify({ userId, status: 'paid' }),
         });
+        console.warn('[完成报销] 报销单状态更新成功:', result);
       } catch (error) {
-        console.error('更新报销单状态失败:', error);
+        console.error('[完成报销] 更新报销单状态失败:', error);
       }
     } else {
       setLoans(prev => prev.map(l => l.id === id ? { ...l, status: 'paid' } : l));
       try {
-        await apiRequest(`/api/loans/${id}/status`, {
+        const result = await apiRequest(`/api/loans/${id}/status`, {
           method: 'PATCH',
-          body: JSON.stringify({ status: 'paid' }),
+          body: JSON.stringify({ userId, status: 'paid' }),
         });
+        console.warn('[完成报销] 借款状态更新成功:', result);
       } catch (error) {
-        console.error('更新借款状态失败:', error);
+        console.error('[完成报销] 更新借款状态失败:', error);
       }
     }
   };
@@ -473,6 +544,11 @@ const MainApp = ({ user, onLogout }: { user: AppUser; onLogout: () => void }) =>
                     report={reports.find((r) => r.id === selectedId)!}
                     onUpdate={(r: Report) => setReports(prev => prev.map(old => old.id === r.id ? r : old))}
                     onBack={() => setView("history")}
+                    autoPrint={autoPrint}
+                    onPrintDone={() => {
+                      setAutoPrint(false);
+                      setView("history"); // 打印完成后返回历史记录
+                    }}
                   />
                 )}
                 {view === "loan-detail" && selectedId && (
@@ -480,6 +556,11 @@ const MainApp = ({ user, onLogout }: { user: AppUser; onLogout: () => void }) =>
                     loan={loans.find((l) => l.id === selectedId)!}
                     onUpdate={(l: LoanRecord) => setLoans(prev => prev.map(old => old.id === l.id ? l : old))}
                     onBack={() => setView("history")}
+                    autoPrint={autoPrint}
+                    onPrintDone={() => {
+                      setAutoPrint(false);
+                      setView("history"); // 打印完成后返回历史记录
+                    }}
                   />
                 )}
               </>

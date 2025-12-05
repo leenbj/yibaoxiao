@@ -9,8 +9,11 @@ import { digitToChinese } from '../../utils/format';
 interface TaxiDetail {
   date: string;
   reason?: string;
-  route: string;
+  route?: string;
+  startPoint?: string;
+  endPoint?: string;
   amount: number;
+  employeeName?: string;
 }
 
 interface TaxiExpenseTableProps {
@@ -76,13 +79,7 @@ export const TaxiExpenseTable: React.FC<TaxiExpenseTableProps> = ({ data }) => {
       </div>
       
       <table style={tableStyle}>
-        <colgroup>
-          <col style={{ width: '12%' }} />
-          <col style={{ width: '15%' }} />
-          <col style={{ width: '45%' }} />
-          <col style={{ width: '15%' }} />
-          <col style={{ width: '13%' }} />
-        </colgroup>
+        <colgroup><col style={{ width: '12%' }} /><col style={{ width: '15%' }} /><col style={{ width: '45%' }} /><col style={{ width: '15%' }} /><col style={{ width: '13%' }} /></colgroup>
         <thead>
           <tr>
             <th style={{ ...cellStyle, height: '35px' }}>发票日期</th>
@@ -93,15 +90,22 @@ export const TaxiExpenseTable: React.FC<TaxiExpenseTableProps> = ({ data }) => {
           </tr>
         </thead>
         <tbody>
-          {taxiDetails.map((item, idx) => (
-            <tr key={idx}>
-              <td style={cellStyle}>{item.date || ''}</td>
-              <td style={cellStyle}>{item.reason || data.tripReason || ''}</td>
-              <td style={cellStyle}>{item.route || ''}</td>
-              <td style={cellStyle}>{(item.amount || 0).toFixed(2)}</td>
-              <td style={cellStyle}>{data.userSnapshot?.name || ''}</td>
-            </tr>
-          ))}
+          {taxiDetails.map((item, idx) => {
+            // 优先使用 route，否则从 startPoint 和 endPoint 构造
+            const routeDisplay = item.route || 
+              (item.startPoint && item.endPoint ? `${item.startPoint}-${item.endPoint}` : 
+               item.startPoint || item.endPoint || '');
+            const employeeName = item.employeeName || data.userSnapshot?.name || '';
+            return (
+              <tr key={idx}>
+                <td style={cellStyle}>{item.date || ''}</td>
+                <td style={cellStyle}>{item.reason || data.tripReason || ''}</td>
+                <td style={cellStyle}>{routeDisplay}</td>
+                <td style={cellStyle}>{(item.amount || 0).toFixed(2)}</td>
+                <td style={cellStyle}>{employeeName}</td>
+              </tr>
+            );
+          })}
           {/* 总金额行 */}
           <tr style={{ fontWeight: 'bold' }}>
             <td style={{ ...cellStyle, textAlign: 'center' }}>总金额</td>

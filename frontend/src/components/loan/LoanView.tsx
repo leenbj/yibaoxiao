@@ -77,7 +77,7 @@ export const LoanView = ({ settings, onAction, onBack }: LoanViewProps) => {
             }) as any;
 
             const data = response.result || {};
-            console.log('[AI] 审批单识别结果:', data);
+            console.warn('[AI] 审批单识别结果:', JSON.stringify(data, null, 2));
 
             // 提取借款事由 - 精简为一句话
             if(data.eventSummary) {
@@ -123,6 +123,13 @@ export const LoanView = ({ settings, onAction, onBack }: LoanViewProps) => {
 
     const handleSubmit = (action: 'save' | 'print') => {
         if(!amount || !reason) return alert("请填写完整借款金额和事由");
+        
+        // 确保 userSnapshot 包含 email 字段
+        const userSnapshot = {
+            ...settings.currentUser,
+            email: settings.currentUser?.email || `${settings.currentUser?.id || 'user'}@example.com`
+        };
+        
         const loan: LoanRecord = {
             id: Date.now().toString(),
             amount: amount,
@@ -131,11 +138,13 @@ export const LoanView = ({ settings, onAction, onBack }: LoanViewProps) => {
             status: 'draft',
             paymentMethod: 'transfer',
             payeeInfo: settings.paymentAccounts.find((a:any) => a.id === paymentAccountId) || settings.paymentAccounts[0],
-            userSnapshot: settings.currentUser,
+            userSnapshot: userSnapshot,
             attachments: approvalFiles,
             approvalNumber,
             budgetProject: settings.budgetProjects.find((p:any) => p.id === budgetProjectId),
         };
+        
+        console.warn('[LoanView] 提交借款单, action:', action, 'userSnapshot:', JSON.stringify(userSnapshot));
         onAction(loan, action);
     };
 
@@ -211,10 +220,10 @@ export const LoanView = ({ settings, onAction, onBack }: LoanViewProps) => {
                         </div>
                         <div className="flex gap-2">
                             <button onClick={() => handleSubmit('save')} className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 font-medium text-sm hover:bg-slate-50 flex items-center gap-1.5">
-                                <Save size={14}/> 保存草稿
+                                <Save size={14}/> 保存
                             </button>
                             <button onClick={() => handleSubmit('print')} className="px-3 py-1.5 rounded-lg bg-amber-500 text-white font-medium text-sm shadow-md shadow-amber-200 hover:bg-amber-600 flex items-center gap-1.5">
-                                <Download size={14}/> 提交借款
+                                <Download size={14}/> 保存 PDF
                             </button>
                         </div>
                     </div>

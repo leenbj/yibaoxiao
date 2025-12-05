@@ -188,6 +188,7 @@ export async function recognizeWithConfig(
       case 'doubao':      // 火山引擎豆包 - 兼容 OpenAI SDK
       case 'volcengine':  // 火山引擎别名
         result = await recognizeWithOpenAICompatible(images, prompt, apiKey, apiUrl, model)
+        console.log('[AI] OpenAI Compatible 返回结果:', JSON.stringify(result).substring(0, 800))
         break
       case 'glm':
         result = await recognizeWithGLM(images, prompt, apiKey, apiUrl, model)
@@ -272,6 +273,11 @@ async function recognizeWithGemini(
     try {
       // 尝试直接解析
       const parsed = JSON.parse(text)
+      // 如果是数组（如打车明细），包装成对象
+      if (Array.isArray(parsed)) {
+        console.log('[AI] Gemini 解析成功（数组格式），记录数:', parsed.length)
+        return { details: parsed }
+      }
       console.log('[AI] Gemini 解析成功，关键字段:', {
         projectName: parsed.projectName,
         totalAmount: parsed.totalAmount,
@@ -282,12 +288,25 @@ async function recognizeWithGemini(
       return parsed
     } catch (parseError) {
       console.log('[AI] 直接解析失败，尝试提取 JSON:', parseError)
-      // 尝试提取 JSON
-      const jsonMatch = text.match(/\{[\s\S]*\}/)
-      if (jsonMatch) {
+      // 尝试提取 JSON 数组或对象
+      const arrayMatch = text.match(/\[[\s\S]*\]/)
+      const objectMatch = text.match(/\{[\s\S]*\}/)
+      
+      // 优先尝试数组格式（打车明细等）
+      if (arrayMatch) {
         try {
-          const parsed = JSON.parse(jsonMatch[0])
-          console.log('[AI] Gemini JSON 提取成功，关键字段:', {
+          const parsed = JSON.parse(arrayMatch[0])
+          console.log('[AI] Gemini JSON 数组提取成功，记录数:', parsed.length)
+          return { details: parsed }
+        } catch (e) {
+          console.log('[AI] 数组解析失败，尝试对象格式')
+        }
+      }
+      
+      if (objectMatch) {
+        try {
+          const parsed = JSON.parse(objectMatch[0])
+          console.log('[AI] Gemini JSON 对象提取成功，关键字段:', {
             projectName: parsed.projectName,
             totalAmount: parsed.totalAmount,
             invoiceDate: parsed.invoiceDate,
@@ -323,7 +342,27 @@ async function recognizeWithOpenAICompatible(
 
   // 添加图片
   for (const image of images) {
-    const base64Data = image.includes(',') ? image : `data:image/jpeg;base64,${image}`
+    // 确保 Base64 图片包含正确的 data URL 前缀
+    let base64Data: string
+    if (image.startsWith('data:')) {
+      // 已经包含 data URL 前缀
+      base64Data = image
+    } else if (image.includes(',')) {
+      // 可能是不完整的 data URL，尝试修复
+      const parts = image.split(',')
+      if (parts[0].startsWith('data:')) {
+        base64Data = image
+      } else {
+        // 添加默认前缀
+        base64Data = `data:image/jpeg;base64,${parts[parts.length - 1]}`
+      }
+    } else {
+      // 纯 Base64 数据，添加前缀
+      base64Data = `data:image/jpeg;base64,${image}`
+    }
+    
+    console.log('[AI] 图片数据前缀:', base64Data.substring(0, 50) + '...')
+    
     content.push({
       type: 'image_url',
       image_url: { url: base64Data },
@@ -333,25 +372,52 @@ async function recognizeWithOpenAICompatible(
   // 添加文本
   content.push({ type: 'text', text: prompt })
 
+  // 构建请求体
+  const requestBody: any = {
+    model,
+    messages: [{ role: 'user', content }],
+  }
+  
+  // 只有部分模型支持 response_format 参数
+  // Doubao/火山引擎可能不支持，所以只对 OpenAI 和 DeepSeek 添加
+  // 通过检查 apiUrl 来判断是否是 Doubao
+  const isDoubao = apiUrl.includes('volces.com') || apiUrl.includes('volcengine')
+  if (!isDoubao) {
+    requestBody.response_format = { type: 'json_object' }
+  }
+  
+  console.log('[AI] OpenAI Compatible API 请求:', {
+    url: `${apiUrl}/chat/completions`,
+    model,
+    isDoubao,
+    imageCount: images.length,
+  })
+
   const response = await fetch(`${apiUrl}/chat/completions`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${apiKey}`,
     },
-    body: JSON.stringify({
-      model,
-      messages: [{ role: 'user', content }],
-      response_format: { type: 'json_object' },
-    }),
+    body: JSON.stringify(requestBody),
   })
 
   if (!response.ok) {
-    throw new Error(`API 错误: ${response.status}`)
+    const errorText = await response.text()
+    console.error('[AI] OpenAI Compatible API 错误详情:', {
+      status: response.status,
+      statusText: response.statusText,
+      error: errorText.substring(0, 500),
+      url: `${apiUrl}/chat/completions`,
+      model,
+    })
+    throw new Error(`API 错误: ${response.status} - ${errorText.substring(0, 200)}`)
   }
 
   const result = await response.json()
+  console.log('[AI] OpenAI Compatible API 成功响应, choices 数量:', result.choices?.length || 0)
   const text = result.choices?.[0]?.message?.content
+  console.log('[AI] OpenAI Compatible 提取的文本内容长度:', text?.length || 0, '前200字符:', text ? text.substring(0, 200) : '(无)')
 
   // 提取 token 使用信息
   const usage = result.usage
@@ -362,16 +428,57 @@ async function recognizeWithOpenAICompatible(
     provider: '', // 在调用处填充
     model,
   } : undefined
+  
+  console.log('[AI] Token 使用:', tokenUsage)
 
   if (text) {
     try {
       const parsed = JSON.parse(text)
+      console.log('[AI] JSON 解析成功, 类型:', Array.isArray(parsed) ? '数组' : typeof parsed)
+      // 如果是数组（如打车明细），包装成对象
+      if (Array.isArray(parsed)) {
+        console.log('[AI] OpenAI Compatible 解析成功（数组格式），记录数:', parsed.length)
+        const result = { details: parsed } as any
+        if (tokenUsage) {
+          result._tokenUsage = tokenUsage
+        }
+        return result
+      }
       if (tokenUsage) {
         parsed._tokenUsage = tokenUsage
       }
       return parsed
     } catch {
-      console.error('[AI] OpenAI 兼容 API 响应解析失败:', text)
+      // 尝试提取 JSON 数组或对象
+      console.log('[AI] OpenAI Compatible 直接解析失败，尝试提取 JSON')
+      const arrayMatch = text.match(/\[[\s\S]*\]/)
+      const objectMatch = text.match(/\{[\s\S]*\}/)
+      
+      if (arrayMatch) {
+        try {
+          const parsed = JSON.parse(arrayMatch[0])
+          console.log('[AI] OpenAI Compatible JSON 数组提取成功，记录数:', parsed.length)
+          const result = { details: parsed } as any
+          if (tokenUsage) {
+            result._tokenUsage = tokenUsage
+          }
+          return result
+        } catch (e) {
+          console.log('[AI] 数组解析失败')
+        }
+      }
+      
+      if (objectMatch) {
+        try {
+          const parsed = JSON.parse(objectMatch[0])
+          if (tokenUsage) {
+            parsed._tokenUsage = tokenUsage
+          }
+          return parsed
+        } catch (e) {
+          console.error('[AI] OpenAI 兼容 API 响应解析失败:', text)
+        }
+      }
     }
   }
 
@@ -432,17 +539,50 @@ async function recognizeWithGLM(
 
   if (text) {
     try {
-      // GLM 可能在 JSON 外有其他文本，尝试提取
-      const jsonMatch = text.match(/\{[\s\S]*\}/)
-      if (jsonMatch) {
-        const parsed = JSON.parse(jsonMatch[0])
+      // 先尝试直接解析
+      const directParsed = JSON.parse(text)
+      if (Array.isArray(directParsed)) {
+        console.log('[AI] GLM 解析成功（数组格式），记录数:', directParsed.length)
+        const result = { details: directParsed } as any
         if (tokenUsage) {
-          parsed._tokenUsage = tokenUsage
+          result._tokenUsage = tokenUsage
         }
-        return parsed
+        return result
       }
+      if (tokenUsage) {
+        directParsed._tokenUsage = tokenUsage
+      }
+      return directParsed
     } catch {
-      console.error('[AI] GLM 响应解析失败:', text)
+      // GLM 可能在 JSON 外有其他文本，尝试提取
+      const arrayMatch = text.match(/\[[\s\S]*\]/)
+      const objectMatch = text.match(/\{[\s\S]*\}/)
+      
+      if (arrayMatch) {
+        try {
+          const parsed = JSON.parse(arrayMatch[0])
+          console.log('[AI] GLM JSON 数组提取成功，记录数:', parsed.length)
+          const result = { details: parsed } as any
+          if (tokenUsage) {
+            result._tokenUsage = tokenUsage
+          }
+          return result
+        } catch (e) {
+          console.log('[AI] GLM 数组解析失败')
+        }
+      }
+      
+      if (objectMatch) {
+        try {
+          const parsed = JSON.parse(objectMatch[0])
+          if (tokenUsage) {
+            parsed._tokenUsage = tokenUsage
+          }
+          return parsed
+        } catch {
+          console.error('[AI] GLM 响应解析失败:', text)
+        }
+      }
     }
   }
 
@@ -500,12 +640,35 @@ async function recognizeWithClaude(
 
   if (text) {
     try {
-      const jsonMatch = text.match(/\{[\s\S]*\}/)
-      if (jsonMatch) {
-        return JSON.parse(jsonMatch[0])
+      // 先尝试直接解析
+      const directParsed = JSON.parse(text)
+      if (Array.isArray(directParsed)) {
+        console.log('[AI] Claude 解析成功（数组格式），记录数:', directParsed.length)
+        return { details: directParsed }
       }
+      return directParsed
     } catch {
-      console.error('[AI] Claude 响应解析失败:', text)
+      // 尝试提取 JSON 数组或对象
+      const arrayMatch = text.match(/\[[\s\S]*\]/)
+      const objectMatch = text.match(/\{[\s\S]*\}/)
+      
+      if (arrayMatch) {
+        try {
+          const parsed = JSON.parse(arrayMatch[0])
+          console.log('[AI] Claude JSON 数组提取成功，记录数:', parsed.length)
+          return { details: parsed }
+        } catch (e) {
+          console.log('[AI] Claude 数组解析失败')
+        }
+      }
+      
+      if (objectMatch) {
+        try {
+          return JSON.parse(objectMatch[0])
+        } catch {
+          console.error('[AI] Claude 响应解析失败:', text)
+        }
+      }
     }
   }
 

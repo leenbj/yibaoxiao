@@ -3,7 +3,7 @@
  * 用于查看、编辑和导出报销单及其附件
  */
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Download, Save, ChevronRight, ChevronLeft, Edit2 } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
@@ -16,6 +16,8 @@ interface ReportDetailViewProps {
     report: any;
     onUpdate: (report: any) => void;
     onBack: () => void;
+    autoPrint?: boolean;
+    onPrintDone?: () => void;
 }
 
 /**
@@ -28,7 +30,7 @@ interface ReportDetailViewProps {
  * - PDF导出: 生成A4格式PDF,包含报销单、打车明细表、附件
  * - 伸缩编辑面板: 点击按钮折叠/展开左侧编辑区
  */
-export const ReportDetailView = ({ report, onUpdate, onBack }: ReportDetailViewProps) => {
+export const ReportDetailView = ({ report, onUpdate, onBack, autoPrint, onPrintDone }: ReportDetailViewProps) => {
     const [previewMode, setPreviewMode] = useState<'all' | 'report' | 'invoices' | 'approvals' | 'vouchers'>('all');
     const [generating, setGenerating] = useState(false);
     const [editData, setEditData] = useState({
@@ -39,6 +41,18 @@ export const ReportDetailView = ({ report, onUpdate, onBack }: ReportDetailViewP
     const [editPanelCollapsed, setEditPanelCollapsed] = useState(false);
     const reportRef = useRef<HTMLDivElement>(null);
     const taxiTableRef = useRef<HTMLDivElement>(null);
+    
+    // 自动打印功能：当 autoPrint 为 true 时，自动触发打印
+    useEffect(() => {
+        if (autoPrint && reportRef.current) {
+            // 等待 DOM 渲染完成后触发打印
+            const timer = setTimeout(() => {
+                handlePrint();
+                onPrintDone?.();
+            }, 500);
+            return () => clearTimeout(timer);
+        }
+    }, [autoPrint]);
 
     // 分类附件
     const invoiceAttachments = editData.attachments?.filter((a: any) =>
@@ -71,98 +85,186 @@ export const ReportDetailView = ({ report, onUpdate, onBack }: ReportDetailViewP
         }
     };
 
-    // 生成PDF - 直接截取预览页面内容
-    const generatePDF = async () => {
+    /**
+     * 使用浏览器原生打印功能导出 PDF
+     * 
+     * 优点：
+     * 1. 100% 保持预览效果，不会出现字体压线等问题
+     * 2. 报销单和所有附件合并到一个 PDF 文件
+     * 3. 使用系统原生渲染，兼容性最好
+     * 
+     * 使用方法：
+     * 用户在打印对话框中选择 "另存为 PDF" 即可
+     */
+    const handlePrint = () => {
         if (generating) return;
         setGenerating(true);
 
         try {
             const isTravel = editData.isTravel;
             const orientation = isTravel ? 'portrait' : 'landscape';
-            const a4Width = isTravel ? 210 : 297;
-            const a4Height = isTravel ? 297 : 210;
+            
+            // 创建打印窗口
+            const printWindow = window.open('', '_blank', 'width=900,height=700');
+            if (!printWindow) {
+                alert('无法打开打印窗口，请检查浏览器是否阻止了弹窗');
+                setGenerating(false);
+                return;
+            }
 
-            const pdf = new jsPDF({
-                orientation: orientation,
-                unit: 'mm',
-                format: 'a4',
-                compress: true
+            // 构建打印内容的 HTML
+            const allAttachments = editData.attachments || [];
+            
+            // 打印样式 - 支持横版报销单和竖版附件混合
+            const printStyles = `
+                <style>
+                    * { margin: 0; padding: 0; box-sizing: border-box; }
+                    
+                    /* 定义横版页面（用于通用报销单） */
+                    @page landscape-page {
+                        size: A4 landscape;
+                        margin: 0;
+                    }
+                    
+                    /* 定义竖版页面（用于差旅报销单、打车明细、附件） */
+                    @page portrait-page {
+                        size: A4 portrait;
+                        margin: 0;
+                    }
+                    
+                    @media print {
+                        html, body { 
+                            margin: 0 !important; 
+                            padding: 0 !important;
+                            -webkit-print-color-adjust: exact; 
+                            print-color-adjust: exact; 
+                        }
+                        
+                        /* 使用 page-break-before 而不是 after，避免最后出现空白页 */
+                        .print-page { 
+                            page-break-inside: avoid;
+                        }
+                        .print-page + .print-page {
+                            page-break-before: always;
+                        }
+                        
+                        /* 横版页面 */
+                        .landscape-page { page: landscape-page; }
+                        
+                        /* 竖版页面 */
+                        .portrait-page { page: portrait-page; }
+                    }
+                    
+                    body {
+                        font-family: "SimSun", "Songti SC", serif;
+                        background: white;
+                    }
+                    
+                    /* 横版报销单页面 */
+                    .print-page.landscape-page {
+                        width: 297mm;
+                        height: 210mm;
+                        background: white;
+                        margin: 0 auto;
+                        padding: 0;
+                        overflow: hidden;
+                    }
+                    
+                    /* 竖版页面（差旅报销单、打车明细、附件） */
+                    .print-page.portrait-page {
+                        width: 210mm;
+                        height: 297mm;
+                        background: white;
+                        margin: 0 auto;
+                        padding: 0;
+                        overflow: hidden;
+                    }
+                    
+                    .attachment-page {
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        padding: 5mm;
+                    }
+                    
+                    .attachment-page img {
+                        max-width: 200mm;
+                        max-height: 287mm;
+                        object-fit: contain;
+                    }
+                    
+                    /* 表格样式 */
+                    table { border-collapse: collapse; width: 100%; }
+                    td, th { border: 1px solid black; padding: 4px 3px; vertical-align: middle; font-size: 12px; line-height: 1.4; text-align: center; }
+                    
+                    @media screen {
+                        body { background: #f0f0f0; padding: 20px; }
+                        .print-page { box-shadow: 0 0 10px rgba(0,0,0,0.2); margin-bottom: 20px; }
+                    }
+                </style>
+            `;
+
+            // 获取报销单 HTML
+            const reportHtml = reportRef.current ? reportRef.current.outerHTML : '';
+            
+            // 获取打车明细表 HTML（如果有）
+            const taxiHtml = (editData.isTravel && editData.taxiDetails?.length > 0 && taxiTableRef.current) 
+                ? taxiTableRef.current.outerHTML 
+                : '';
+
+            // 构建附件页面（全部使用竖版）
+            let attachmentsHtml = '';
+            allAttachments.forEach((attachment: any, index: number) => {
+                if (attachment.data) {
+                    attachmentsHtml += `
+                        <div class="print-page portrait-page attachment-page">
+                            <img src="${attachment.data}" alt="附件 ${index + 1}" />
+                        </div>
+                    `;
+                }
             });
 
-            // 1. 添加报销单页面
-            if (reportRef.current) {
-                const canvas = await html2canvas(reportRef.current, {
-                    scale: 1.5,
-                    useCORS: true,
-                    allowTaint: true,
-                    backgroundColor: '#ffffff',
-                    logging: false,
-                });
+            // 确定报销单页面方向
+            // 通用报销单使用横版，差旅报销单使用竖版
+            const reportPageClass = isTravel ? 'portrait-page' : 'landscape-page';
+            
+            // 完整的打印 HTML
+            const printHtml = `
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <meta charset="utf-8">
+                    <title>报销单_${editData.title || editData.id}</title>
+                    ${printStyles}
+                </head>
+                <body>
+                    <div class="print-page ${reportPageClass}">${reportHtml}</div>
+                    ${taxiHtml ? `<div class="print-page portrait-page">${taxiHtml}</div>` : ''}
+                    ${attachmentsHtml}
+                    <script>
+                        window.onload = function() {
+                            setTimeout(function() {
+                                window.print();
+                                // 打印完成后（用户点击保存或取消）自动关闭窗口
+                                window.close();
+                            }, 500);
+                        };
+                        
+                        // 备用方案：监听 afterprint 事件
+                        window.onafterprint = function() {
+                            window.close();
+                        };
+                    <\/script>
+                </body>
+                </html>
+            `;
 
-                const imgData = canvas.toDataURL('image/jpeg', 0.85);
-                pdf.addImage(imgData, 'JPEG', 0, 0, a4Width, a4Height);
-            }
-
-            // 2. 如果是差旅报销且有打车明细,添加打车行程表
-            if (editData.isTravel && editData.taxiDetails && editData.taxiDetails.length > 0 && taxiTableRef.current) {
-                pdf.addPage('a4', 'portrait');
-
-                const taxiCanvas = await html2canvas(taxiTableRef.current, {
-                    scale: 1.5,
-                    useCORS: true,
-                    allowTaint: true,
-                    backgroundColor: '#ffffff',
-                    logging: false,
-                });
-
-                const taxiImgData = taxiCanvas.toDataURL('image/jpeg', 0.85);
-                pdf.addImage(taxiImgData, 'JPEG', 0, 0, 210, 297);
-            }
-
-            // 3. 添加附件页面
-            const allAttachments = editData.attachments || [];
-            for (let i = 0; i < allAttachments.length; i++) {
-                const attachment = allAttachments[i];
-                pdf.addPage('a4', 'portrait');
-
-                const portraitWidth = 210;
-                const portraitHeight = 297;
-
-                if (attachment.data) {
-                    const img = new Image();
-                    img.src = attachment.data;
-                    await new Promise((resolve, reject) => {
-                        img.onload = resolve;
-                        img.onerror = reject;
-                    });
-
-                    const imgRatio = img.width / img.height;
-                    const pageRatio = portraitWidth / portraitHeight;
-
-                    let finalWidth, finalHeight, x, y;
-
-                    if (imgRatio > pageRatio) {
-                        finalWidth = portraitWidth - 10;
-                        finalHeight = finalWidth / imgRatio;
-                        x = 5;
-                        y = (portraitHeight - finalHeight) / 2;
-                    } else {
-                        finalHeight = portraitHeight - 10;
-                        finalWidth = finalHeight * imgRatio;
-                        x = (portraitWidth - finalWidth) / 2;
-                        y = 5;
-                    }
-
-                    pdf.addImage(attachment.data, 'JPEG', x, y, finalWidth, finalHeight);
-                }
-            }
-
-            const fileName = `报销单_${editData.title || editData.id}_${new Date().toLocaleDateString('zh-CN').replace(/\//g, '-')}.pdf`;
-            pdf.save(fileName);
+            printWindow.document.write(printHtml);
+            printWindow.document.close();
 
         } catch (error) {
-            console.error('PDF 生成失败:', error);
-            alert('PDF 生成失败，请重试');
+            console.error('打印失败:', error);
+            alert('打印失败，请重试');
         } finally {
             setGenerating(false);
         }
@@ -212,11 +314,11 @@ export const ReportDetailView = ({ report, onUpdate, onBack }: ReportDetailViewP
                         </button>
                     )}
                     <button
-                        onClick={generatePDF}
+                        onClick={handlePrint}
                         disabled={generating}
                         className="px-3 py-1.5 bg-indigo-600 text-white rounded-md text-sm font-medium flex items-center gap-1.5 hover:bg-indigo-700 disabled:opacity-50 transition-colors"
                     >
-                        <Download size={14} strokeWidth={2}/> {generating ? '生成中...' : '导出 PDF'}
+                        <Download size={14} strokeWidth={2}/> {generating ? '准备中...' : '保存PDF'}
                     </button>
                 </div>
             </div>
@@ -294,11 +396,14 @@ export const ReportDetailView = ({ report, onUpdate, onBack }: ReportDetailViewP
                                         {/* 打车明细编辑 */}
                                         {editData.taxiDetails && editData.taxiDetails.length > 0 && (
                                             <div>
-                                                <label className="text-xs font-bold text-slate-500 block mb-1">打车明细</label>
-                                                {editData.taxiDetails.map((taxi: any, idx: number) => (
-                                                    <div key={idx} className="bg-slate-50 p-2 rounded mb-2 space-y-1">
-                                                        <div className="flex gap-2 items-center">
-                                                            <span className="text-xs text-slate-500">日期:</span>
+                                                <label className="text-xs font-bold text-slate-500 block mb-1">打车明细 ({editData.taxiDetails.length}条)</label>
+                                                <div className="max-h-64 overflow-y-auto space-y-2">
+                                                    {editData.taxiDetails.map((taxi: any, idx: number) => (
+                                                        <div key={idx} className="bg-slate-50 p-2 rounded space-y-1 border border-slate-200">
+                                                            <div className="flex justify-between items-center">
+                                                                <span className="text-[10px] text-slate-400">第 {idx + 1} 条</span>
+                                                                <span className="text-xs font-bold text-green-600">¥{(taxi.amount || 0).toFixed(2)}</span>
+                                                            </div>
                                                             <input 
                                                                 value={taxi.date || ''} 
                                                                 onChange={e => {
@@ -306,9 +411,9 @@ export const ReportDetailView = ({ report, onUpdate, onBack }: ReportDetailViewP
                                                                     details[idx].date = e.target.value;
                                                                     setEditData({...editData, taxiDetails: details});
                                                                 }}
-                                                                className="flex-1 p-1 border rounded text-xs"
+                                                                className="w-full p-1 border rounded text-xs"
+                                                                placeholder="日期"
                                                             />
-                                                            <span className="text-xs text-slate-500">金额:</span>
                                                             <input 
                                                                 type="number"
                                                                 value={taxi.amount || 0} 
@@ -317,29 +422,80 @@ export const ReportDetailView = ({ report, onUpdate, onBack }: ReportDetailViewP
                                                                     details[idx].amount = parseFloat(e.target.value) || 0;
                                                                     setEditData({...editData, taxiDetails: details});
                                                                 }}
-                                                                className="w-20 p-1 border rounded text-xs"
+                                                                className="w-full p-1 border rounded text-xs"
+                                                                placeholder="金额"
                                                             />
-                                                        </div>
-                                                        <div className="flex gap-2 items-center">
-                                                            <span className="text-xs text-slate-500">起终点:</span>
                                                             <input 
-                                                                value={taxi.route || ''} 
+                                                                value={taxi.reason || ''} 
                                                                 onChange={e => {
                                                                     const details = [...editData.taxiDetails];
-                                                                    details[idx].route = e.target.value;
+                                                                    details[idx].reason = e.target.value;
                                                                     setEditData({...editData, taxiDetails: details});
                                                                 }}
-                                                                className="flex-1 p-1 border rounded text-xs"
-                                                                placeholder="起点 → 终点"
+                                                                className="w-full p-1 border rounded text-xs"
+                                                                placeholder="外出事由"
+                                                            />
+                                                            <input 
+                                                                value={taxi.startPoint || ''} 
+                                                                onChange={e => {
+                                                                    const details = [...editData.taxiDetails];
+                                                                    details[idx].startPoint = e.target.value;
+                                                                    details[idx].route = `${e.target.value}-${details[idx].endPoint || ''}`;
+                                                                    setEditData({...editData, taxiDetails: details});
+                                                                }}
+                                                                className="w-full p-1 border rounded text-xs"
+                                                                placeholder="起点"
+                                                            />
+                                                            <input 
+                                                                value={taxi.endPoint || ''} 
+                                                                onChange={e => {
+                                                                    const details = [...editData.taxiDetails];
+                                                                    details[idx].endPoint = e.target.value;
+                                                                    details[idx].route = `${details[idx].startPoint || ''}-${e.target.value}`;
+                                                                    setEditData({...editData, taxiDetails: details});
+                                                                }}
+                                                                className="w-full p-1 border rounded text-xs"
+                                                                placeholder="终点"
                                                             />
                                                         </div>
-                                                    </div>
-                                                ))}
-                                                <p className="text-[10px] text-slate-500">
-                                                    打车费总计: ¥{editData.taxiDetails.reduce((sum: number, t: any) => sum + (t.amount || 0), 0).toFixed(2)}
-                                                </p>
+                                                    ))}
+                                                </div>
                                             </div>
                                         )}
+
+                                        {/* 金额审核 */}
+                                        {(() => {
+                                            const taxiTotal = (editData.taxiDetails || []).reduce((sum: number, t: any) => sum + (t.amount || 0), 0);
+                                            const tripCityTraffic = (editData.tripLegs || []).reduce((sum: number, leg: any) => sum + (leg.cityTrafficFee || 0), 0);
+                                            const isMatch = Math.abs(taxiTotal - tripCityTraffic) < 0.01 || taxiTotal === 0 || tripCityTraffic === 0;
+                                            return (
+                                                <div className={`p-3 rounded-lg border ${isMatch ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                                                    <label className="text-xs font-bold block mb-2 flex items-center gap-1">
+                                                        {isMatch ? (
+                                                            <span className="text-green-700">✓ 金额审核通过</span>
+                                                        ) : (
+                                                            <span className="text-red-700">⚠ 金额审核未通过</span>
+                                                        )}
+                                                    </label>
+                                                    <div className="space-y-1 text-xs">
+                                                        <div className="flex justify-between">
+                                                            <span className="text-slate-600">打车发票总额:</span>
+                                                            <span className="font-medium">¥{taxiTotal.toFixed(2)}</span>
+                                                        </div>
+                                                        <div className="flex justify-between">
+                                                            <span className="text-slate-600">市内交通费:</span>
+                                                            <span className="font-medium">¥{tripCityTraffic.toFixed(2)}</span>
+                                                        </div>
+                                                        {!isMatch && taxiTotal > 0 && tripCityTraffic > 0 && (
+                                                            <div className="flex justify-between text-red-600 font-medium pt-1 border-t border-red-200">
+                                                                <span>差额:</span>
+                                                                <span>¥{Math.abs(taxiTotal - tripCityTraffic).toFixed(2)}</span>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            );
+                                        })()}
                                     </>
                                 )}
                                 
