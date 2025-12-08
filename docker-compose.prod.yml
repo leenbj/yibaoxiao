@@ -80,6 +80,8 @@ services:
       DATABASE_POOL_MAX: "5"
       DATABASE_IDLE_TIMEOUT: "10000"
       DATABASE_CONNECT_TIMEOUT: "5000"
+      # 禁用查询缓存（避免数据不一致问题）
+      DATABASE_CACHE_ENABLED: "false"
       # 超级管理员配置（默认 wangbo@knet.cn）
       ADMIN_EMAIL: ${ADMIN_EMAIL:-wangbo@knet.cn}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-123456}

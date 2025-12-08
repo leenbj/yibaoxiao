@@ -7,7 +7,6 @@
 import { drizzle } from 'drizzle-orm/node-postgres'
 import { Pool } from 'pg'
 import * as schema from './schema'
-import { createMemoryCache, MemoryCache } from './cache'
 
 // 加载环境变量
 import 'dotenv/config'
@@ -68,36 +67,13 @@ export const getPool = (): Pool => {
   return pool
 }
 
-// 创建 Drizzle 实例（带缓存支持）
+// 创建 Drizzle 实例（禁用缓存，确保数据一致性）
 let db: ReturnType<typeof drizzle<typeof schema>> | null = null
-let queryCache: MemoryCache | null = null
-
-// 缓存配置（可通过环境变量控制）
-const cacheEnabled = process.env.DATABASE_CACHE_ENABLED !== 'false'; // 默认启用
-const cacheGlobal = process.env.DATABASE_CACHE_GLOBAL === 'true';    // 默认显式缓存
-const cacheTTL = parseInt(process.env.DATABASE_CACHE_TTL || '60', 10); // 默认 60 秒
 
 export const getDb = () => {
   if (!db) {
-    // 创建缓存实例（如果启用）
-    if (cacheEnabled) {
-      queryCache = createMemoryCache({
-        defaultTTL: cacheTTL,
-        global: cacheGlobal,
-      });
-      console.log(`[数据库] 查询缓存已启用 (TTL: ${cacheTTL}s, 全局: ${cacheGlobal})`);
-      
-      // 尝试使用缓存创建 Drizzle 实例
-      try {
-        db = drizzle(getPool(), { schema, cache: queryCache });
-      } catch (e) {
-        // 如果缓存不支持，回退到无缓存模式
-        console.warn('[数据库] 缓存功能不支持，使用无缓存模式');
-        db = drizzle(getPool(), { schema });
-      }
-    } else {
-      db = drizzle(getPool(), { schema });
-    }
+    console.log('[数据库] 创建 Drizzle 实例（无缓存模式）');
+    db = drizzle(getPool(), { schema });
   }
   return db
 }
@@ -110,19 +86,10 @@ export const database = {
   get pool() {
     return getPool()
   },
-  get cache() {
-    return queryCache
-  },
 }
 
 // 关闭数据库连接
 export const closeDatabase = async (): Promise<void> => {
-  // 停止缓存
-  if (queryCache) {
-    queryCache.stop();
-    queryCache = null;
-  }
-  
   if (pool) {
     await pool.end()
     pool = null
