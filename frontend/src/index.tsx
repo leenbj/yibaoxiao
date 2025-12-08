@@ -304,19 +304,36 @@ const MainApp = ({ user, onLogout }: { user: AppUser; onLogout: () => void }) =>
   };
 
   const deleteRecord = async (id: string, type: 'report' | 'loan') => {
+    const userId = getUserId(user);
+    console.warn(`[删除记录] 开始删除, id: ${id}, type: ${type}, userId: ${userId}`);
+
     if (type === 'report') {
+      // 先保存当前记录，以便删除失败时恢复
+      const originalReports = [...reports];
       setReports(prev => prev.filter(r => r.id !== id));
       try {
-        await apiRequest(`/api/reports/${id}`, { method: 'DELETE' });
+        await apiRequest(`/api/reports/${id}?userId=${userId}`, { method: 'DELETE' });
+        console.warn('[删除记录] 报销单删除成功');
       } catch (error) {
-        console.error('删除报销单失败:', error);
+        console.error('[删除记录] 删除报销单失败:', error);
+        // 删除失败时恢复本地状态
+        setReports(originalReports);
+        alert('删除失败，请重试');
+        return;
       }
     } else {
+      // 先保存当前记录，以便删除失败时恢复
+      const originalLoans = [...loans];
       setLoans(prev => prev.filter(l => l.id !== id));
       try {
-        await apiRequest(`/api/loans/${id}`, { method: 'DELETE' });
+        await apiRequest(`/api/loans/${id}?userId=${userId}`, { method: 'DELETE' });
+        console.warn('[删除记录] 借款单删除成功');
       } catch (error) {
-        console.error('删除借款失败:', error);
+        console.error('[删除记录] 删除借款失败:', error);
+        // 删除失败时恢复本地状态
+        setLoans(originalLoans);
+        alert('删除失败，请重试');
+        return;
       }
     }
     setView('history');

@@ -75,11 +75,11 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-yibao}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-yibao123456}
       POSTGRES_DB: ${POSTGRES_DB:-yibao}
-      # 数据库连接池优化
-      DATABASE_POOL_MIN: "1"
-      DATABASE_POOL_MAX: "5"
-      DATABASE_IDLE_TIMEOUT: "10000"
-      DATABASE_CONNECT_TIMEOUT: "5000"
+      # 数据库连接池优化（预热连接池减少首次请求延迟）
+      DATABASE_POOL_MIN: "2"
+      DATABASE_POOL_MAX: "8"
+      DATABASE_IDLE_TIMEOUT: "30000"
+      DATABASE_CONNECT_TIMEOUT: "10000"
       # 禁用查询缓存（避免数据不一致问题）
       DATABASE_CACHE_ENABLED: "false"
       # 超级管理员配置（默认 wangbo@knet.cn）
