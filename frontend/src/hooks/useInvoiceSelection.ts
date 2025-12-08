@@ -29,7 +29,7 @@ interface UseInvoiceSelectionReturn {
   toggleInvoiceSelection: (invoiceId: string) => void;
   setMergeInvoices: (merge: boolean) => void;
   updateInvoiceDetails: (invoices: InvoiceDetail[]) => void;
-  buildUpdatedManualItems: () => ExpenseItem[];
+  buildUpdatedManualItems: (overrideMerge?: boolean) => ExpenseItem[];
   buildUpdatedTitle: () => string;
 }
 
@@ -109,14 +109,18 @@ export const useInvoiceSelection = ({
 
   /**
    * 构建更新后的费用明细项
+   * @param overrideMerge 可选参数，用于覆盖当前的合并模式（解决状态异步更新问题）
    */
-  const buildUpdatedManualItems = (): ExpenseItem[] => {
+  const buildUpdatedManualItems = (overrideMerge?: boolean): ExpenseItem[] => {
     if (selectedInvoices.length === 0) return [];
 
     const eventSuffix = approvalData?.eventSummary ? `（${approvalData.eventSummary}）` : '';
+    
+    // 使用传入的参数或当前状态值
+    const shouldMerge = overrideMerge !== undefined ? overrideMerge : mergeInvoices;
 
     // 合并模式：所有选中发票合并为一条
-    if (mergeInvoices) {
+    if (shouldMerge) {
       const title = buildUpdatedTitle();
       return [{
         id: `extracted-${Date.now()}`,

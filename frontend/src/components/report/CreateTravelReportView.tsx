@@ -9,7 +9,7 @@ import {
   Plane, Home, Car, MapPin, Edit2, Loader2, FileText
 } from 'lucide-react';
 import { Attachment, TripLeg, Report } from '../../types';
-import { fileToBase64, pdfToImage } from '../../utils/image';
+import { fileToBase64, fileToBase64Original, pdfToImage } from '../../utils/image';
 import { useTravelAnalysis } from '../../hooks/useTravelAnalysis';
 import { TravelReimbursementForm } from '../forms/TravelReimbursementForm';
 import { GeneralReimbursementForm } from '../forms/GeneralReimbursementForm';
@@ -110,6 +110,16 @@ export const CreateTravelReportView = ({
   }, [step, formCollapsed]);
 
   // ============ 文件处理 ============
+  /**
+   * 处理文件上传
+   * 
+   * 对于图片文件：
+   * - 使用原始格式（不压缩）用于附件显示，保证图片内容完整
+   * - AI 识别时会在 useTravelAnalysis 中单独处理压缩
+   * 
+   * 对于 PDF 文件：
+   * - 转换为图片格式显示
+   */
   const handleUpload = async (
     e: any,
     type: 'ticket' | 'hotel' | 'taxi-invoice' | 'taxi-trip' | 'approval'
@@ -119,9 +129,11 @@ export const CreateTravelReportView = ({
         Array.from(e.target.files as FileList).map(async (f: File) => {
           let data = "";
           if (f.type === 'application/pdf') {
+            // PDF 需要转换为图片
             data = await pdfToImage(f);
           } else {
-            data = await fileToBase64(f);
+            // 图片使用原始格式（不压缩），保证附件显示完整
+            data = await fileToBase64Original(f);
           }
           return { data, type, name: f.name } as Attachment;
         })
@@ -152,6 +164,8 @@ export const CreateTravelReportView = ({
   // ============ Step 1: 开始分析 ============
   const handleStartAnalysis = async () => {
     const result = await startAIAnalysis();
+    console.log('[CreateTravelReportView] AI 分析结果:', JSON.stringify(result, null, 2).substring(0, 2000));
+    
     if (result.success) {
       // 判断是否是打车报销模式（只有打车票据，没有火车票/机票）
       const taxiOnly = (result as any).isTaxiOnlyMode || false;
@@ -159,6 +173,10 @@ export const CreateTravelReportView = ({
       
       // 获取打车发票的项目名称（货物或应税劳务名称）
       const taxiProjectName = (result as any).taxiInvoiceProjectName || '运输服务';
+      
+      console.log('[CreateTravelReportView] 打车报销模式:', taxiOnly);
+      console.log('[CreateTravelReportView] 发票项目名称:', taxiProjectName);
+      console.log('[CreateTravelReportView] 识别到的 tripReason:', result.tripReason);
       
       // 如果是打车报销模式，创建一个虚拟的行程段来存储打车总金额
       let tripLegsToSet = result.tripLegs;
@@ -177,13 +195,18 @@ export const CreateTravelReportView = ({
           otherFee: 0,
           subTotal: taxiTotal,
         }];
+        console.log('[CreateTravelReportView] 打车总金额:', taxiTotal);
       }
+
+      // 确定最终的报销事由
+      const finalTripReason = taxiOnly ? taxiProjectName : (result.tripReason || '');
+      console.log('[CreateTravelReportView] 最终报销事由:', finalTripReason);
 
       setForm(prev => ({
         ...prev,
         // 日常打车报销：使用发票项目名称作为报销事由
         // 差旅报销：tripReason 存储出差事项（由用户手动填写）
-        tripReason: taxiOnly ? taxiProjectName : (result.tripReason || ''),
+        tripReason: finalTripReason,
         taxiProjectName: taxiProjectName,  // 保存发票项目名称
         approvalNumber: result.approvalNumber || prev.approvalNumber,
         budgetProjectId: result.autoSelectedBudgetId,

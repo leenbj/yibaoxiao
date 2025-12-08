@@ -99,103 +99,113 @@ export const useInvoiceAnalysis = ({
   };
 
   /**
-   * 解析发票数据，支持 3 种格式
+   * 解析单张发票数据
+   */
+  const parseSingleInvoice = (inv: any, idx: number): InvoiceDetailItem | null => {
+    // 跳过空对象
+    if (!inv || typeof inv !== 'object' || Object.keys(inv).length === 0) {
+      return null;
+    }
+
+    // 尝试从多个可能的字段名获取金额
+    let amount = getAmount(inv.totalAmount) || 
+      getAmount(inv.amount) || 
+      getAmount(inv.total) ||
+      getAmount(inv.price) ||
+      getAmount(inv.amountWithoutTax);
+    
+    // 如果有 items，计算明细总和作为备选
+    if (inv.items && Array.isArray(inv.items) && inv.items.length > 0) {
+      const itemsSum = inv.items.reduce((sum: number, i: any) => sum + getAmount(i.amount), 0);
+      if (!amount && itemsSum > 0) {
+        amount = itemsSum;
+      }
+    }
+
+    // 获取项目名称
+    const projectName = inv.projectName || inv.title || 
+      (inv.items && inv.items[0]?.name) || `发票${idx + 1}`;
+
+    return {
+      id: `invoice-${Date.now()}-${idx}`,
+      projectName,
+      amount,
+      invoiceDate: formatDate(inv.invoiceDate),
+      invoiceNumber: inv.invoiceNumber || inv.number,
+      selected: true
+    };
+  };
+
+  /**
+   * 解析发票数据，支持多种格式：
+   * 1. 数组格式：[{发票1}, {发票2}, ...]
+   * 2. invoices 属性：{ invoices: [{发票1}, {发票2}] }
+   * 3. details 属性：{ details: [{发票1}, {发票2}] }
+   * 4. 单张发票对象：{ projectName, totalAmount, ... }
    */
   const parseInvoiceData = (invoiceData: any): InvoiceDetailItem[] => {
     const invoiceList: InvoiceDetailItem[] = [];
-    const isArray = Array.isArray(invoiceData);
 
-    console.log('[AI] 发票识别数据类型', { isArray, dataType: typeof invoiceData });
+    console.log('[AI] 发票识别数据类型', { 
+      isArray: Array.isArray(invoiceData), 
+      dataType: typeof invoiceData,
+      keys: invoiceData ? Object.keys(invoiceData) : []
+    });
     console.log('[AI] 发票识别原始数据（详细）', JSON.stringify(invoiceData, null, 2));
 
-    // 标准化数据格式
-    let normalizedData = invoiceData;
-    if (isArray) {
-      console.log('[AI] 检测到多张发票数组格式，发票数量:', invoiceData.length);
-      normalizedData = { invoices: invoiceData };
+    // 格式 1：直接是数组格式 [{发票1}, {发票2}, ...]
+    if (Array.isArray(invoiceData)) {
+      console.log('[AI] 检测到发票数组格式，发票数量:', invoiceData.length);
+      invoiceData.forEach((inv: any, idx: number) => {
+        const parsed = parseSingleInvoice(inv, idx);
+        if (parsed) {
+          invoiceList.push(parsed);
+        }
+      });
+    }
+    // 格式 2：包含 invoices 数组
+    else if (invoiceData?.invoices && Array.isArray(invoiceData.invoices)) {
+      console.log('[AI] 检测到 invoices 属性，发票数量:', invoiceData.invoices.length);
+      invoiceData.invoices.forEach((inv: any, idx: number) => {
+        const parsed = parseSingleInvoice(inv, idx);
+        if (parsed) {
+          invoiceList.push(parsed);
+        }
+      });
+    }
+    // 格式 3：包含 details 数组（某些 AI 模型可能返回这种格式）
+    else if (invoiceData?.details && Array.isArray(invoiceData.details)) {
+      console.log('[AI] 检测到 details 属性，发票数量:', invoiceData.details.length);
+      invoiceData.details.forEach((inv: any, idx: number) => {
+        const parsed = parseSingleInvoice(inv, idx);
+        if (parsed) {
+          invoiceList.push(parsed);
+        }
+      });
+    }
+    // 格式 4：单张发票对象
+    else if (invoiceData && typeof invoiceData === 'object') {
+      console.log('[AI] 检测到单张发票对象格式');
+      const parsed = parseSingleInvoice(invoiceData, 0);
+      if (parsed) {
+        invoiceList.push(parsed);
+      }
     }
 
-    console.log('[AI] 发票识别数据', {
-      hasInvoices: !!normalizedData.invoices,
-      invoicesCount: normalizedData.invoices?.length,
-      projectName: normalizedData.projectName,
-      title: normalizedData.title,
-      totalAmount: normalizedData.totalAmount,
-      amount: normalizedData.amount,
-      items: normalizedData.items,
-      invoiceDate: normalizedData.invoiceDate
+    // 过滤掉金额为 0 的无效发票
+    const validInvoices = invoiceList.filter(inv => inv.amount > 0);
+    
+    console.log('[AI] 解析发票数据完成', {
+      totalParsed: invoiceList.length,
+      validCount: validInvoices.length,
+      invoices: validInvoices.map(inv => ({
+        projectName: inv.projectName,
+        amount: inv.amount,
+        invoiceDate: inv.invoiceDate
+      }))
     });
 
-    // 格式 1：多张发票数组
-    if (normalizedData.invoices && Array.isArray(normalizedData.invoices)) {
-      normalizedData.invoices.forEach((inv: any, idx: number) => {
-        invoiceList.push({
-          id: `invoice-${Date.now()}-${idx}`,
-          projectName: inv.projectName || inv.title || `发票${idx + 1}`,
-          amount: getAmount(inv.totalAmount) || getAmount(inv.amount),
-          invoiceDate: formatDate(inv.invoiceDate),
-          invoiceNumber: inv.invoiceNumber || inv.number,
-          selected: true
-        });
-      });
-    }
-    // 格式 2：含 items 明细的发票
-    else if (normalizedData.items && Array.isArray(normalizedData.items) && normalizedData.items.length > 0) {
-      const itemsSum = normalizedData.items.reduce((sum: number, i: any) => sum + getAmount(i.amount), 0);
-      const singleAmount = getAmount(normalizedData.totalAmount) || itemsSum;
-      
-      console.log('[AI] 含items明细发票金额解析', {
-        totalAmount: normalizedData.totalAmount,
-        totalAmountParsed: getAmount(normalizedData.totalAmount),
-        itemsSum,
-        finalAmount: singleAmount
-      });
-      
-      invoiceList.push({
-        id: `invoice-${Date.now()}-0`,
-        projectName: normalizedData.projectName || normalizedData.title || normalizedData.items[0]?.name || '发票',
-        amount: singleAmount,
-        invoiceDate: formatDate(normalizedData.invoiceDate),
-        invoiceNumber: normalizedData.invoiceNumber,
-        selected: true
-      });
-    }
-    // 格式 3：单张发票基本格式
-    else {
-      // 尝试从多个可能的字段名获取金额
-      const singleAmount = getAmount(normalizedData.totalAmount) || 
-        getAmount(normalizedData.amount) || 
-        getAmount(normalizedData.total) ||
-        getAmount(normalizedData.price) ||
-        getAmount(normalizedData.amountWithoutTax);
-      
-      console.log('[AI] 单张发票金额解析', {
-        totalAmount: normalizedData.totalAmount,
-        amount: normalizedData.amount,
-        total: normalizedData.total,
-        price: normalizedData.price,
-        amountWithoutTax: normalizedData.amountWithoutTax,
-        parsedAmount: singleAmount
-      });
-      
-      invoiceList.push({
-        id: `invoice-${Date.now()}-0`,
-        projectName: normalizedData.projectName || normalizedData.title || '发票',
-        amount: singleAmount,
-        invoiceDate: formatDate(normalizedData.invoiceDate),
-        invoiceNumber: normalizedData.invoiceNumber,
-        selected: true
-      });
-    }
-
-    console.log('[AI] 解析发票数据', {
-      rawInvoiceData: normalizedData,
-      parsedInvoiceList: invoiceList,
-      firstInvoiceAmount: invoiceList[0]?.amount,
-      firstInvoiceProjectName: invoiceList[0]?.projectName
-    });
-
-    return invoiceList;
+    return validInvoices.length > 0 ? validInvoices : invoiceList;
   };
 
   /**
@@ -318,17 +328,28 @@ export const useInvoiceAnalysis = ({
       const invoiceImages = invoiceFiles.map(f => cleanB64(f.data));
       const approvalImages = approvalFiles.map(f => cleanB64(f.data));
 
-      console.log('[AI] 开始并行识别发票和审批单');
+      console.log('[AI] 开始识别发票和审批单，发票数量:', invoiceImages.length);
       const startTime = Date.now();
 
-      // 并行识别
-      const invoicePromise = apiRequest('/api/ai/recognize', {
-        method: 'POST',
-        body: JSON.stringify({
-          type: 'invoice',
-          images: invoiceImages,
-          mimeType: 'image/jpeg',
-        }),
+      // ========== 关键修改：每张发票单独识别 ==========
+      // 原因：多张图片一起发送时，AI 可能只返回第一张的结果
+      // 修改：每张发票单独发送识别请求，然后合并结果
+      const invoicePromises = invoiceImages.map((image, idx) => {
+        console.log(`[AI] 发送第 ${idx + 1} 张发票识别请求`);
+        return apiRequest('/api/ai/recognize', {
+          method: 'POST',
+          body: JSON.stringify({
+            type: 'invoice',
+            images: [image],  // 单张发票
+            mimeType: 'image/jpeg',
+          }),
+        }).then(response => {
+          console.log(`[AI] 第 ${idx + 1} 张发票识别完成:`, JSON.stringify(response, null, 2).substring(0, 500));
+          return response;
+        }).catch(err => {
+          console.error(`[AI] 第 ${idx + 1} 张发票识别失败:`, err);
+          return { result: {} };
+        });
       });
 
       const approvalPromise = approvalImages.length > 0
@@ -342,15 +363,50 @@ export const useInvoiceAnalysis = ({
         })
         : Promise.resolve({ result: {} });
 
-      const [invoiceResponse, approvalResponse] = await Promise.all([
-        invoicePromise,
-        approvalPromise
+      // 并行执行所有识别请求
+      const [approvalResponse, ...invoiceResponses] = await Promise.all([
+        approvalPromise,
+        ...invoicePromises
       ]) as any[];
 
       console.log(`[AI] 并行识别完成，耗时: ${Date.now() - startTime}ms`);
+      console.log(`[AI] 收到 ${invoiceResponses.length} 个发票识别结果`);
 
-      const invoiceData = invoiceResponse.result || {};
+      // 合并所有发票识别结果
+      const allInvoiceData: any[] = [];
+      invoiceResponses.forEach((response: any, idx: number) => {
+        const result = response?.result || {};
+        console.log(`[AI] 第 ${idx + 1} 张发票识别结果:`, JSON.stringify(result, null, 2).substring(0, 500));
+        
+        // 将每个识别结果添加到数组中
+        if (Array.isArray(result)) {
+          allInvoiceData.push(...result);
+        } else if (result.invoices && Array.isArray(result.invoices)) {
+          allInvoiceData.push(...result.invoices);
+        } else if (result.details && Array.isArray(result.details)) {
+          allInvoiceData.push(...result.details);
+        } else if (result && Object.keys(result).length > 0 && !result._tokenUsage) {
+          // 单个发票对象（排除只有 _tokenUsage 的空结果）
+          const hasValidData = result.projectName || result.totalAmount || result.invoiceNumber || result.invoiceDate;
+          if (hasValidData) {
+            allInvoiceData.push(result);
+          }
+        }
+      });
+
+      console.log('[AI] 合并后的发票数据数量:', allInvoiceData.length);
+      console.log('[AI] 合并后的发票数据:', JSON.stringify(allInvoiceData, null, 2));
+
+      // 构造统一的发票数据格式
+      const invoiceData = allInvoiceData.length > 0 
+        ? { invoices: allInvoiceData } 
+        : {};
       const approvalData = approvalResponse.result || {};
+      
+      console.log('[AI] 最终发票数据结构:', {
+        invoicesCount: invoiceData.invoices?.length || 0,
+        keys: Object.keys(invoiceData),
+      });
 
       // 解析发票数据
       const parsedInvoiceDetails = parseInvoiceData(invoiceData);

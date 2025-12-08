@@ -93,20 +93,35 @@ export const useTravelAnalysis = ({
    * 输出：配对的往返票对
    */
   const pairTickets = (tickets: any[]) => {
+    console.log('[AI] pairTickets 输入票据数量:', tickets.length);
+    
+    if (tickets.length === 0) {
+      console.log('[AI] pairTickets: 没有票据输入');
+      return [];
+    }
+
     const pairedTrips: { outbound: any; return: any | null }[] = [];
     const usedTickets = new Set<number>();
 
     tickets.forEach((ticket: any, idx: number) => {
       if (usedTickets.has(idx)) return;
 
-      const departure = ticket.departure || ticket.fromStation || '';
-      const destination = ticket.destination || ticket.toStation || '';
+      // 使用已规范化的字段
+      const departure = ticket.departure || '';
+      const destination = ticket.destination || '';
+
+      console.log(`[AI] 处理票据 ${idx}:`, {
+        departure,
+        destination,
+        departureDate: ticket.departureDate,
+        amount: ticket.amount,
+      });
 
       // 查找对应的返程票（出发地和目的地互换）
       const returnIdx = tickets.findIndex((t: any, i: number) => {
         if (i === idx || usedTickets.has(i)) return false;
-        const tDeparture = t.departure || t.fromStation || '';
-        const tDestination = t.destination || t.toStation || '';
+        const tDeparture = t.departure || '';
+        const tDestination = t.destination || '';
         // 返程票：出发地=去程目的地，目的地=去程出发地
         return tDeparture === destination && tDestination === departure;
       });
@@ -118,35 +133,90 @@ export const useTravelAnalysis = ({
           outbound: ticket,
           return: tickets[returnIdx],
         });
+        console.log(`[AI] 票据 ${idx} 配对到返程票 ${returnIdx}`);
       } else {
         // 没有找到返程票，单独作为一条记录
         pairedTrips.push({
           outbound: ticket,
           return: null,
         });
+        console.log(`[AI] 票据 ${idx} 无返程票，单独记录`);
       }
     });
 
+    console.log('[AI] pairTickets 输出配对数量:', pairedTrips.length);
     return pairedTrips;
+  };
+
+  /**
+   * 格式化日期为 YYYY.MM.DD 格式（报销单显示格式）
+   */
+  const formatDateForDisplay = (dateStr: string): string => {
+    if (!dateStr) return '';
+    // 处理 YYYY-MM-DD 格式
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+      return dateStr.replace(/-/g, '.');
+    }
+    // 处理 YYYYMMDD 格式
+    if (/^\d{8}$/.test(dateStr)) {
+      return `${dateStr.slice(0, 4)}.${dateStr.slice(4, 6)}.${dateStr.slice(6, 8)}`;
+    }
+    // 其他格式尝试直接返回
+    return dateStr;
   };
 
   /**
    * 从配对的往返票据构建出差行程
    */
   const buildTripLegs = (pairedTrips: any[], hotels: any[]): TripLeg[] => {
-    return pairedTrips.map((pair) => {
+    console.log('[AI] buildTripLegs 输入:', {
+      pairedTripsCount: pairedTrips.length,
+      hotelsCount: hotels.length,
+      pairedTrips: JSON.stringify(pairedTrips, null, 2),
+    });
+
+    if (pairedTrips.length === 0) {
+      console.log('[AI] buildTripLegs: 没有配对的票据');
+      return [];
+    }
+
+    return pairedTrips.map((pair, idx) => {
       const outbound = pair.outbound;
       const returnTicket = pair.return;
 
-      const departure = outbound.departure || outbound.fromStation || '';
-      const destination = outbound.destination || outbound.toStation || '';
-      const outboundDate = outbound.departureDate || outbound.date || '';
-      const returnDate = returnTicket?.departureDate || returnTicket?.date || outboundDate;
+      console.log(`[AI] 处理第 ${idx + 1} 个行程配对:`, {
+        outbound: JSON.stringify(outbound, null, 2),
+        returnTicket: returnTicket ? JSON.stringify(returnTicket, null, 2) : null,
+      });
 
-      // 计算往返车票费用总和
-      const outboundFee = parseFloat(outbound.amount || outbound.price || 0);
-      const returnFee = parseFloat(returnTicket?.amount || returnTicket?.price || 0) || 0;
+      // 出发地和目的地（已在 normalizeTicket 中规范化）
+      const departure = outbound.departure || '';
+      const destination = outbound.destination || '';
+      
+      // 日期处理
+      const outboundDate = outbound.departureDate || '';
+      const returnDate = returnTicket?.departureDate || returnTicket?.arrivalDate || outboundDate;
+      
+      // 格式化日期为显示格式
+      const outboundDateDisplay = formatDateForDisplay(outboundDate);
+      const returnDateDisplay = formatDateForDisplay(returnDate);
+
+      // 计算往返车票费用总和（已在 normalizeTicket 中转为数字）
+      const outboundFee = outbound.amount || 0;
+      const returnFee = returnTicket?.amount || 0;
       const totalTransportFee = outboundFee + returnFee;
+
+      console.log(`[AI] 行程 ${idx + 1} 解析结果:`, {
+        departure,
+        destination,
+        outboundDate,
+        outboundDateDisplay,
+        returnDate,
+        returnDateDisplay,
+        outboundFee,
+        returnFee,
+        totalTransportFee,
+      });
 
       // 查找对应的住宿信息（按目的地匹配）
       const matchedHotel = hotels.find((h: any) =>
@@ -155,9 +225,11 @@ export const useTravelAnalysis = ({
         destination.includes(h.city || '')
       );
 
-      return {
-        dateRange: `${outboundDate}-${returnDate}`,
-        route: `${departure}-${destination}`,
+      const tripLeg = {
+        dateRange: outboundDateDisplay && returnDateDisplay 
+          ? `${outboundDateDisplay}-${returnDateDisplay}` 
+          : outboundDateDisplay || returnDateDisplay || '',
+        route: departure && destination ? `${departure}-${destination}` : departure || destination || '',
         hotelLocation: destination,
         transportFee: totalTransportFee,
         hotelDays: matchedHotel?.days || matchedHotel?.nights || 0,
@@ -167,6 +239,9 @@ export const useTravelAnalysis = ({
         otherFee: 0,
         subTotal: 0,
       };
+
+      console.log(`[AI] 生成的行程段 ${idx + 1}:`, JSON.stringify(tripLeg, null, 2));
+      return tripLeg;
     });
   };
 
@@ -211,8 +286,9 @@ export const useTravelAnalysis = ({
       const reason = t.reason || t.purpose || t.remark || t.note || 
         approvalData.eventSummary || '出差';
       
-      // 获取发票上的货物或应税劳务名称
-      const projectName = t.projectName || t.serviceName || t.itemName || '';
+      // 获取发票上的货物或应税劳务名称（尝试多种字段名）
+      const projectName = t.projectName || t.serviceName || t.itemName || 
+        t.title || t.goodsName || t.name || '';
 
       const processedItem: TaxiDetailItem = {
         id: `taxi-${Date.now()}-${idx}`,
@@ -446,9 +522,113 @@ export const useTravelAnalysis = ({
         hasTaxiInvoice,
       });
 
-      // 提取数据
-      const tickets = Array.isArray(ticketData) ? ticketData : (ticketData.tickets || [ticketData]);
-      const hotels = Array.isArray(hotelData) ? hotelData : (hotelData.hotels || [hotelData]);
+      // ========== 详细记录火车票识别原始数据 ==========
+      console.log('[AI] 火车票识别原始返回:', JSON.stringify(ticketResponse, null, 2));
+      console.log('[AI] 火车票识别结果 ticketData:', JSON.stringify(ticketData, null, 2));
+      console.log('[AI] ticketData 类型:', typeof ticketData, '是否为数组:', Array.isArray(ticketData));
+      console.log('[AI] ticketData.tickets:', ticketData?.tickets);
+      console.log('[AI] ticketData 关键字段检查:', {
+        hasTicketsArray: Array.isArray(ticketData?.tickets),
+        hasDeparture: !!ticketData?.departure,
+        hasFromStation: !!ticketData?.fromStation,
+        hasDestination: !!ticketData?.destination,
+        hasToStation: !!ticketData?.toStation,
+        keys: ticketData ? Object.keys(ticketData) : [],
+      });
+
+      // 提取并规范化车票数据，支持多种数据结构
+      // 1. ticketData.tickets 数组
+      // 2. ticketData 本身是数组
+      // 3. ticketData.details 数组（某些 AI 可能返回这种格式）
+      // 4. ticketData 是单个票据对象
+      let rawTickets: any[] = [];
+      if (Array.isArray(ticketData?.tickets)) {
+        rawTickets = ticketData.tickets;
+        console.log('[AI] 使用 ticketData.tickets 数组，数量:', rawTickets.length);
+      } else if (Array.isArray(ticketData?.details)) {
+        rawTickets = ticketData.details;
+        console.log('[AI] 使用 ticketData.details 数组，数量:', rawTickets.length);
+      } else if (Array.isArray(ticketData)) {
+        rawTickets = ticketData;
+        console.log('[AI] ticketData 本身是数组，数量:', rawTickets.length);
+      } else if (ticketData && typeof ticketData === 'object' && Object.keys(ticketData).length > 0) {
+        // 检查是否是单个票据对象（有关键字段）
+        const hasTicketFields = ticketData.departure || ticketData.fromStation || ticketData.toStation || 
+          ticketData.destination || ticketData.trainNumber || ticketData.ticketType ||
+          ticketData.amount || ticketData.price || ticketData.departureDate || ticketData.date;
+        if (hasTicketFields) {
+          rawTickets = [ticketData];
+          console.log('[AI] ticketData 是单个票据对象');
+        } else {
+          // 可能是包装对象，尝试查找第一个数组属性
+          const arrayProp = Object.entries(ticketData).find(([_, v]) => Array.isArray(v));
+          if (arrayProp) {
+            rawTickets = arrayProp[1] as any[];
+            console.log(`[AI] 从 ticketData.${arrayProp[0]} 提取票据数组，数量:`, rawTickets.length);
+          }
+        }
+      }
+      
+      // 过滤掉空对象
+      rawTickets = rawTickets.filter((t: any) => t && typeof t === 'object' && Object.keys(t).length > 0);
+      console.log('[AI] 过滤后的原始票据数量:', rawTickets.length);
+      console.log('[AI] 原始票据数据:', JSON.stringify(rawTickets, null, 2));
+
+      // 规范化火车/机票字段，尽量填充出发地、目的地、日期、金额
+      // 支持多种可能的字段名称
+      const normalizeTicket = (t: any) => {
+        // 出发地：支持多种字段名
+        const departure = t.departure || t.fromStation || t.origin || t.from || t.startCity || 
+          t.fromCity || t.departureStation || t.departureCity || t.start || '';
+        // 目的地：支持多种字段名
+        const destination = t.destination || t.toStation || t.arrival || t.to || t.endCity || 
+          t.toCity || t.arrivalStation || t.arrivalCity || t.end || '';
+        // 出发日期：支持多种字段名和格式
+        let departureDate = t.departureDate || t.date || t.trainDate || t.flightDate || 
+          t.travelDate || t.tripDate || t.startDate || '';
+        // 到达日期
+        let arrivalDate = t.arrivalDate || t.toDate || t.arriveDate || t.endDate || departureDate || '';
+        // 日期格式处理：将 YYYYMMDD 转为 YYYY-MM-DD
+        if (departureDate && /^\d{8}$/.test(departureDate)) {
+          departureDate = `${departureDate.slice(0, 4)}-${departureDate.slice(4, 6)}-${departureDate.slice(6, 8)}`;
+        }
+        if (arrivalDate && /^\d{8}$/.test(arrivalDate)) {
+          arrivalDate = `${arrivalDate.slice(0, 4)}-${arrivalDate.slice(4, 6)}-${arrivalDate.slice(6, 8)}`;
+        }
+        // 时间
+        const departureTime = t.departureTime || t.time || t.startTime || '';
+        const arrivalTime = t.arrivalTime || t.reachTime || t.endTime || '';
+        // 金额：支持多种字段名，确保是数字
+        const amountStr = t.amount || t.price || t.totalAmount || t.fare || t.ticketPrice || t.cost || '0';
+        const amount = parseFloat(String(amountStr).replace(/[^0-9.]/g, '')) || 0;
+        const price = amount;
+        
+        const normalized = {
+          ...t,
+          departure,
+          destination,
+          departureDate,
+          arrivalDate,
+          departureTime,
+          arrivalTime,
+          amount,
+          price,
+          ticketType: t.ticketType || t.type || (t.trainNumber ? '火车票' : t.flightNumber ? '飞机票' : ''),
+          passengerName: t.passengerName || t.name || t.passenger || '',
+          trainNumber: t.trainNumber || t.flightNumber || t.tripNumber || t.no || t.number || '',
+        };
+        console.log('[AI] 规范化票据:', JSON.stringify(normalized, null, 2));
+        return normalized;
+      };
+
+      const tickets = rawTickets.map(normalizeTicket);
+      console.log('[AI] 规范化后的票据数量:', tickets.length);
+      console.log('[AI] 规范化后的票据数据:', JSON.stringify(tickets, null, 2));
+      const hotels = Array.isArray(hotelData?.hotels)
+        ? hotelData.hotels
+        : Array.isArray(hotelData)
+          ? hotelData
+          : [];
       const taxiDetailsList = taxiData.details || [];
 
       // 配对往返票据
@@ -457,13 +637,16 @@ export const useTravelAnalysis = ({
       // 构建出差行程
       const tripLegsData = buildTripLegs(pairedTrips, hotels);
 
-      // 计算打车费用总和
-      const totalTaxiFee = taxiDetailsList.reduce((sum: number, t: any) =>
-        sum + (parseFloat(t.amount) || parseFloat(t.price) || parseFloat(t.totalAmount) || parseFloat(t.fare) || 0),
-        0
-      );
+      // 预计算不同来源的打车金额
+      const invoiceTotalAmount = (taxiInvoiceData.details || []).reduce((sum: number, t: any) =>
+        sum + (parseFloat(t.amount) || parseFloat(t.totalAmount) || parseFloat(t.price) || parseFloat(t.fare) || 0), 0);
+      const tripSlipTotalAmount = (taxiTripData.details || []).reduce((sum: number, t: any) =>
+        sum + (parseFloat(t.amount) || parseFloat(t.totalAmount) || parseFloat(t.price) || parseFloat(t.fare) || 0), 0);
 
-      // 将打车费分配到第一个行程段
+      // 差旅场景：优先使用发票金额作为市内交通费；日常打车场景：也以发票金额为准
+      const totalTaxiFee = invoiceTotalAmount || tripSlipTotalAmount || 0;
+
+      // 将打车费分配到第一个行程段（仅差旅模式有行程段）
       if (tripLegsData.length > 0 && totalTaxiFee > 0) {
         tripLegsData[0].cityTrafficFee = totalTaxiFee;
       }
@@ -476,8 +659,34 @@ export const useTravelAnalysis = ({
 
       setTripLegs(tripLegsData);
 
+      // 判断报销类型：
+      // - 如果只有打车发票（没有火车票/机票），则为"日常打车报销"
+      // - 如果有火车票/机票，则为"差旅报销"
+      const hasTickets = ticketFiles.length > 0;
+      const hasHotel = hotelFiles.length > 0;
+      const hasTaxiInvoiceOnly = taxiInvoiceFiles.length > 0;
+      
+      // 日常打车报销模式：只有打车发票，没有火车票/机票
+      // 注意：即使有打车行程单，只要有打车发票且没有火车票/机票，就是日常打车报销
+      const isTaxiOnlyMode = hasTaxiInvoiceOnly && !hasTickets && !hasHotel;
+      
+      // 计算打车总金额：以发票金额为准，若发票金额缺失则回退行程单金额
+      const taxiTotalAmount = invoiceTotalAmount || tripSlipTotalAmount || 0;
+
       // 处理打车明细
-      const processedTaxiDetails = processTaxiDetails(taxiDetailsList, approvalData);
+      // 差旅模式：优先用行程单填充明细；日常打车模式：用发票（若无行程单）
+      let rawDetailsForTable: any[] = [];
+      if (isTaxiOnlyMode) {
+        rawDetailsForTable = (taxiInvoiceData.details || []).length > 0
+          ? taxiInvoiceData.details
+          : taxiDetailsList;
+      } else {
+        rawDetailsForTable = (taxiTripData.details || []).length > 0
+          ? taxiTripData.details
+          : taxiDetailsList;
+      }
+
+      const processedTaxiDetails = processTaxiDetails(rawDetailsForTable, approvalData);
       setTaxiDetails(processedTaxiDetails);
 
       // 智能匹配借款记录（多维度匹配：审批单号、金额、关键词）
@@ -514,50 +723,47 @@ export const useTravelAnalysis = ({
 
       const tripReason = approvalData.eventSummary || ticketData.tripReason || '';
 
-      // 判断报销类型：
-      // - 如果只有打车发票（没有火车票/机票），则为"日常打车报销"
-      // - 如果有火车票/机票，则为"差旅报销"
-      const hasTickets = ticketFiles.length > 0;
-      const hasHotel = hotelFiles.length > 0;
-      const hasTaxiInvoiceOnly = taxiInvoiceFiles.length > 0;
-      
-      // 日常打车报销模式：只有打车发票，没有火车票/机票
-      // 注意：即使有打车行程单，只要有打车发票且没有火车票/机票，就是日常打车报销
-      const isTaxiOnlyMode = hasTaxiInvoiceOnly && !hasTickets && !hasHotel;
-      
-      // 计算打车总金额
-      // 日常打车报销模式：只使用发票金额
-      // 差旅报销模式：使用所有打车明细金额
-      let taxiTotalAmount: number;
-      if (isTaxiOnlyMode) {
-        // 日常打车报销：只计算发票金额
-        const invoiceDetails = taxiInvoiceData.details || [];
-        taxiTotalAmount = invoiceDetails.reduce((sum: number, t: any) => 
-          sum + (parseFloat(t.amount) || parseFloat(t.totalAmount) || parseFloat(t.price) || 0), 0);
-        console.log('[AI] 日常打车报销金额（仅发票）:', taxiTotalAmount);
-      } else {
-        // 差旅报销：计算所有打车明细金额
-        taxiTotalAmount = processedTaxiDetails.reduce((sum, t) => sum + (t.amount || 0), 0);
-      }
-
       // 提取打车发票的货物或应税劳务名称（用于日常打车报销的报销事由）
       // 优先从打车发票识别结果中获取 projectName（因为发票才有"货物或应税劳务名称"）
+      console.log('[AI] 开始提取发票项目名称...');
+      console.log('[AI] taxiInvoiceData.details:', JSON.stringify(taxiInvoiceData.details, null, 2));
+      
+      // 尝试多种可能的字段名
+      const getProjectNameFromItem = (t: any): string | null => {
+        // 优先级：projectName > serviceName > itemName > title > name
+        return t.projectName || t.serviceName || t.itemName || t.title || t.goodsName || t.name || null;
+      };
+      
       const invoiceProjectNames = (taxiInvoiceData.details || [])
-        .map((t: any) => t.projectName)
+        .map((t: any) => getProjectNameFromItem(t))
         .filter(Boolean);
       
+      console.log('[AI] 从发票提取的项目名称:', invoiceProjectNames);
+      
       // 如果发票识别没有返回 projectName，从处理后的打车明细中获取
+      const processedProjectNames = processedTaxiDetails
+        .map(t => t.projectName)
+        .filter(Boolean);
+      
+      console.log('[AI] 从处理后明细提取的项目名称:', processedProjectNames);
+      
       const allProjectNames = invoiceProjectNames.length > 0 
         ? invoiceProjectNames
-        : processedTaxiDetails.map(t => t.projectName).filter(Boolean);
+        : processedProjectNames;
       
       // 去重并合并项目名称
       const uniqueProjectNames = [...new Set(allProjectNames)];
-      const taxiInvoiceProjectName = uniqueProjectNames.join('、') || '运输服务';
       
-      console.log('[AI] 打车发票项目名称提取:', {
+      // 如果还是没有找到，使用默认值
+      const taxiInvoiceProjectName = uniqueProjectNames.length > 0 
+        ? uniqueProjectNames.join('、') 
+        : '运输服务';
+      
+      console.log('[AI] 打车发票项目名称提取结果:', {
         invoiceProjectNames,
+        processedProjectNames,
         allProjectNames,
+        uniqueProjectNames,
         taxiInvoiceProjectName,
       });
 
@@ -570,26 +776,21 @@ export const useTravelAnalysis = ({
         isTaxiOnlyMode,
         hasTickets,
         hasHotel,
-        hasTaxi,
+        hasTaxiInvoice: hasTaxiInvoiceOnly,
         taxiInvoiceProjectName,
       });
 
-      // 日常打车报销模式下，只返回发票的打车明细（不包含行程单）
+      // 日常打车报销模式下，只返回发票的打车明细（不包含行程单）；差旅模式优先返回行程单明细
       let finalTaxiDetails = processedTaxiDetails;
       if (isTaxiOnlyMode) {
-        // 日常打车报销：只使用发票数据
         const invoiceOnlyDetails = processTaxiDetails(taxiInvoiceData.details || [], approvalData);
         finalTaxiDetails = invoiceOnlyDetails;
-        console.log('[AI] 日常打车报销：使用发票明细', {
-          count: finalTaxiDetails.length,
-          total: taxiTotalAmount,
-        });
       }
 
       return {
         success: true,
         tripLegs: tripLegsData,
-        taxiDetails: finalTaxiDetails,  // 日常打车报销只返回发票明细
+        taxiDetails: finalTaxiDetails,  // 日常打车报销返回发票明细；差旅报销返回行程单/合并明细
         matchedLoans: potentialLoans,
         // 日常打车报销使用发票项目名称，差旅报销使用出差事由（需手动填写）
         tripReason: isTaxiOnlyMode ? taxiInvoiceProjectName : tripReason,

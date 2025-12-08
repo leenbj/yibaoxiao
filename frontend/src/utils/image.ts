@@ -172,6 +172,21 @@ export const fileToBase64 = async (file: File): Promise<string> => {
 };
 
 /**
+ * 将文件转换为Base64编码（不压缩，保留原始格式）
+ * 
+ * 用于附件显示场景，确保图片内容完整无损
+ * 不进行任何压缩或格式转换
+ */
+export const fileToBase64Original = async (file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = reject;
+  });
+};
+
+/**
  * PDF转图片并返回 File 对象（推荐用于 FormData 上传）
  *
  * @param file PDF文件

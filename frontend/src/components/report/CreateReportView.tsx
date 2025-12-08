@@ -10,7 +10,7 @@ import {
   Briefcase
 } from 'lucide-react';
 import { Attachment, ExpenseItem } from '../../types';
-import { fileToBase64, pdfToImage } from '../../utils/image';
+import { fileToBase64Original, pdfToImage } from '../../utils/image';
 import { useInvoiceAnalysis } from '../../hooks/useInvoiceAnalysis';
 import { useInvoiceSelection } from '../../hooks/useInvoiceSelection';
 import { GeneralReimbursementForm } from '../forms/GeneralReimbursementForm';
@@ -141,9 +141,11 @@ export const CreateReportView = ({
         Array.from(e.target.files as FileList).map(async (f: File) => {
           let data = "";
           if (f.type === 'application/pdf') {
+            // PDF 需要转换为图片
             data = await pdfToImage(f);
           } else {
-            data = await fileToBase64(f);
+            // 图片使用原始格式（不压缩），保证附件显示完整
+            data = await fileToBase64Original(f);
           }
           return { data, type, name: f.name } as Attachment;
         })
@@ -180,7 +182,8 @@ export const CreateReportView = ({
   // ============ Step 2: 处理合并模式变更 ============
   const handleMergeChange = (merge: boolean) => {
     setMergeInvoices(merge);
-    const updatedItems = buildUpdatedManualItems();
+    // 传递新的 merge 值，解决 React 状态异步更新问题
+    const updatedItems = buildUpdatedManualItems(merge);
     setForm(prev => ({
       ...prev,
       title: buildUpdatedTitle(),

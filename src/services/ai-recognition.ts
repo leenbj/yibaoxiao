@@ -207,6 +207,13 @@ export async function recognizeWithConfig(
       result._tokenUsage.model = model
     }
     
+    // 对于发票类型，如果返回的是 details 数组，转换为 invoices 以便前端识别
+    if (type === 'invoice' && (result as any).details && Array.isArray((result as any).details)) {
+      console.log('[AI] 发票识别结果转换: details -> invoices，数量:', (result as any).details.length)
+      ;(result as any).invoices = (result as any).details
+      delete (result as any).details
+    }
+    
     return result
   } catch (error) {
     console.error('[AI] 识别失败:', error)
@@ -701,31 +708,39 @@ export async function recognizeDocuments(
 function getPromptForType(type: 'invoice' | 'approval' | 'travel' | 'ticket' | 'hotel' | 'taxi'): string {
   if (type === 'invoice') {
     return `
-请仔细分析这些电子发票/收据图片，完整提取以下信息并返回JSON格式：
-{
-  "invoiceCode": "发票代码",
-  "invoiceNumber": "发票号码",
-  "invoiceDate": "开票日期，格式YYYY-MM-DD",
-  "sellerName": "销售方/开票单位名称",
-  "buyerName": "购买方名称",
-  "projectName": "发票上的货物或应税劳务名称（如：餐饮服务、住宿服务、办公用品等）",
-  "totalAmount": 价税合计金额（数字）,
-  "taxAmount": 税额（数字）,
-  "amountWithoutTax": 不含税金额（数字）,
-  "items": [
-    {
-      "name": "商品或服务名称",
-      "specification": "规格型号",
-      "unit": "单位",
-      "quantity": 数量,
-      "unitPrice": 单价,
-      "amount": 金额
-    }
-  ],
-  "remarks": "备注信息"
-}
+请仔细分析这些电子发票/收据图片，提取每张发票的信息。
+
+**重要：如果有多张发票，必须返回数组格式，每张发票作为数组的一个元素！**
+
+返回JSON格式：
+[
+  {
+    "invoiceCode": "发票代码",
+    "invoiceNumber": "发票号码",
+    "invoiceDate": "开票日期，格式YYYY-MM-DD",
+    "sellerName": "销售方/开票单位名称",
+    "buyerName": "购买方名称",
+    "projectName": "发票上的货物或应税劳务名称（如：餐饮服务、住宿服务、办公用品等）",
+    "totalAmount": 价税合计金额（数字）,
+    "taxAmount": 税额（数字）,
+    "amountWithoutTax": 不含税金额（数字）,
+    "items": [
+      {
+        "name": "商品或服务名称",
+        "specification": "规格型号",
+        "unit": "单位",
+        "quantity": 数量,
+        "unitPrice": 单价,
+        "amount": 金额
+      }
+    ],
+    "remarks": "备注信息"
+  }
+]
 
 注意：
+- **如果只有一张发票，也要返回数组格式 [{ ... }]**
+- **如果有多张发票，每张发票单独识别，返回 [{发票1}, {发票2}, ...]**
 - 日期格式必须是 YYYY-MM-DD
 - 所有金额必须是数字，不要包含货币符号和千分位
 - 如果有多个商品明细，请全部列出
@@ -900,36 +915,33 @@ function getMockResult(type: 'invoice' | 'approval' | 'travel' | 'ticket' | 'hot
   const now = new Date().toISOString().split('T')[0]
 
   if (type === 'invoice') {
+    // 返回数组格式的发票数据，与 AI 实际返回格式一致
     return {
-      // 发票基础信息
-      invoiceCode: '011001900111',
-      invoiceNumber: '12345678',
-      invoiceDate: now,
-      sellerName: '北京某餐饮有限公司',
-      buyerName: '北龙中网(北京)科技有限责任公司',
-      projectName: '餐饮服务',
-      totalAmount: 1500.00,
-      taxAmount: 84.91,
-      amountWithoutTax: 1415.09,
-      // 兼容旧格式
-      title: '餐饮服务',
-      approvalNumber: '',
-      loanAmount: 0,
-      items: [
-        { 
-          name: '餐饮服务', 
-          specification: '', 
-          unit: '次', 
-          quantity: 1, 
-          unitPrice: 1415.09, 
-          amount: 1415.09,
-          // 兼容旧格式
-          date: now,
-          description: '餐饮服务',
-        },
+      invoices: [
+        {
+          invoiceCode: '011001900111',
+          invoiceNumber: '12345678',
+          invoiceDate: now,
+          sellerName: '北京某餐饮有限公司',
+          buyerName: '北龙中网(北京)科技有限责任公司',
+          projectName: '餐饮服务',
+          totalAmount: 1500.00,
+          taxAmount: 84.91,
+          amountWithoutTax: 1415.09,
+          items: [
+            { 
+              name: '餐饮服务', 
+              specification: '', 
+              unit: '次', 
+              quantity: 1, 
+              unitPrice: 1415.09, 
+              amount: 1415.09,
+            },
+          ],
+          remarks: '',
+        }
       ],
-      remarks: '',
-    }
+    } as any
   }
 
   if (type === 'approval') {
