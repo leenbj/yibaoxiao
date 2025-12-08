@@ -231,21 +231,39 @@ const MainApp = ({ user, onLogout }: { user: AppUser; onLogout: () => void }) =>
 
     try {
       const requestBody = { ...newReport, userId };
-      console.warn('[保存报销单] 请求体大小:', JSON.stringify(requestBody).length, '字节');
-      
+      const bodySize = JSON.stringify(requestBody).length;
+      console.warn('[保存报销单] 请求体大小:', bodySize, '字节', `(${(bodySize / 1024 / 1024).toFixed(2)} MB)`);
+
+      // 检查请求体大小，超过 90MB 时警告
+      if (bodySize > 90 * 1024 * 1024) {
+        console.error('[保存报销单] 请求体过大，可能导致保存失败');
+        alert(`报销单数据过大（${(bodySize / 1024 / 1024).toFixed(1)} MB），请减少附件数量或压缩图片后重试`);
+        return;
+      }
+
       const result = await apiRequest('/api/reports', {
         method: 'POST',
         body: JSON.stringify(requestBody),
       }) as { report: Report };
-      
+
       console.warn('[保存报销单] 保存成功, id:', result.report?.id);
       savedReport = result.report || { ...newReport, userId: DEFAULT_USER_ID };
       setReports(prev => [savedReport, ...prev]);
     } catch (error: any) {
       console.error('[保存报销单] 创建失败:', error?.message || error);
       console.error('[保存报销单] 错误详情:', JSON.stringify(error));
-      // 即使失败也添加到本地列表（便于用户看到）
-      setReports(prev => [newReport, ...prev]);
+
+      // 显示用户友好的错误提示
+      const errorMsg = error?.message || '未知错误';
+      if (errorMsg.includes('413') || errorMsg.includes('too large') || errorMsg.includes('payload')) {
+        alert('报销单数据过大，请减少附件数量或压缩图片后重试');
+      } else if (errorMsg.includes('timeout') || errorMsg.includes('超时')) {
+        alert('保存超时，请检查网络后重试');
+      } else {
+        alert(`保存失败: ${errorMsg}\n\n请检查网络连接后重试`);
+      }
+      // 不再将失败的数据添加到本地列表，避免用户误以为保存成功
+      return;
     }
 
     // 更新关联的费用项状态
@@ -277,19 +295,37 @@ const MainApp = ({ user, onLogout }: { user: AppUser; onLogout: () => void }) =>
 
     try {
       const requestBody = { ...newLoan, userId };
-      console.warn('[保存借款单] 请求体大小:', JSON.stringify(requestBody).length, '字节');
-      
+      const bodySize = JSON.stringify(requestBody).length;
+      console.warn('[保存借款单] 请求体大小:', bodySize, '字节', `(${(bodySize / 1024 / 1024).toFixed(2)} MB)`);
+
+      // 检查请求体大小，如果过大提前警告
+      if (bodySize > 90 * 1024 * 1024) {
+        console.error('[保存借款单] 请求体过大，可能导致保存失败');
+        alert(`借款单数据过大（${(bodySize / 1024 / 1024).toFixed(1)} MB），请减少附件数量或压缩图片后重试`);
+        return;
+      }
+
       const result = await apiRequest('/api/loans', {
         method: 'POST',
         body: JSON.stringify(requestBody),
       }) as { loan: LoanRecord };
-      
+
       console.warn('[保存借款单] 保存成功, id:', result.loan?.id);
       savedLoan = result.loan || { ...newLoan, userId: DEFAULT_USER_ID };
       setLoans(prev => [savedLoan, ...prev]);
     } catch (error: any) {
       console.error('[保存借款单] 创建失败:', error?.message || error);
-      setLoans(prev => [newLoan, ...prev]);
+      // 保存失败时显示错误信息，不添加到本地状态
+      const errorMsg = error?.message || '未知错误';
+      if (errorMsg.includes('413') || errorMsg.includes('too large') || errorMsg.includes('payload')) {
+        alert('借款单数据过大，请减少附件数量或压缩图片后重试');
+      } else if (errorMsg.includes('timeout') || errorMsg.includes('超时')) {
+        alert('保存超时，请检查网络后重试');
+      } else {
+        alert(`保存失败: ${errorMsg}\n\n请检查网络连接后重试`);
+      }
+      // 保存失败，不添加到本地状态，直接返回
+      return;
     }
 
     if (action === 'print') {
