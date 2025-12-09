@@ -1,40 +1,54 @@
-# 易报销 Pro - 后端 Dockerfile（稳定构建版）
-# 特点：在镜像内完整安装/构建，减少外部依赖，提升成功率
+# ================================
+# 易报销 Pro - 后端 Dockerfile（宝塔 + Linux + 2核4G 服务器优化版）
+# 使用 node:20-slim 保证生产稳定性
+# ================================
 
-FROM node:20-alpine
+FROM node:20-slim
 
 WORKDIR /app
 
+# 后端运行环境参数
 ENV NODE_ENV=production
-ARG NODE_OPTIONS="--max-old-space-size=4096"
-ENV NODE_OPTIONS=${NODE_OPTIONS}
+ENV NODE_OPTIONS="--max-old-space-size=512"
 
-# 安装构建与运行必需依赖（含 tini、wget、postgresql-client 便于启动脚本）
-RUN apk add --no-cache python3 make g++ linux-headers tini wget postgresql-client
+# -------------------------------
+# 安装必备系统依赖
+# -------------------------------
+RUN apt-get update && apt-get install -y \
+    python3 \
+    make \
+    g++ \
+    tini \
+    wget \
+    postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
 
-# 复制 package 文件并安装依赖（保留 postinstall 的 motia install）
+# -------------------------------
+# 安装依赖（严格模式）
+# -------------------------------
 COPY package*.json ./
-RUN npm ci && npm cache clean --force
+RUN npm ci --verbose && npm cache clean --force
 
-# 复制全部源代码
+# -------------------------------
+# 拷贝代码
+# -------------------------------
 COPY . .
 
-# 生成类型（容忍失败但保留日志）
-RUN npm run generate-types || true
+# 生成类型（若失败则直接中断）
+RUN npm run generate-types
 
-# 创建目录与权限
-RUN mkdir -p /app/.motia /app/dist && \
-    chmod +x /app/scripts/docker-start.sh && \
-    addgroup -g 1001 -S nodejs && \
-    adduser -S motia -u 1001 -G nodejs && \
-    chown -R motia:nodejs /app
+# 创建 motia 必需目录
+RUN mkdir -p /app/.motia /app/dist
 
-USER motia
-
+# 端口
 EXPOSE 3000
 
-HEALTHCHECK --interval=60s --timeout=10s --start-period=120s --retries=3 \
+# 健康检查
+HEALTHCHECK --interval=60s --timeout=10s --start-period=60s --retries=3 \
     CMD wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1
 
-ENTRYPOINT ["/sbin/tini", "--"]
+# 启动管理器
+ENTRYPOINT ["tini", "--"]
+
+# 启动后端
 CMD ["/app/scripts/docker-start.sh"]
