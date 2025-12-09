@@ -69,7 +69,9 @@ services:
     environment:
       NODE_ENV: production
       # Node.js 内存限制（针对 2核4G 内存服务器优化）
-      NODE_OPTIONS: "--max-old-space-size=1280"
+      NODE_OPTIONS: "--max-old-space-size=768"
+      # 跳过启动时自动迁移，减少冷启动时间（如需迁移可临时取消）
+      MOTIA_DISABLE_DB_SYNC: "true"
       # 数据库连接
       DATABASE_URL: postgresql://${POSTGRES_USER:-yibao}:${POSTGRES_PASSWORD:-yibao123456}@postgres:5432/${POSTGRES_DB:-yibao}
       POSTGRES_USER: ${POSTGRES_USER:-yibao}
@@ -110,7 +112,7 @@ services:
       resources:
         limits:
           cpus: '1.0'
-          memory: 1792M
+          memory: 1536M
         reservations:
           cpus: '0.5'
           memory: 768M

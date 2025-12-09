@@ -63,8 +63,9 @@ services:
         hard: 65536
     environment:
       NODE_ENV: production
-      # Node.js 内存限制（优化版：增加到 1.5GB 以支持更大的图片处理）
-      NODE_OPTIONS: "--max-old-space-size=1536"
+      # Node.js 内存限制（针对 2核4G 服务器，留足数据库/系统空间）
+      NODE_OPTIONS: "--max-old-space-size=768"
+      MOTIA_DISABLE_DB_SYNC: "true"
       DATABASE_URL: postgresql://${POSTGRES_USER:-yibao}:${POSTGRES_PASSWORD:-yibao123456}@postgres:5432/${POSTGRES_DB:-yibao}
       # 数据库连接池优化（性能优化版）
       DATABASE_POOL_MIN: "2"            # 保持2个预热连接，避免冷启动延迟

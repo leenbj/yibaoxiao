@@ -108,6 +108,7 @@ export const CreateReportView = ({
     initialInvoices: aiInvoiceDetails,
     initialMerge: true,
     approvalData: aiApprovalResult,
+    currentUserId: settings.currentUser?.id || 'user_default',
   });
   
   // 当 AI 识别完成后，更新发票详情列表

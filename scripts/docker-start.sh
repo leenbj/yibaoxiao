@@ -17,8 +17,8 @@ echo "=========================================="
 echo ""
 
 # 设置 Node.js 内存限制（针对 4G 内存服务器优化）
-# 强制覆盖 NODE_OPTIONS，移除不允许的参数（如 --optimize_for_size）
-export NODE_OPTIONS="--max-old-space-size=1024"
+# 优先使用外部传入的 NODE_OPTIONS，默认限制在 768MB 以留出 Postgres/Redis 资源
+export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=768}"
 
 # 设置默认管理员信息（如果环境变量未设置）
 export ADMIN_EMAIL="${ADMIN_EMAIL:-wangbo@knet.cn}"
@@ -57,16 +57,20 @@ sleep 3
 # ==================== 推送数据库表结构 ====================
 echo ""
 echo "[2/4] 同步数据库表结构..."
-npx drizzle-kit push --force 2>/dev/null || {
-    echo "drizzle-kit push 失败，尝试使用 SQL 脚本初始化..."
-    if [ -f "/app/scripts/init-db.sql" ]; then
-        PGPASSWORD="${POSTGRES_PASSWORD:-yibao123456}" psql \
-            -h postgres \
-            -U "${POSTGRES_USER:-yibao}" \
-            -d "${POSTGRES_DB:-yibao}" \
-            -f /app/scripts/init-db.sql 2>/dev/null || echo "SQL 初始化跳过"
-    fi
-}
+if [ "${MOTIA_DISABLE_DB_SYNC}" = "true" ]; then
+    echo "已设置 MOTIA_DISABLE_DB_SYNC=true，跳过 drizzle 自动迁移"
+else
+    npx drizzle-kit push --force 2>/dev/null || {
+        echo "drizzle-kit push 失败，尝试使用 SQL 脚本初始化..."
+        if [ -f "/app/scripts/init-db.sql" ]; then
+            PGPASSWORD="${POSTGRES_PASSWORD:-yibao123456}" psql \
+                -h postgres \
+                -U "${POSTGRES_USER:-yibao}" \
+                -d "${POSTGRES_DB:-yibao}" \
+                -f /app/scripts/init-db.sql 2>/dev/null || echo "SQL 初始化跳过"
+        fi
+    }
+fi
 
 # ==================== 初始化超级管理员 ====================
 echo ""

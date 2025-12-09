@@ -32,6 +32,7 @@ const toReport = (
   tripReason: record.tripReason || undefined,
   tripLegs: record.tripLegs as TripLeg[] | undefined,
   taxiDetails: record.taxiDetails as TaxiDetail[] | undefined,
+  aiRecognitionData: record.aiRecognitionData || undefined,
   createdAt: record.createdAt?.toISOString(),
   updatedAt: record.updatedAt?.toISOString(),
 })
@@ -55,6 +56,7 @@ const toDbReport = (report: Report): typeof reports.$inferInsert => ({
   tripReason: report.tripReason,
   tripLegs: report.tripLegs,
   taxiDetails: report.taxiDetails,
+  aiRecognitionData: (report as any).aiRecognitionData,
 })
 
 export const reportRepository = {
@@ -204,6 +206,7 @@ export const reportRepository = {
       tripReason: data.tripReason,
       tripLegs: data.tripLegs,
       taxiDetails: data.taxiDetails,
+      aiRecognitionData: (data as any).aiRecognitionData,
       updatedAt: new Date(),
     }
     
@@ -257,4 +260,3 @@ export const reportRepository = {
     return report
   },
 }
-

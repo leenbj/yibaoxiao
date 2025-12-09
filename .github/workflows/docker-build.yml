@@ -89,7 +89,7 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           build-args: |
-            NODE_OPTIONS=--max-old-space-size=4096
+            NODE_OPTIONS=--max-old-space-size=768
 
   # ==================== 构建前端镜像 ====================
   build-frontend:

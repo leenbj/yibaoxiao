@@ -19,6 +19,7 @@ interface UseInvoiceSelectionParams {
   initialInvoices: InvoiceDetail[];
   initialMerge: boolean;
   approvalData: any;
+  currentUserId?: string;
 }
 
 interface UseInvoiceSelectionReturn {
@@ -47,6 +48,7 @@ export const useInvoiceSelection = ({
   initialInvoices,
   initialMerge,
   approvalData,
+  currentUserId,
 }: UseInvoiceSelectionParams): UseInvoiceSelectionReturn => {
   const [invoiceDetails, setInvoiceDetailsState] = useState<InvoiceDetail[]>(initialInvoices);
   const [mergeInvoices, setMergeInvoicesState] = useState(initialMerge);
@@ -115,6 +117,7 @@ export const useInvoiceSelection = ({
     if (selectedInvoices.length === 0) return [];
 
     const eventSuffix = approvalData?.eventSummary ? `（${approvalData.eventSummary}）` : '';
+    const userId = currentUserId || 'user_default';
     
     // 使用传入的参数或当前状态值
     const shouldMerge = overrideMerge !== undefined ? overrideMerge : mergeInvoices;
@@ -124,6 +127,7 @@ export const useInvoiceSelection = ({
       const title = buildUpdatedTitle();
       return [{
         id: `extracted-${Date.now()}`,
+        userId,
         date: selectedInvoices[0]?.invoiceDate || new Date().toISOString(),
         description: title || selectedInvoices[0]?.projectName || '费用报销',
         amount: totalAmount,
@@ -135,6 +139,7 @@ export const useInvoiceSelection = ({
     // 分离模式：每个发票一条明细
     return selectedInvoices.map((inv, idx) => ({
       id: `extracted-${Date.now()}-${idx}`,
+      userId,
       date: inv.invoiceDate,
       description: `${inv.projectName}${eventSuffix}`,
       amount: inv.amount,

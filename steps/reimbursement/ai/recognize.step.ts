@@ -46,6 +46,17 @@ export const config: ApiRouteConfig = {
   },
 }
 
+const MAX_IMAGE_BYTES = parseInt(process.env.AI_IMAGE_MAX_BYTES || '', 10) || 800 * 1024 // 单张 800KB
+const MAX_TOTAL_BYTES = parseInt(process.env.AI_IMAGE_TOTAL_BYTES || '', 10) || 5 * 1024 * 1024 // 总 5MB
+
+const stripDataUrl = (img: string) => {
+  if (img.includes(',')) {
+    const [, b64] = img.split(',')
+    return b64
+  }
+  return img
+}
+
 /**
  * 获取 AI 配置的优先级：
  * 1. 用户自己的配置
@@ -111,6 +122,28 @@ export const handler: Handlers['AIRecognize'] = async (req, { logger }) => {
     authHeader: authHeader ? authHeader.substring(0, 50) + '...' : 'none',
     bodyUserId: bodyUserId || 'none'
   })
+
+  // 预处理图片，限制单张/总大小，避免 E2BIG
+  const sanitizedImages = images.map(stripDataUrl)
+  let totalBytes = 0
+  for (let i = 0; i < sanitizedImages.length; i++) {
+    const imgBytes = Buffer.from(sanitizedImages[i], 'base64').length
+    totalBytes += imgBytes
+    if (imgBytes > MAX_IMAGE_BYTES) {
+      logger.warn('AI 识别图片过大，拒绝处理', { userId, idx: i, imgBytes, limit: MAX_IMAGE_BYTES })
+      return {
+        status: 400,
+        body: { error: 'image_too_large', message: '单张图片过大，请压缩后再试' },
+      }
+    }
+  }
+  if (totalBytes > MAX_TOTAL_BYTES) {
+    logger.warn('AI 识别图片总大小超限，拒绝处理', { userId, totalBytes, limit: MAX_TOTAL_BYTES })
+    return {
+      status: 400,
+      body: { error: 'images_too_large', message: '图片总大小过大，请减少数量或压缩后再试' },
+    }
+  }
 
   try {
     // 按优先级获取 AI 配置
@@ -227,9 +260,10 @@ export const handler: Handlers['AIRecognize'] = async (req, { logger }) => {
     logger.info('调用 AI 识别服务', { 
       provider: aiConfig?.provider, 
       model: aiConfig?.model, 
-      imageCount: images.length,
+      imageCount: sanitizedImages.length,
       hasApiKey: !!aiConfig?.apiKey,
       configSource,
+      totalBytes,
     })
     console.log('[DEBUG] AI 配置详情:', { 
       provider: aiConfig?.provider, 
@@ -238,7 +272,7 @@ export const handler: Handlers['AIRecognize'] = async (req, { logger }) => {
       apiKeyLength: aiConfig?.apiKey?.length || 0,
       configSource,
     })
-    const result = await recognizeWithConfig(images, type, aiConfig)
+    const result = await recognizeWithConfig(sanitizedImages, type, aiConfig)
 
     // 详细记录识别结果，帮助调试
     const resultStr = JSON.stringify(result)

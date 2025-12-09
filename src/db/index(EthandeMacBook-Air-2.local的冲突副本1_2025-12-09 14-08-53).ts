@@ -7,7 +7,6 @@
 import { drizzle } from 'drizzle-orm/node-postgres'
 import { Pool } from 'pg'
 import * as schema from './schema'
-import { createMemoryCache, MemoryCache } from './cache'
 
 // 加载环境变量
 import 'dotenv/config'
@@ -48,58 +47,36 @@ const poolConfig = {
   allowExitOnIdle: true,
 }
 
-// 创建连接池
-let pool: Pool | null = null
+// 复用连接池（兼容热重载/多次导入）
+const globalForDb = globalThis as unknown as {
+  __motiaPool?: Pool
+  __motiaDb?: ReturnType<typeof drizzle<typeof schema>>
+}
 
 export const getPool = (): Pool => {
-  if (!pool) {
-    pool = new Pool(poolConfig)
+  if (!globalForDb.__motiaPool) {
+    globalForDb.__motiaPool = new Pool(poolConfig)
     
     // 连接池错误处理
-    pool.on('error', (err) => {
+    globalForDb.__motiaPool.on('error', (err) => {
       console.error('数据库连接池错误:', err)
     })
 
     // 连接池连接事件
-    pool.on('connect', () => {
+    globalForDb.__motiaPool.on('connect', () => {
       console.log('数据库连接已建立')
     })
   }
-  return pool
+  return globalForDb.__motiaPool
 }
 
-// 创建 Drizzle 实例（带缓存支持）
-let db: ReturnType<typeof drizzle<typeof schema>> | null = null
-let queryCache: MemoryCache | null = null
-
-// 缓存配置（可通过环境变量控制）
-const cacheEnabled = process.env.DATABASE_CACHE_ENABLED !== 'false'; // 默认启用
-const cacheGlobal = process.env.DATABASE_CACHE_GLOBAL === 'true';    // 默认显式缓存
-const cacheTTL = parseInt(process.env.DATABASE_CACHE_TTL || '60', 10); // 默认 60 秒
-
+// 创建 Drizzle 实例（禁用缓存，确保数据一致性）
 export const getDb = () => {
-  if (!db) {
-    // 创建缓存实例（如果启用）
-    if (cacheEnabled) {
-      queryCache = createMemoryCache({
-        defaultTTL: cacheTTL,
-        global: cacheGlobal,
-      });
-      console.log(`[数据库] 查询缓存已启用 (TTL: ${cacheTTL}s, 全局: ${cacheGlobal})`);
-      
-      // 尝试使用缓存创建 Drizzle 实例
-      try {
-        db = drizzle(getPool(), { schema, cache: queryCache });
-      } catch (e) {
-        // 如果缓存不支持，回退到无缓存模式
-        console.warn('[数据库] 缓存功能不支持，使用无缓存模式');
-        db = drizzle(getPool(), { schema });
-      }
-    } else {
-      db = drizzle(getPool(), { schema });
-    }
+  if (!globalForDb.__motiaDb) {
+    console.log('[数据库] 创建 Drizzle 实例（无缓存模式）');
+    globalForDb.__motiaDb = drizzle(getPool(), { schema });
   }
-  return db
+  return globalForDb.__motiaDb
 }
 
 // 导出数据库实例（延迟初始化）
@@ -110,23 +87,14 @@ export const database = {
   get pool() {
     return getPool()
   },
-  get cache() {
-    return queryCache
-  },
 }
 
 // 关闭数据库连接
 export const closeDatabase = async (): Promise<void> => {
-  // 停止缓存
-  if (queryCache) {
-    queryCache.stop();
-    queryCache = null;
-  }
-  
-  if (pool) {
-    await pool.end()
-    pool = null
-    db = null
+  if (globalForDb.__motiaPool) {
+    await globalForDb.__motiaPool.end()
+    globalForDb.__motiaPool = undefined
+    globalForDb.__motiaDb = undefined
     console.log('数据库连接已关闭')
   }
 }
@@ -150,4 +118,3 @@ export { schema }
 
 // 导出类型
 export type Database = ReturnType<typeof getDb>
-

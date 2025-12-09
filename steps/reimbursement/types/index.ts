@@ -155,6 +155,7 @@ export const ReportSchema = z.object({
   tripReason: z.string().optional(),
   tripLegs: z.array(TripLegSchema).optional(),
   taxiDetails: z.array(TaxiDetailSchema).optional(),
+  aiRecognitionData: z.any().optional(),
   createdAt: z.string().optional(),
   updatedAt: z.string().optional(),
 })
@@ -396,4 +397,3 @@ export const STATE_GROUPS = {
   AI_CONFIGS: 'ai_configs',
   TOKEN_USAGE: 'token_usage', // token 使用记录
 } as const
-
