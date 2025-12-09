@@ -42,5 +42,23 @@ export default defineConfig(({ mode }) => {
       optimizeDeps: {
         include: ['react', 'react-dom', '@google/genai', 'lucide-react'],
       },
+      // 构建优化 - 代码分割，解决页面加载缓慢问题
+      build: {
+        rollupOptions: {
+          output: {
+            // 手动分割大型依赖，减少首屏加载体积
+            manualChunks: {
+              'vendor-react': ['react', 'react-dom'],
+              'vendor-pdf': ['jspdf', 'html2canvas'],
+              'vendor-icons': ['lucide-react'],
+              'vendor-ai': ['@google/genai'],
+            },
+          },
+        },
+        // 分块大小警告阈值
+        chunkSizeWarningLimit: 500,
+        // 启用源码映射便于调试
+        sourcemap: mode === 'development',
+      },
     };
 });

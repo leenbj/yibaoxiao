@@ -68,18 +68,18 @@ services:
         condition: service_healthy
     environment:
       NODE_ENV: production
-      # Node.js 内存限制（针对 4G 内存服务器）
-      NODE_OPTIONS: "--max-old-space-size=1024"
+      # Node.js 内存限制（针对 2核4G 内存服务器优化）
+      NODE_OPTIONS: "--max-old-space-size=1280"
       # 数据库连接
       DATABASE_URL: postgresql://${POSTGRES_USER:-yibao}:${POSTGRES_PASSWORD:-yibao123456}@postgres:5432/${POSTGRES_DB:-yibao}
       POSTGRES_USER: ${POSTGRES_USER:-yibao}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-yibao123456}
       POSTGRES_DB: ${POSTGRES_DB:-yibao}
-      # 数据库连接池优化（预热连接池减少首次请求延迟）
-      DATABASE_POOL_MIN: "2"
-      DATABASE_POOL_MAX: "8"
-      DATABASE_IDLE_TIMEOUT: "30000"
-      DATABASE_CONNECT_TIMEOUT: "10000"
+      # 数据库连接池优化（针对 2核4G 服务器优化）
+      DATABASE_POOL_MIN: "1"
+      DATABASE_POOL_MAX: "5"
+      DATABASE_IDLE_TIMEOUT: "60000"
+      DATABASE_CONNECT_TIMEOUT: "5000"
       # 禁用查询缓存（避免数据不一致问题）
       DATABASE_CACHE_ENABLED: "false"
       # 超级管理员配置（默认 wangbo@knet.cn）
@@ -105,15 +105,15 @@ services:
       timeout: 10s
       start_period: 180s
       retries: 3
-    # 资源限制（针对 2核4G 服务器）
+    # 资源限制（针对 2核4G 服务器优化）
     deploy:
       resources:
         limits:
           cpus: '1.0'
-          memory: 1536M
+          memory: 1792M
         reservations:
           cpus: '0.5'
-          memory: 512M
+          memory: 768M
 
   # ==================== Nginx 前端服务 ====================
   frontend:

@@ -33,15 +33,23 @@ export function useAuth() {
     if (saved) {
       try {
         const parsed = JSON.parse(saved)
-        return {
-          isLoggedIn: true,
-          user: parsed.user,
-          token: parsed.token,
-          loading: false,
-          error: null,
+        // 验证必要字段完整性 - 修复刷新页面丢失历史记录问题
+        if (parsed.user?.id && parsed.token) {
+          console.log('[Auth] 恢复用户会话:', parsed.user.id, parsed.user.name)
+          return {
+            isLoggedIn: true,
+            user: parsed.user,
+            token: parsed.token,
+            loading: false,
+            error: null,
+          }
         }
-      } catch {
-        return { isLoggedIn: false, user: null, token: null, loading: false, error: null }
+        // 数据不完整，清除损坏数据并提示重新登录
+        console.warn('[Auth] localStorage 数据不完整，需要重新登录')
+        localStorage.removeItem('reimb_auth')
+      } catch (e) {
+        console.error('[Auth] localStorage 解析失败:', e)
+        localStorage.removeItem('reimb_auth')
       }
     }
     return { isLoggedIn: false, user: null, token: null, loading: false, error: null }
