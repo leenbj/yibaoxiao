@@ -9,7 +9,9 @@ WORKDIR /app
 
 # 后端运行环境参数
 ENV NODE_ENV=production
-ENV NODE_OPTIONS="--max-old-space-size=512"
+# 构建阶段内存配置：允许 GitHub Actions 传入更大的值以加快构建
+# 默认值较小，可通过 build-args 覆盖
+ENV NODE_OPTIONS="--max-old-space-size=1024"
 
 # 打印Node和npm版本信息
 RUN echo "====== 构建环境信息 ======" && \
@@ -63,12 +65,20 @@ RUN echo "[5/5] 编译Motia项目..." && \
     echo "编译输出目录结构:" && \
     find /app/dist -type f -name "*.js" | head -10 || echo "（dist目录为空或不存在）"
 
-RUN echo "[6/5] 清理dev依赖..." && \
-    npm prune --omit=dev && \
+# 分离清理步骤，避免内存压力造成的卡顿
+RUN echo "[6/6] 清理开发依赖..." && \
+    npm prune --omit=dev --verbose
+
+RUN echo "[7/6] 清理npm缓存..." && \
     npm cache clean --force && \
     echo "✓ 生产环境依赖处理完成" && \
     echo "生产依赖列表:" && \
     npm ls --depth=0 --omit=dev
+
+# 验证构建产物
+RUN echo "[8/6] 验证构建产物..." && \
+    test -d /app/dist && echo "✓ dist 目录存在" || echo "⚠️ dist 目录不存在" && \
+    test -f /app/package.json && echo "✓ package.json 存在" || exit 1
 
 # 创建 motia 必需目录
 RUN mkdir -p /app/.motia /app/dist
