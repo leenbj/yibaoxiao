@@ -75,19 +75,20 @@ fi
 # ==================== 初始化超级管理员 ====================
 echo ""
 echo "[3/4] 初始化超级管理员..."
-npx ts-node -e "
-const { initializeAdmin } = require('./src/db/init-admin');
-initializeAdmin().then(id => {
+npx ts-node --esm -e "
+import { initializeAdmin } from './src/db/init-admin.js';
+try {
+  const id = await initializeAdmin();
   if (id) {
     console.log('管理员初始化完成, ID:', id);
   } else {
     console.log('管理员初始化跳过（已存在或未配置）');
   }
   process.exit(0);
-}).catch(err => {
+} catch (err) {
   console.error('管理员初始化失败:', err.message);
   process.exit(0);
-});
+}
 " 2>/dev/null || {
     echo "ts-node 初始化失败，尝试直接插入..."
     # 备用方案：直接使用 SQL 插入管理员

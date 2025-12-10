@@ -21,6 +21,7 @@
     "@motiadev/core": "^0.13.0-beta.161",
     "@motiadev/plugin-endpoint": "^0.13.0-beta.161",
     "dotenv": "^17.2.3",
+    "drizzle-kit": "^0.31.7",
     "drizzle-orm": "^0.44.7",
     "motia": "^0.13.0-beta.161",
     "pg": "^8.16.3",
@@ -29,7 +30,6 @@
     "zod": "^4.1.12"
   },
   "devDependencies": {
-    "@types/pg": "^8.15.6",
-    "drizzle-kit": "^0.31.7"
+    "@types/pg": "^8.15.6"
   }
 }
