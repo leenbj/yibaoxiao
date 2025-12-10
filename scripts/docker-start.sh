@@ -60,22 +60,29 @@ echo "[2/4] 同步数据库表结构..."
 if [ "${MOTIA_DISABLE_DB_SYNC}" = "true" ]; then
     echo "已设置 MOTIA_DISABLE_DB_SYNC=true，跳过 drizzle 自动迁移"
 else
-    npx drizzle-kit push --force 2>/dev/null || {
-        echo "drizzle-kit push 失败，尝试使用 SQL 脚本初始化..."
+    echo "执行: npx drizzle-kit push --force"
+    if npx drizzle-kit push --force; then
+        echo "✓ 数据库表结构推送成功"
+    else
+        echo "❌ drizzle-kit push 失败，尝试使用 SQL 脚本初始化..."
         if [ -f "/app/scripts/init-db.sql" ]; then
+            echo "执行 SQL 脚本: /app/scripts/init-db.sql"
             PGPASSWORD="${POSTGRES_PASSWORD:-yibao123456}" psql \
                 -h postgres \
                 -U "${POSTGRES_USER:-yibao}" \
                 -d "${POSTGRES_DB:-yibao}" \
-                -f /app/scripts/init-db.sql 2>/dev/null || echo "SQL 初始化跳过"
+                -f /app/scripts/init-db.sql && echo "✓ SQL 初始化成功" || echo "⚠️ SQL 初始化失败（可能已初始化）"
+        else
+            echo "⚠️ /app/scripts/init-db.sql 不存在，跳过 SQL 初始化"
         fi
-    }
+    fi
 fi
 
 # ==================== 初始化超级管理员 ====================
 echo ""
 echo "[3/4] 初始化超级管理员..."
-npx ts-node --esm -e "
+echo "执行: ts-node 初始化脚本"
+if npx ts-node --esm -e "
 import { initializeAdmin } from './src/db/init-admin.js';
 try {
   const id = await initializeAdmin();
@@ -87,10 +94,12 @@ try {
   process.exit(0);
 } catch (err) {
   console.error('管理员初始化失败:', err.message);
-  process.exit(0);
+  process.exit(1);
 }
-" 2>/dev/null || {
-    echo "ts-node 初始化失败，尝试直接插入..."
+"; then
+    echo "✓ ts-node 初始化成功"
+else
+    echo "❌ ts-node 初始化失败，尝试直接使用 SQL 插入..."
     # 备用方案：直接使用 SQL 插入管理员
     PGPASSWORD="${POSTGRES_PASSWORD:-yibao123456}" psql \
         -h postgres \
@@ -98,8 +107,8 @@ try {
         -d "${POSTGRES_DB:-yibao}" \
         -c "INSERT INTO users (id, name, department, email, role, password, is_current, created_at, updated_at)
             VALUES ('user_wangbo', '${ADMIN_NAME}', '${ADMIN_DEPARTMENT}', '${ADMIN_EMAIL}', 'admin', '${ADMIN_PASSWORD}', FALSE, NOW(), NOW())
-            ON CONFLICT (email) DO UPDATE SET role = 'admin', updated_at = NOW();" 2>/dev/null || echo "管理员初始化跳过"
-}
+            ON CONFLICT (email) DO UPDATE SET role = 'admin', updated_at = NOW();" && echo "✓ SQL 直接插入成功" || echo "⚠️ SQL 直接插入失败（可能已初始化）"
+fi
 
 # ==================== 启动 Motia 服务 ====================
 echo ""

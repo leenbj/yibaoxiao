@@ -11,10 +11,18 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV NODE_OPTIONS="--max-old-space-size=512"
 
+# 打印Node和npm版本信息
+RUN echo "====== 构建环境信息 ======" && \
+    node --version && \
+    npm --version && \
+    echo ""
+
 # -------------------------------
 # 安装必备系统依赖
 # -------------------------------
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN echo "[1/5] 安装系统依赖..." && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
     python3 \
     make \
     g++ \
@@ -22,25 +30,45 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
     postgresql-client \
     netcat-openbsd \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* && \
+    echo "✓ 系统依赖安装完成"
 
 # -------------------------------
-# 安装依赖（严格模式）
+# 安装项目依赖（严格模式，完整输出）
 # -------------------------------
 COPY package*.json ./
-RUN NODE_ENV=development npm ci --include=dev --verbose \
-    && npm cache clean --force
+RUN echo "[2/5] 安装项目依赖（npm ci）..." && \
+    NODE_ENV=development npm ci --include=dev --verbose && \
+    echo "✓ 依赖安装完成" && \
+    echo "已安装的依赖:" && \
+    npm ls --depth=0 && \
+    npm cache clean --force
 
 # -------------------------------
-# 拷贝代码
+# 拷贝源代码
 # -------------------------------
 COPY . .
+RUN echo "[3/5] 验证源代码结构..." && \
+    ls -la / | grep -E "^d" && \
+    ls -la /app | head -20
 
-# 生成类型并预编译（若失败则直接中断），并剔除 dev 依赖减小体积
-RUN npm run generate-types \
-    && npm run build \
-    && npm prune --omit=dev \
-    && npm cache clean --force
+# 生成类型、编译、清理 dev 依赖
+RUN echo "[4/5] 生成TypeScript类型定义..." && \
+    npm run generate-types && \
+    echo "✓ 类型定义生成完成"
+
+RUN echo "[5/5] 编译Motia项目..." && \
+    npm run build && \
+    echo "✓ 项目编译完成" && \
+    echo "编译输出目录结构:" && \
+    find /app/dist -type f -name "*.js" | head -10 || echo "（dist目录为空或不存在）"
+
+RUN echo "[6/5] 清理dev依赖..." && \
+    npm prune --omit=dev && \
+    npm cache clean --force && \
+    echo "✓ 生产环境依赖处理完成" && \
+    echo "生产依赖列表:" && \
+    npm ls --depth=0 --omit=dev
 
 # 创建 motia 必需目录
 RUN mkdir -p /app/.motia /app/dist
