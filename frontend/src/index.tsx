@@ -326,11 +326,11 @@ const MainApp = ({ user, onLogout }: { user: AppUser; onLogout: () => void }) =>
 
   const handleReportAction = async (report: Report, action: 'save' | 'print') => {
     const userId = getUserId(user);
-    const status: 'draft' | 'submitted' | 'paid' = action === 'print' ? 'submitted' : 'draft';
+    const status: ReportStatus = action === 'print' ? 'submitted' : 'draft';
     const expenseStatus: 'pending' | 'processing' | 'done' = action === 'print' ? 'processing' : 'pending';
 
-    const newReport = { ...report, status };
-    let savedReport = newReport;
+    const newReport: Report = { ...report, status };
+    let savedReport: Report = newReport;
 
     console.warn('[保存报销单] 开始保存, action:', action, 'userId:', userId);
     console.warn('[保存报销单] userSnapshot:', JSON.stringify(newReport.userSnapshot));
@@ -353,7 +353,7 @@ const MainApp = ({ user, onLogout }: { user: AppUser; onLogout: () => void }) =>
       }) as { report: Report };
 
       console.warn('[保存报销单] 保存成功, id:', result.report?.id);
-      savedReport = result.report || { ...newReport, userId: DEFAULT_USER_ID };
+      savedReport = result.report || newReport;
       setReports(prev => [savedReport, ...prev]);
     } catch (error: any) {
       console.error('[保存报销单] 创建失败:', error?.message || error);
@@ -393,8 +393,8 @@ const MainApp = ({ user, onLogout }: { user: AppUser; onLogout: () => void }) =>
     const userId = getUserId(user);
     const status: ReportStatus = action === 'print' ? 'submitted' : 'draft';
 
-    const newLoan = { ...loan, status };
-    let savedLoan = newLoan;
+    const newLoan: LoanRecord = { ...loan, status };
+    let savedLoan: LoanRecord = newLoan;
 
     console.warn('[保存借款单] 开始保存, action:', action, 'userId:', userId);
     console.warn('[保存借款单] userSnapshot:', JSON.stringify(newLoan.userSnapshot));
@@ -417,7 +417,7 @@ const MainApp = ({ user, onLogout }: { user: AppUser; onLogout: () => void }) =>
       }) as { loan: LoanRecord };
 
       console.warn('[保存借款单] 保存成功, id:', result.loan?.id);
-      savedLoan = result.loan || { ...newLoan, userId: DEFAULT_USER_ID };
+      savedLoan = result.loan || newLoan;
       setLoans(prev => [savedLoan, ...prev]);
     } catch (error: any) {
       console.error('[保存借款单] 创建失败:', error?.message || error);

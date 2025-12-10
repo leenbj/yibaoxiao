@@ -39,6 +39,9 @@ export interface AIRecognitionResult {
   // Token 使用信息（可选）
   _tokenUsage?: TokenUsageInfo
   
+  // 数组格式结果（如打车明细等）
+  details?: Array<Record<string, any>>
+  
   // 通用字段
   title?: string
   approvalNumber?: string

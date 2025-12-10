@@ -7,7 +7,8 @@
  * - 变更时自动失效
  */
 
-import { Cache, type CacheConfig, type MutationOption } from 'drizzle-orm/cache/core';
+import { Cache, type MutationOption } from 'drizzle-orm/cache/core';
+import type { CacheConfig } from 'drizzle-orm/cache/core/types';
 
 interface CacheEntry {
   data: any[];

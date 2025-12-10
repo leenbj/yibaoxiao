@@ -77,6 +77,7 @@ export interface UserSettings {
  */
 export interface ExpenseItem {
   id: string;
+  userId?: string; // 关联用户ID（可选）
   amount: number;
   description: string;
   date: string; // ISO日期字符串

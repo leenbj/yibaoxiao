@@ -66,6 +66,7 @@ export const config: ApiRouteConfig = {
   responseSchema: {
     201: responseSchema,
     400: ErrorResponseSchema,
+    413: ErrorResponseSchema, // 请求体过大
   },
 }
 

@@ -293,18 +293,18 @@ export const LoanDetailView = ({ loan, onUpdate, onBack, autoPrint = false, onPr
                     <div className="max-w-[310mm] mx-auto space-y-8">
                         {/* 第一联：财务留存联 */}
                         <div className="bg-white shadow-lg">
-                            <LoanFormSheet data={editData} copyType="财务留存联" />
+                            <LoanFormSheet data={editData} sheetNumber={1} sheetName="财务留存联" showNote={true} />
                         </div>
 
                         {/* 第二联：员工留存联 */}
                         <div className="bg-white shadow-lg">
-                            <LoanFormSheet data={editData} copyType="员工留存联" />
+                            <LoanFormSheet data={editData} sheetNumber={2} sheetName="员工留存联" showNote={false} />
                         </div>
 
                         {/* 附件预览 */}
                         {attachments.map((attachment: any, index: number) => (
                             <div key={index} className="bg-white shadow-lg">
-                                <A4SingleAttachment attachment={attachment} />
+                                <A4SingleAttachment attachment={attachment} title={`附件 ${index + 1}`} index={index} />
                             </div>
                         ))}
                     </div>
@@ -315,18 +315,18 @@ export const LoanDetailView = ({ loan, onUpdate, onBack, autoPrint = false, onPr
             <div id="loan-print-content" className="hidden">
                 {/* 第一联：财务留存联 - 横版A4 */}
                 <div className="landscape-page print-page">
-                    <LoanFormSheet data={editData} copyType="财务留存联" />
+                    <LoanFormSheet data={editData} sheetNumber={1} sheetName="财务留存联" showNote={true} />
                 </div>
 
                 {/* 第二联：员工留存联 - 横版A4 */}
                 <div className="landscape-page print-page">
-                    <LoanFormSheet data={editData} copyType="员工留存联" />
+                    <LoanFormSheet data={editData} sheetNumber={2} sheetName="员工留存联" showNote={false} />
                 </div>
 
                 {/* 附件 - 竖版A4 */}
                 {attachments.map((attachment: any, index: number) => (
                     <div key={index} className="portrait-page print-page">
-                        <A4SingleAttachment attachment={attachment} />
+                        <A4SingleAttachment attachment={attachment} title={`附件 ${index + 1}`} index={index} />
                     </div>
                 ))}
             </div>
