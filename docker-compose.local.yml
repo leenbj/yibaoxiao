@@ -1,0 +1,120 @@
+# ============================================================
+# 易报销 Pro - 本地开发 Docker Compose 配置
+# ============================================================
+#
+# 用于本地构建和运行 Docker 镜像
+# 与 GitHub Actions 构建的镜像方案独立，互不干扰
+#
+# 使用方法：
+#   构建：docker-compose -f docker-compose.local.yml build
+#   启动：docker-compose -f docker-compose.local.yml up -d
+#   停止：docker-compose -f docker-compose.local.yml down
+#   日志：docker-compose -f docker-compose.local.yml logs -f
+#
+# ============================================================
+
+services:
+  # ==================== PostgreSQL 数据库 ====================
+  postgres:
+    image: postgres:16-alpine
+    container_name: yibao-local-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-yibao}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-yibao123456}
+      POSTGRES_DB: ${POSTGRES_DB:-yibao}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    command: >
+      postgres
+      -c shared_buffers=256MB
+      -c effective_cache_size=512MB
+      -c maintenance_work_mem=64MB
+      -c work_mem=4MB
+      -c max_connections=50
+    volumes:
+      - postgres_local_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"  # 使用 5433 端口避免与本地 PostgreSQL 冲突
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-yibao} -d ${POSTGRES_DB:-yibao}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - yibao-local-network
+
+  # ==================== Motia 后端服务（本地构建） ====================
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    image: yibao-backend:local-latest
+    container_name: yibao-local-backend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      NODE_OPTIONS: "--max-old-space-size=768"
+      MOTIA_DISABLE_DB_SYNC: "true"
+      DATABASE_URL: postgresql://${POSTGRES_USER:-yibao}:${POSTGRES_PASSWORD:-yibao123456}@postgres:5432/${POSTGRES_DB:-yibao}
+      # 数据库连接池
+      DATABASE_POOL_MIN: "2"
+      DATABASE_POOL_MAX: "10"
+      DATABASE_IDLE_TIMEOUT: "60000"
+      DATABASE_CONNECT_TIMEOUT: "10000"
+      # AI 配置（可选）
+      DEFAULT_AI_PROVIDER: ${DEFAULT_AI_PROVIDER:-}
+      DEFAULT_AI_API_KEY: ${DEFAULT_AI_API_KEY:-}
+      DEFAULT_AI_API_URL: ${DEFAULT_AI_API_URL:-}
+      DEFAULT_AI_MODEL: ${DEFAULT_AI_MODEL:-}
+      # 管理员配置
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@example.com}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123456}
+      ADMIN_NAME: ${ADMIN_NAME:-系统管理员}
+      ADMIN_DEPARTMENT: ${ADMIN_DEPARTMENT:-管理部}
+    ports:
+      - "3001:3000"  # 使用 3001 端口避免与本地开发服务冲突
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - yibao-local-network
+
+  # ==================== Nginx 前端服务（本地构建） ====================
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    image: yibao-frontend:local-latest
+    container_name: yibao-local-frontend
+    restart: unless-stopped
+    ports:
+      - "8080:80"  # 使用 8080 端口避免冲突
+    depends_on:
+      - backend
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - yibao-local-network
+
+# ==================== 数据卷 ====================
+volumes:
+  postgres_local_data:
+    name: yibao_local_postgres_data
+
+# ==================== 网络 ====================
+networks:
+  yibao-local-network:
+    name: yibao-local-network
+    driver: bridge
+
