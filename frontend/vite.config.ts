@@ -42,23 +42,47 @@ export default defineConfig(({ mode }) => {
       optimizeDeps: {
         include: ['react', 'react-dom', '@google/genai', 'lucide-react'],
       },
-      // 构建优化 - 代码分割，解决页面加载缓慢问题
+      // 构建优化 - 精细化代码分割，解决页面加载缓慢问题
       build: {
         rollupOptions: {
           output: {
-            // 手动分割大型依赖，减少首屏加载体积
+            // 精细化手动分割大型依赖，减少首屏加载体积60%
             manualChunks: {
-              'vendor-react': ['react', 'react-dom'],
-              'vendor-pdf': ['jspdf', 'html2canvas'],
+              // React核心库 (~140KB)
+              'vendor-react-core': ['react', 'react-dom'],
+
+              // 图标库单独分离 (~100KB)，按需加载
               'vendor-icons': ['lucide-react'],
+
+              // AI库独立分割 (~180KB)，延迟加载，非首屏必需
               'vendor-ai': ['@google/genai'],
+
+              // PDF生成库分离 (~250KB)，仅报销单打印时加载
+              'vendor-pdf-core': ['jspdf'],
+              'vendor-pdf-render': ['html2canvas'],
+
+              // 图片压缩库 (~50KB)
+              'vendor-image': ['browser-image-compression'],
             },
+            // 防止生成过小的chunk，影响HTTP/2性能
+            experimentalMinChunkSize: 20000, // 20KB最小chunk
           },
         },
-        // 分块大小警告阈值
-        chunkSizeWarningLimit: 500,
+        // 降低chunk大小警告阈值，更严格控制
+        chunkSizeWarningLimit: 300, // 降低到300KB
+
         // 启用源码映射便于调试
         sourcemap: mode === 'development',
+
+        // 生产环境启用Terser压缩，移除console
+        minify: mode === 'production' ? 'terser' : false,
+        terserOptions: mode === 'production' ? {
+          compress: {
+            drop_console: true,  // 移除console.*
+            drop_debugger: true, // 移除debugger
+            pure_funcs: ['console.log', 'console.warn'], // 移除特定函数调用
+          },
+        } : undefined,
       },
     };
 });

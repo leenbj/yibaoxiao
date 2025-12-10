@@ -1,0 +1,501 @@
+{
+  "config": {
+    "configFile": "/Users/wangbo/Desktop/AI建站/yibao/frontend/playwright.config.ts",
+    "rootDir": "/Users/wangbo/Desktop/AI建站/yibao/frontend/tests/e2e",
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {},
+    "preserveOutput": "always",
+    "reporter": [
+      [
+        "html",
+        null
+      ],
+      [
+        "json",
+        {
+          "outputFile": "test-results/results.json"
+        }
+      ],
+      [
+        "list",
+        null
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "quiet": false,
+    "projects": [
+      {
+        "outputDir": "/Users/wangbo/Desktop/AI建站/yibao/frontend/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {},
+        "id": "chromium",
+        "name": "chromium",
+        "testDir": "/Users/wangbo/Desktop/AI建站/yibao/frontend/tests/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 30000
+      },
+      {
+        "outputDir": "/Users/wangbo/Desktop/AI建站/yibao/frontend/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {},
+        "id": "performance",
+        "name": "performance",
+        "testDir": "/Users/wangbo/Desktop/AI建站/yibao/frontend/tests/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "**/performance.spec.ts"
+        ],
+        "timeout": 30000
+      }
+    ],
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.57.0",
+    "workers": 4,
+    "webServer": {
+      "command": "npm run dev",
+      "url": "http://localhost:5173",
+      "reuseExistingServer": true,
+      "timeout": 120000
+    }
+  },
+  "suites": [
+    {
+      "title": "data-persistence.spec.ts",
+      "file": "data-persistence.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "数据持久化测试",
+          "file": "data-persistence.spec.ts",
+          "line": 8,
+          "column": 6,
+          "specs": [
+            {
+              "title": "【核心bug修复】创建报销单后刷新页面，记录应该保留",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "055ed348f2bce68872a6-70ae4583117a966bb7ed",
+              "file": "data-persistence.spec.ts",
+              "line": 15,
+              "column": 3
+            },
+            {
+              "title": "API返回空数组时，本地新创建记录应该保留",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "055ed348f2bce68872a6-2154be541f214a9ed47f",
+              "file": "data-persistence.spec.ts",
+              "line": 95,
+              "column": 3
+            },
+            {
+              "title": "localStorage防抖写入应该减少写入频率",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "055ed348f2bce68872a6-fb3bd36cf118d3a1794e",
+              "file": "data-persistence.spec.ts",
+              "line": 166,
+              "column": 3
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "performance.spec.ts",
+      "file": "performance.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "性能基准测试",
+          "file": "performance.spec.ts",
+          "line": 9,
+          "column": 6,
+          "specs": [
+            {
+              "title": "首屏加载性能应满足基准要求",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "b15d6361b2fc38288977-9e777863a55463d1a8e6",
+              "file": "performance.spec.ts",
+              "line": 10,
+              "column": 3
+            },
+            {
+              "title": "慢速网络下首屏加载仍应可用",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "b15d6361b2fc38288977-44f3e048a2d282bfa28a",
+              "file": "performance.spec.ts",
+              "line": 74,
+              "column": 3
+            },
+            {
+              "title": "检查性能监控数据是否正常采集",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "b15d6361b2fc38288977-15acfa25668c40fef8d0",
+              "file": "performance.spec.ts",
+              "line": 96,
+              "column": 3
+            },
+            {
+              "title": "验证代码分割效果 - vendor chunks应该被正确分离",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "b15d6361b2fc38288977-ffeed2cf71a252490fbf",
+              "file": "performance.spec.ts",
+              "line": 139,
+              "column": 3
+            },
+            {
+              "title": "资源缓存策略验证",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "b15d6361b2fc38288977-583fbbe16b38029acafa",
+              "file": "performance.spec.ts",
+              "line": 174,
+              "column": 3
+            },
+            {
+              "title": "首屏加载性能应满足基准要求",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "performance",
+                  "projectName": "performance",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "b15d6361b2fc38288977-1c14adb916fe674dfc03",
+              "file": "performance.spec.ts",
+              "line": 10,
+              "column": 3
+            },
+            {
+              "title": "慢速网络下首屏加载仍应可用",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "performance",
+                  "projectName": "performance",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "b15d6361b2fc38288977-55d5b24df90aa4a16a35",
+              "file": "performance.spec.ts",
+              "line": 74,
+              "column": 3
+            },
+            {
+              "title": "检查性能监控数据是否正常采集",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "performance",
+                  "projectName": "performance",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "b15d6361b2fc38288977-b209d9aae12b139fb7ec",
+              "file": "performance.spec.ts",
+              "line": 96,
+              "column": 3
+            },
+            {
+              "title": "验证代码分割效果 - vendor chunks应该被正确分离",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "performance",
+                  "projectName": "performance",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "b15d6361b2fc38288977-bc6aad0fcfa8860f18b1",
+              "file": "performance.spec.ts",
+              "line": 139,
+              "column": 3
+            },
+            {
+              "title": "资源缓存策略验证",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "performance",
+                  "projectName": "performance",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "b15d6361b2fc38288977-c2b9340d11f65772313e",
+              "file": "performance.spec.ts",
+              "line": 174,
+              "column": 3
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "report-creation.spec.ts",
+      "file": "report-creation.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "报销单创建流程测试",
+          "file": "report-creation.spec.ts",
+          "line": 8,
+          "column": 6,
+          "specs": [
+            {
+              "title": "完整流程: 创建通用报销单并验证保存成功",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "8f7fa3a565de4480a647-4f11d7ce59f592215afd",
+              "file": "report-creation.spec.ts",
+              "line": 24,
+              "column": 3
+            },
+            {
+              "title": "验证报销单列表显示",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "8f7fa3a565de4480a647-2b5667c9bdd711072753",
+              "file": "report-creation.spec.ts",
+              "line": 82,
+              "column": 3
+            },
+            {
+              "title": "验证数据同步到localStorage",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "8f7fa3a565de4480a647-7c19e4d3057883628fa4",
+              "file": "report-creation.spec.ts",
+              "line": 129,
+              "column": 3
+            },
+            {
+              "title": "离线模式: 网络断开时仍可创建报销单",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "8f7fa3a565de4480a647-a813490739657053629e",
+              "file": "report-creation.spec.ts",
+              "line": 170,
+              "column": 3
+            },
+            {
+              "title": "多次快速创建不应导致数据丢失",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "8f7fa3a565de4480a647-d215fff589b1aa3eaab9",
+              "file": "report-creation.spec.ts",
+              "line": 234,
+              "column": 3
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2025-12-10T03:40:35.139Z",
+    "duration": 53.486999999999966,
+    "expected": 0,
+    "skipped": 18,
+    "unexpected": 0,
+    "flaky": 0
+  }
+}

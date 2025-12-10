@@ -4,7 +4,7 @@
  * UI 样式与原版 index.tsx 保持一致
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
   Home, Briefcase, Plus, FileText, Wallet, Plane,
@@ -17,6 +17,8 @@ import type {
 } from './types';
 import { DEFAULT_USER_ID, INITIAL_SETTINGS } from './constants';
 import { apiRequest } from './utils/api';
+import { debounce } from './utils/debounce';
+import { initPerformanceMonitoring, markPerformance, type PerformanceMetrics } from './utils/performance';
 
 // 导入模块化组件
 import { LoginView } from './components/auth/LoginView';
@@ -35,7 +37,21 @@ import { AppLogo } from './components/shared/AppLogo';
 
 import './index.css';
 
-// ============ 获取用户ID的辅助函数 ============
+// ============ 辅助函数 ============
+
+/**
+ * 判断记录是否为最近创建的本地记录(可能尚未同步到服务器)
+ * @param record 报销单或借款单记录
+ * @param maxAgeMs 最大年龄(毫秒),默认5分钟
+ * @returns 是否为最近创建的记录
+ */
+const isRecentlyCreated = (record: Report | LoanRecord, maxAgeMs = 5 * 60 * 1000): boolean => {
+  // Report使用createdDate, LoanRecord使用date
+  const dateStr = 'createdDate' in record ? record.createdDate : record.date;
+  const createdTime = new Date(dateStr).getTime();
+  return Date.now() - createdTime < maxAgeMs;
+};
+
 const getUserId = (user: AppUser | null): string => {
   return user?.id || DEFAULT_USER_ID;
 };
@@ -152,16 +168,50 @@ const MainApp = ({ user, onLogout }: { user: AppUser; onLogout: () => void }) =>
         
         console.log('[数据加载] API 返回: expenses=' + (apiExpenses?.length ?? 'null') + ', reports=' + (apiReports?.length ?? 'null') + ', loans=' + (apiLoans?.length ?? 'null'));
 
-        // 如果 API 成功返回数据（包括空数组），使用 API 数据
-        // 如果 API 失败（返回 null），保持本地数据
+        // ============ 智能数据合并逻辑 ============
+        // 策略: API成功时使用API数据,但保留本地新创建未同步的记录
+
+        // Expenses: 简单策略(无创建时间,直接使用API数据)
         if (apiExpenses !== null) {
           setExpenses(apiExpenses);
+        } else {
+          console.warn('[数据加载] Expenses API失败,保留本地缓存');
         }
+
+        // Reports: 智能合并策略
         if (apiReports !== null) {
-          setReports(apiReports);
+          // 查找本地有但API没有的最近记录(可能尚未同步)
+          const localOnlyReports = reports.filter(r =>
+            !apiReports.some((ar: Report) => ar.id === r.id) &&
+            isRecentlyCreated(r)
+          );
+
+          // 合并: API数据 + 本地待同步数据
+          setReports([...apiReports, ...localOnlyReports]);
+
+          if (localOnlyReports.length > 0) {
+            console.warn('[数据加载] 发现', localOnlyReports.length, '条待同步报销单');
+          }
+        } else {
+          console.warn('[数据加载] Reports API失败,保留本地缓存');
         }
+
+        // Loans: 智能合并策略
         if (apiLoans !== null) {
-          setLoans(apiLoans);
+          // 查找本地有但API没有的最近记录(可能尚未同步)
+          const localOnlyLoans = loans.filter(l =>
+            !apiLoans.some((al: LoanRecord) => al.id === l.id) &&
+            isRecentlyCreated(l)
+          );
+
+          // 合并: API数据 + 本地待同步数据
+          setLoans([...apiLoans, ...localOnlyLoans]);
+
+          if (localOnlyLoans.length > 0) {
+            console.warn('[数据加载] 发现', localOnlyLoans.length, '条待同步借款单');
+          }
+        } else {
+          console.warn('[数据加载] Loans API失败,保留本地缓存');
         }
 
         setSettings(prev => ({
@@ -179,11 +229,67 @@ const MainApp = ({ user, onLogout }: { user: AppUser; onLogout: () => void }) =>
     loadData();
   }, [user]);
 
-  // ============ 本地存储同步 ============
-  useEffect(() => localStorage.setItem('reimb_settings_v8', JSON.stringify(settings)), [settings]);
-  useEffect(() => localStorage.setItem('reimb_expenses_v1', JSON.stringify(expenses)), [expenses]);
-  useEffect(() => localStorage.setItem('reimb_reports_v1', JSON.stringify(reports)), [reports]);
-  useEffect(() => localStorage.setItem('reimb_loans_v1', JSON.stringify(loans)), [loans]);
+  // ============ 性能监控初始化 ============
+  useEffect(() => {
+    // 初始化性能监控(仅执行一次)
+    initPerformanceMonitoring((metrics: PerformanceMetrics) => {
+      console.log('[性能监控] 性能指标汇总:', metrics);
+
+      // TODO: 在生产环境中,将metrics上报到监控系统
+      // 例如: sendToAnalytics('performance', metrics);
+
+      // 临时存储到localStorage供开发调试
+      if (process.env.NODE_ENV === 'development') {
+        localStorage.setItem('perf_metrics', JSON.stringify({
+          ...metrics,
+          timestamp: Date.now(),
+          url: window.location.pathname,
+        }));
+      }
+    });
+
+    // 标记应用启动时间
+    markPerformance('app-start');
+  }, []); // 空依赖数组,只执行一次
+
+  // ============ 本地存储同步(防抖优化) ============
+  // 创建防抖保存函数(500ms内多次变更只写一次,提升性能)
+  const saveToLocalStorageDebounced = useCallback(
+    debounce((key: string, data: any) => {
+      localStorage.setItem(key, JSON.stringify(data));
+    }, 500),
+    []
+  );
+
+  // 使用防抖写入localStorage
+  useEffect(() => {
+    saveToLocalStorageDebounced('reimb_settings_v8', settings);
+  }, [settings, saveToLocalStorageDebounced]);
+
+  useEffect(() => {
+    saveToLocalStorageDebounced('reimb_expenses_v1', expenses);
+  }, [expenses, saveToLocalStorageDebounced]);
+
+  useEffect(() => {
+    saveToLocalStorageDebounced('reimb_reports_v1', reports);
+  }, [reports, saveToLocalStorageDebounced]);
+
+  useEffect(() => {
+    saveToLocalStorageDebounced('reimb_loans_v1', loans);
+  }, [loans, saveToLocalStorageDebounced]);
+
+  // 页面卸载时强制写入,防止数据丢失
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      localStorage.setItem('reimb_settings_v8', JSON.stringify(settings));
+      localStorage.setItem('reimb_expenses_v1', JSON.stringify(expenses));
+      localStorage.setItem('reimb_reports_v1', JSON.stringify(reports));
+      localStorage.setItem('reimb_loans_v1', JSON.stringify(loans));
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [settings, expenses, reports, loans]);
 
   // ============ 业务逻辑处理函数 ============
 

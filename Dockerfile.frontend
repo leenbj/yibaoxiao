@@ -10,7 +10,7 @@ WORKDIR /app
 
 COPY frontend/package*.json ./
 
-RUN npm ci --verbose
+RUN npm ci --verbose && npm cache clean --force
 
 COPY frontend/ ./
 
@@ -40,6 +40,9 @@ EXPOSE 80
 
 # 健康检查
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost/ || exit 1
+    CMD wget --no-verbose --tries=1 --spider http://localhost/health || exit 1
+
+USER nginx
 
 CMD ["nginx", "-g", "daemon off;"]
+

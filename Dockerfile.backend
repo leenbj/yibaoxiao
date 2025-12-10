@@ -14,28 +14,33 @@ ENV NODE_OPTIONS="--max-old-space-size=512"
 # -------------------------------
 # 安装必备系统依赖
 # -------------------------------
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     make \
     g++ \
     tini \
     wget \
     postgresql-client \
+    netcat-openbsd \
     && rm -rf /var/lib/apt/lists/*
 
 # -------------------------------
 # 安装依赖（严格模式）
 # -------------------------------
 COPY package*.json ./
-RUN npm ci --verbose && npm cache clean --force
+RUN NODE_ENV=development npm ci --include=dev --verbose \
+    && npm cache clean --force
 
 # -------------------------------
 # 拷贝代码
 # -------------------------------
 COPY . .
 
-# 生成类型（若失败则直接中断）
-RUN npm run generate-types
+# 生成类型并预编译（若失败则直接中断），并剔除 dev 依赖减小体积
+RUN npm run generate-types \
+    && npm run build \
+    && npm prune --omit=dev \
+    && npm cache clean --force
 
 # 创建 motia 必需目录
 RUN mkdir -p /app/.motia /app/dist
