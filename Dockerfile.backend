@@ -32,6 +32,7 @@ RUN echo "[1/5] 安装系统依赖..." && \
     wget \
     postgresql-client \
     netcat-openbsd \
+    procps \
     && rm -rf /var/lib/apt/lists/* && \
     echo "✓ 系统依赖安装完成"
 
@@ -63,7 +64,12 @@ RUN echo "[5/5] 编译Motia项目..." && \
     npm run build && \
     echo "✓ 项目编译完成" && \
     echo "编译输出目录结构:" && \
-    find /app/dist -type f -name "*.js" | head -10 || echo "（dist目录为空或不存在）"
+    find /app/dist -type f -name "*.js" | head -10 || echo "（dist目录为空或不存在）" && \
+    echo "清理后台进程..." && \
+    pkill -f "redis-memory-server" || true && \
+    pkill -f "redis-server" || true && \
+    sleep 2 && \
+    echo "✓ 后台进程已清理"
 
 # 分离清理步骤，避免内存压力造成的卡顿
 RUN echo "[6/6] 清理开发依赖..." && \
