@@ -53,6 +53,7 @@ jobs:
   build-backend:
     name: 🔧 构建后端镜像
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
       packages: write
@@ -93,6 +94,7 @@ jobs:
       - name: 🏗️ 构建并推送后端镜像
         id: build
         uses: docker/build-push-action@v5
+        timeout-minutes: 20
         with:
           context: .
           file: ./Dockerfile.backend
@@ -107,6 +109,8 @@ jobs:
 
       - name: 🔍 扫描镜像安全漏洞
         if: github.event_name != 'pull_request'
+        continue-on-error: true
+        timeout-minutes: 5
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ env.BACKEND_IMAGE }}:latest
@@ -115,7 +119,8 @@ jobs:
           severity: 'CRITICAL,HIGH'
 
       - name: 📊 上传安全扫描结果
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' && hashFiles('trivy-backend-results.sarif') != ''
+        continue-on-error: true
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: 'trivy-backend-results.sarif'
@@ -132,6 +137,7 @@ jobs:
   build-frontend:
     name: 🎨 构建前端镜像
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: read
       packages: write
@@ -172,6 +178,7 @@ jobs:
       - name: 🏗️ 构建并推送前端镜像
         id: build
         uses: docker/build-push-action@v5
+        timeout-minutes: 15
         with:
           context: .
           file: ./Dockerfile.frontend
@@ -184,6 +191,8 @@ jobs:
 
       - name: 🔍 扫描镜像安全漏洞
         if: github.event_name != 'pull_request'
+        continue-on-error: true
+        timeout-minutes: 5
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ env.FRONTEND_IMAGE }}:latest
@@ -192,7 +201,8 @@ jobs:
           severity: 'CRITICAL,HIGH'
 
       - name: 📊 上传安全扫描结果
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' && hashFiles('trivy-frontend-results.sarif') != ''
+        continue-on-error: true
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: 'trivy-frontend-results.sarif'

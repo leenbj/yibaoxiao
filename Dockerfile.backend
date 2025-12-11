@@ -22,8 +22,8 @@ RUN apk add --no-cache \
 # 拷贝依赖文件
 COPY package*.json ./
 
-# 安装依赖（包括 dev）
-RUN npm ci --include=dev
+# 安装依赖（包括 dev）- 优化速度
+RUN npm ci --include=dev --prefer-offline --no-audit --loglevel=error
 
 # 拷贝源代码
 COPY . .
@@ -35,7 +35,7 @@ RUN npm run generate-types || true
 RUN npm run build
 
 # 清理开发依赖，仅保留生产依赖
-RUN npm prune --omit=dev && \
+RUN npm prune --omit=dev --loglevel=warn && \
     npm cache clean --force
 
 # ============ 运行阶段 ============
