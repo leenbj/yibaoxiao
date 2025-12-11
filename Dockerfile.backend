@@ -1,119 +1,84 @@
 # ================================
-# 易报销 Pro - 后端 Dockerfile（宝塔 + Linux + 2核4G 服务器优化版）
-# 使用 node:20-slim 保证生产稳定性
+# 易报销 Pro - 后端 Dockerfile（优化版）
+# 多阶段构建 + 最小化基础镜像
 # ================================
 
-FROM node:20-slim
+# ============ 构建阶段 ============
+FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# 后端运行环境参数
-ENV NODE_ENV=production
-# 构建阶段内存配置：允许 GitHub Actions 传入更大的值以加快构建
-# 默认值较小，可通过 build-args 覆盖
-ENV NODE_OPTIONS="--max-old-space-size=1024"
+# 环境配置
+ENV NODE_ENV=development \
+    NODE_OPTIONS="--max-old-space-size=1024"
 
-# 打印Node和npm版本信息
-RUN echo "====== 构建环境信息 ======" && \
-    node --version && \
-    npm --version && \
-    echo ""
-
-# -------------------------------
-# 安装必备系统依赖
-# -------------------------------
-RUN echo "[1/5] 安装系统依赖..." && \
-    apt-get update && \
-    apt-get install -y --no-install-recommends \
+# 安装构建依赖（仅在构建阶段需要）
+RUN apk add --no-cache \
     python3 \
     make \
     g++ \
-    tini \
-    wget \
-    postgresql-client \
-    netcat-openbsd \
-    procps \
-    && rm -rf /var/lib/apt/lists/* && \
-    echo "✓ 系统依赖安装完成"
+    tini
 
-# -------------------------------
-# 安装项目依赖（严格模式，完整输出）
-# -------------------------------
+# 拷贝依赖文件
 COPY package*.json ./
-RUN echo "[2/5] 安装项目依赖（npm ci）..." && \
-    NODE_ENV=development npm ci --include=dev --verbose && \
-    echo "✓ 依赖安装完成" && \
-    echo "已安装的依赖:" && \
-    npm ls --depth=0 && \
+
+# 安装依赖（包括 dev）
+RUN npm ci --include=dev
+
+# 拷贝源代码
+COPY . .
+
+# 生成类型定义（Motia 需要）
+RUN npm run generate-types || true
+
+# 编译项目
+RUN npm run build
+
+# 清理开发依赖，仅保留生产依赖
+RUN npm prune --omit=dev && \
     npm cache clean --force
 
-# -------------------------------
-# 拷贝源代码
-# -------------------------------
-COPY . .
-RUN echo "[3/5] 验证源代码结构..." && \
-    ls -la / | grep -E "^d" && \
-    ls -la /app | head -20
+# ============ 运行阶段 ============
+FROM node:20-alpine
 
-# 设置环境变量，让 Motia 知道这是 CI 环境
-ENV CI=true
+WORKDIR /app
 
-# 创建清理脚本（确保 Redis 进程被强制终止）
-RUN echo '#!/bin/sh' > /tmp/cleanup-redis.sh && \
-    echo 'echo "Cleaning up Redis processes..."' >> /tmp/cleanup-redis.sh && \
-    echo 'for pid in $(ps aux | grep -E "redis|memory-server" | grep -v grep | awk "{print \$2}"); do' >> /tmp/cleanup-redis.sh && \
-    echo '  echo "Killing process $pid"' >> /tmp/cleanup-redis.sh && \
-    echo '  kill -9 $pid 2>/dev/null || true' >> /tmp/cleanup-redis.sh && \
-    echo 'done' >> /tmp/cleanup-redis.sh && \
-    echo 'sleep 1' >> /tmp/cleanup-redis.sh && \
-    echo 'echo "Cleanup done"' >> /tmp/cleanup-redis.sh && \
-    chmod +x /tmp/cleanup-redis.sh
+# 环境配置
+ENV NODE_ENV=production \
+    NODE_OPTIONS="--max-old-space-size=512"
 
-# 生成类型、编译、清理 dev 依赖
-# 注意：使用 ; 而不是 && 确保清理脚本始终执行
-RUN echo "[4/5] 生成TypeScript类型定义..." && \
-    npm run generate-types ; \
-    EXIT_CODE=$? ; \
-    /tmp/cleanup-redis.sh ; \
-    if [ $EXIT_CODE -ne 0 ]; then echo "❌ generate-types 失败"; exit 1; fi ; \
-    echo "✓ 类型定义生成完成"
+# 创建非 root 用户（安全最佳实践）
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S nodejs -u 1001
 
-RUN echo "[5/5] 编译Motia项目..." && \
-    npm run build ; \
-    EXIT_CODE=$? ; \
-    /tmp/cleanup-redis.sh ; \
-    if [ $EXIT_CODE -ne 0 ]; then echo "❌ build 失败"; exit 1; fi ; \
-    echo "✓ 项目编译完成" && \
-    echo "编译输出目录结构:" && \
-    find /app/dist -type f -name "*.js" | head -10 || echo "（dist目录为空或不存在）"
+# 仅在生产阶段安装必要的依赖
+RUN apk add --no-cache \
+    tini \
+    wget \
+    postgresql-client
 
-# 分离清理步骤，避免内存压力造成的卡顿
-RUN echo "[6/6] 清理开发依赖..." && \
-    npm prune --omit=dev --verbose
+# 从构建阶段拷贝已编译的内容
+COPY --from=builder --chown=nodejs:nodejs /app/node_modules ./node_modules
+COPY --from=builder --chown=nodejs:nodejs /app/dist ./dist
+COPY --from=builder --chown=nodejs:nodejs /app/package*.json ./
+COPY --from=builder --chown=nodejs:nodejs /app/.motia ./.motia
+COPY --chown=nodejs:nodejs scripts/docker-start.sh /app/scripts/
 
-RUN echo "[7/6] 清理npm缓存..." && \
-    npm cache clean --force && \
-    echo "✓ 生产环境依赖处理完成" && \
-    echo "生产依赖列表:" && \
-    npm ls --depth=0 --omit=dev
+# 确保脚本有执行权限
+RUN chmod +x /app/scripts/docker-start.sh
 
-# 验证构建产物
-RUN echo "[8/6] 验证构建产物..." && \
-    test -d /app/dist && echo "✓ dist 目录存在" || echo "⚠️ dist 目录不存在" && \
-    test -f /app/package.json && echo "✓ package.json 存在" || exit 1
-
-# 创建 motia 必需目录
-RUN mkdir -p /app/.motia /app/dist
+# 切换到非 root 用户
+USER nodejs
 
 # 端口
 EXPOSE 3000
 
-# 健康检查
-HEALTHCHECK --interval=60s --timeout=10s --start-period=60s --retries=3 \
+# 健康检查（改进版，减少超时）
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
     CMD wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1
 
-# 启动管理器
+# 启动管理器（使用 tini 管理进程）
 ENTRYPOINT ["tini", "--"]
 
-# 启动后端
+# 启动命令
 CMD ["/app/scripts/docker-start.sh"]

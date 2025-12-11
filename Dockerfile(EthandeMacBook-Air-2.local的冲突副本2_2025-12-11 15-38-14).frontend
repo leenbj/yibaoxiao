@@ -1,0 +1,61 @@
+# ================================
+# 易报销 Pro - 前端 Dockerfile（优化版）
+# 多阶段构建 + Nginx Alpine + 缓存优化
+# ================================
+
+# ============ 构建阶段 ============
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+# 仅拷贝依赖文件（利用 Docker 层缓存）
+COPY frontend/package*.json ./
+
+# 安装依赖
+RUN npm ci --prefer-offline --no-audit && \
+    npm cache clean --force
+
+# 拷贝源代码
+COPY frontend/ ./
+
+# 构建应用（使用生产模式优化）
+RUN npm run build
+
+# ============ 生产阶段（Nginx） ============
+FROM nginx:1.27-alpine
+
+# 安全：创建非特权用户（如果需要）
+RUN addgroup -g 101 -S nginx 2>/dev/null || true && \
+    adduser -S -D -H -u 101 -h /var/cache/nginx -s /sbin/nologin -G nginx -g nginx nginx 2>/dev/null || true
+
+# 删除默认配置
+RUN rm -f /etc/nginx/conf.d/default.conf
+
+# 拷贝优化的 Nginx 配置
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+
+# 从构建阶段拷贝静态文件
+COPY --from=builder /app/dist /usr/share/nginx/html
+
+# 优化权限设置
+RUN chown -R nginx:nginx /usr/share/nginx/html && \
+    chown -R nginx:nginx /var/cache/nginx && \
+    chown -R nginx:nginx /var/log/nginx && \
+    touch /var/run/nginx.pid && \
+    chown nginx:nginx /var/run/nginx.pid && \
+    chmod -R 755 /usr/share/nginx/html
+
+# 暴露端口
+EXPOSE 80
+
+# 健康检查（优化版）
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD wget --no-verbose --tries=1 --spider http://localhost/health || exit 1
+
+# 使用非 root 用户运行
+USER nginx
+
+# 启动 Nginx
+CMD ["nginx", "-g", "daemon off;"]
+
+

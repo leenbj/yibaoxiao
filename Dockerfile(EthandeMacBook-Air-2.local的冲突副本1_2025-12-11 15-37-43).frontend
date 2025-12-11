@@ -1,0 +1,50 @@
+# ================================
+# 易报销 Pro - 前端 Dockerfile（宝塔 + Linux + 2核4G 优化版）
+# 使用 Node Slim 构建 + Nginx 超轻量运行
+# ================================
+
+# ============ 构建阶段 ============
+FROM node:20-slim AS builder
+
+WORKDIR /app
+
+COPY frontend/package*.json ./
+
+RUN npm ci --verbose && npm cache clean --force
+
+COPY frontend/ ./
+
+RUN npm run build
+
+
+# ============ 生产阶段（nginx） ============
+FROM nginx:1.27-alpine
+
+# 删除默认配置
+RUN rm /etc/nginx/conf.d/default.conf
+
+# 拷贝自定义配置
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+
+# 拷贝产物
+COPY --from=builder /app/dist /usr/share/nginx/html
+
+# 权限
+RUN chown -R nginx:nginx /usr/share/nginx/html \
+    && chown -R nginx:nginx /var/cache/nginx \
+    && chown -R nginx:nginx /var/log/nginx \
+    && touch /var/run/nginx.pid \
+    && chown nginx:nginx /var/run/nginx.pid
+
+EXPOSE 80
+
+# 健康检查
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+    CMD wget --no-verbose --tries=1 --spider http://localhost/health || exit 1
+
+USER nginx
+
+CMD ["nginx", "-g", "daemon off;"]
+
+
+
