@@ -70,7 +70,7 @@ jobs:
             type=sha,prefix=,format=short
 
       - name: 构建并推送后端镜像
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v4
         with:
           context: .
           file: ./Dockerfile.backend
@@ -78,7 +78,6 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           platforms: linux/amd64
-          provenance: false
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -118,7 +117,7 @@ jobs:
             type=sha,prefix=,format=short
 
       - name: 构建并推送前端镜像
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v4
         with:
           context: .
           file: ./Dockerfile.frontend
@@ -126,7 +125,6 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           platforms: linux/amd64
-          provenance: false
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
