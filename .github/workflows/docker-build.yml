@@ -1,25 +1,17 @@
 # ============================================================
-# 易报销 Pro - Docker 镜像构建工作流（优化版）
+# 易报销 Pro - GitHub Actions Docker 镜像构建工作流
 # ============================================================
 #
 # 触发条件：
 #   - 推送到 main 分支
 #   - 创建 tag（如 v1.0.0）
-#   - Pull Request（仅构建不推送）
 #   - 手动触发（workflow_dispatch）
-#
-# 优化特性：
-#   - 并行构建后端和前端
-#   - GitHub Actions 缓存加速
-#   - 镜像安全扫描（Trivy）
-#   - 构建时间和大小报告
-#   - 多平台支持（amd64/arm64）
 #
 # 镜像仓库：GitHub Container Registry (ghcr.io)
 #
 # ============================================================
 
-name: 🚀 Build and Push Docker Images
+name: Build and Push Docker Images
 
 on:
   push:
@@ -27,50 +19,37 @@ on:
       - main
     tags:
       - 'v*'
-  pull_request:
-    branches:
-      - main
   workflow_dispatch:
     inputs:
       image_tag:
         description: '镜像标签（默认: latest）'
         required: false
         default: 'latest'
-      platforms:
-        description: '构建平台（linux/amd64 或 linux/amd64,linux/arm64）'
-        required: false
-        default: 'linux/amd64'
 
 env:
   # GitHub Container Registry 配置
   REGISTRY: ghcr.io
-  # 镜像名称（自动转小写）
+  # 镜像名称（使用仓库所有者，自动转小写）
   BACKEND_IMAGE: ghcr.io/${{ github.repository_owner }}/yibaoxiao-backend
   FRONTEND_IMAGE: ghcr.io/${{ github.repository_owner }}/yibaoxiao-frontend
 
 jobs:
   # ==================== 构建后端镜像 ====================
   build-backend:
-    name: 🔧 构建后端镜像
+    name: 构建后端镜像
     runs-on: ubuntu-latest
-    timeout-minutes: 30
     permissions:
       contents: read
       packages: write
-      security-events: write
 
     steps:
-      - name: 📥 检出代码
+      - name: 检出代码
         uses: actions/checkout@v4
 
-      - name: 🔧 设置 Docker Buildx
+      - name: 设置 Docker Buildx
         uses: docker/setup-buildx-action@v3
-        with:
-          driver-opts: |
-            image=moby/buildkit:latest
-            network=host
 
-      - name: 🔐 登录 GitHub Container Registry
+      - name: 登录 GitHub Container Registry
         if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
@@ -78,7 +57,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: 🏷️ 提取镜像元数据
+      - name: 提取镜像元数据
         id: meta
         uses: docker/metadata-action@v5
         with:
@@ -89,72 +68,35 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=sha,prefix=,format=short
-            type=ref,event=pr
 
-      - name: 🏗️ 构建并推送后端镜像
-        id: build
+      - name: 构建并推送后端镜像
         uses: docker/build-push-action@v5
-        timeout-minutes: 20
         with:
           context: .
           file: ./Dockerfile.backend
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          platforms: ${{ github.event.inputs.platforms || 'linux/amd64' }}
-          cache-from: type=gha,scope=backend
-          cache-to: type=gha,mode=max,scope=backend
-          build-args: |
-            NODE_OPTIONS=--max-old-space-size=1024
+          platforms: linux/amd64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
-      - name: 🔍 扫描镜像安全漏洞
-        if: github.event_name != 'pull_request'
-        continue-on-error: true
-        timeout-minutes: 5
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: ${{ env.BACKEND_IMAGE }}:latest
-          format: 'sarif'
-          output: 'trivy-backend-results.sarif'
-          severity: 'CRITICAL,HIGH'
-
-      - name: 📊 上传安全扫描结果
-        if: github.event_name != 'pull_request' && hashFiles('trivy-backend-results.sarif') != ''
-        continue-on-error: true
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: 'trivy-backend-results.sarif'
-          category: 'backend-image'
-
-      - name: 📈 镜像信息报告
-        run: |
-          echo "### 🔧 后端镜像构建完成" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**镜像标签:** \`${{ steps.meta.outputs.tags }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "**平台:** \`${{ github.event.inputs.platforms || 'linux/amd64' }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "**构建ID:** \`${{ steps.build.outputs.imageid }}\`" >> $GITHUB_STEP_SUMMARY
   # ==================== 构建前端镜像 ====================
   build-frontend:
-    name: 🎨 构建前端镜像
+    name: 构建前端镜像
     runs-on: ubuntu-latest
-    timeout-minutes: 20
     permissions:
       contents: read
       packages: write
-      security-events: write
 
     steps:
-      - name: 📥 检出代码
+      - name: 检出代码
         uses: actions/checkout@v4
 
-      - name: 🔧 设置 Docker Buildx
+      - name: 设置 Docker Buildx
         uses: docker/setup-buildx-action@v3
-        with:
-          driver-opts: |
-            image=moby/buildkit:latest
-            network=host
 
-      - name: 🔐 登录 GitHub Container Registry
+      - name: 登录 GitHub Container Registry
         if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
@@ -162,7 +104,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: 🏷️ 提取镜像元数据
+      - name: 提取镜像元数据
         id: meta
         uses: docker/metadata-action@v5
         with:
@@ -173,71 +115,41 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=sha,prefix=,format=short
-            type=ref,event=pr
 
-      - name: 🏗️ 构建并推送前端镜像
-        id: build
+      - name: 构建并推送前端镜像
         uses: docker/build-push-action@v5
-        timeout-minutes: 15
         with:
           context: .
           file: ./Dockerfile.frontend
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          platforms: ${{ github.event.inputs.platforms || 'linux/amd64' }}
-          cache-from: type=gha,scope=frontend
-          cache-to: type=gha,mode=max,scope=frontend
-
-      - name: 🔍 扫描镜像安全漏洞
-        if: github.event_name != 'pull_request'
-        continue-on-error: true
-        timeout-minutes: 5
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: ${{ env.FRONTEND_IMAGE }}:latest
-          format: 'sarif'
-          output: 'trivy-frontend-results.sarif'
-          severity: 'CRITICAL,HIGH'
-
-      - name: 📊 上传安全扫描结果
-        if: github.event_name != 'pull_request' && hashFiles('trivy-frontend-results.sarif') != ''
-        continue-on-error: true
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: 'trivy-frontend-results.sarif'
-          category: 'frontend-image'
-
-      - name: 📈 镜像信息报告
-        run: |
-          echo "### 🎨 前端镜像构建完成" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**镜像标签:** \`${{ steps.meta.outputs.tags }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "**平台:** \`${{ github.event.inputs.platforms || 'linux/amd64' }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "**构建ID:** \`${{ steps.build.outputs.imageid }}\`" >> $GITHUB_STEP_SUMMARY
+          platforms: linux/amd64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
   # ==================== 构建完成报告 ====================
   report:
-    name: 📊 构建报告
+    name: 构建报告
     runs-on: ubuntu-latest
     needs: [build-backend, build-frontend]
     if: always()
 
     steps:
-      - name: 📋 生成构建报告
+      - name: 生成构建报告
         run: |
-          echo "## 🚀 易报销 Pro - Docker 镜像构建报告" >> $GITHUB_STEP_SUMMARY
+          echo "## 易报销 Pro - Docker 镜像构建报告" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 构建状态" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| 组件 | 状态 | 镜像 |" >> $GITHUB_STEP_SUMMARY
           echo "|------|------|------|" >> $GITHUB_STEP_SUMMARY
-          echo "| 🔧 后端 | ${{ needs.build-backend.result == 'success' && '✅ 成功' || '❌ 失败' }} | \`${{ env.BACKEND_IMAGE }}:latest\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| 🎨 前端 | ${{ needs.build-frontend.result == 'success' && '✅ 成功' || '❌ 失败' }} | \`${{ env.FRONTEND_IMAGE }}:latest\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| 后端 | ${{ needs.build-backend.result == 'success' && '✅ 成功' || '❌ 失败' }} | \`${{ env.BACKEND_IMAGE }}:latest\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| 前端 | ${{ needs.build-frontend.result == 'success' && '✅ 成功' || '❌ 失败' }} | \`${{ env.FRONTEND_IMAGE }}:latest\` |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
           if [[ "${{ needs.build-backend.result }}" == "success" && "${{ needs.build-frontend.result }}" == "success" ]]; then
-            echo "### 🎉 部署命令" >> $GITHUB_STEP_SUMMARY
+            echo "### 部署命令" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo '```bash' >> $GITHUB_STEP_SUMMARY
             echo "# 拉取最新镜像" >> $GITHUB_STEP_SUMMARY
@@ -248,12 +160,6 @@ jobs:
             echo "docker-compose -f docker-compose.prod.yml pull" >> $GITHUB_STEP_SUMMARY
             echo "docker-compose -f docker-compose.prod.yml up -d" >> $GITHUB_STEP_SUMMARY
             echo '```' >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "### 📊 镜像信息" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "- **仓库:** GitHub Container Registry (ghcr.io)" >> $GITHUB_STEP_SUMMARY
-            echo "- **可见性:** 根据仓库设置（首次需在 Packages 中设置为 Public）" >> $GITHUB_STEP_SUMMARY
-            echo "- **平台:** linux/amd64" >> $GITHUB_STEP_SUMMARY
           else
             echo "### ⚠️ 构建失败" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
