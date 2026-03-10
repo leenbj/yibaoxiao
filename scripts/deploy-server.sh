@@ -46,7 +46,6 @@ if [ -z "$DOCKER_USERNAME" ]; then
     fi
 fi
 
-BACKEND_IMAGE="${DOCKER_USERNAME}/yibao-backend"
 FRONTEND_IMAGE="${DOCKER_USERNAME}/yibao-frontend"
 
 info "Docker 用户名: $DOCKER_USERNAME"
@@ -90,74 +89,31 @@ info "生成 Docker Compose 配置..."
 
 cat > docker-compose.yml << EOF
 # ============================================================
-# 易报销 Pro - 生产环境部署配置
+# 易报销 Pro - 生产环境部署配置（Supabase Cloud Backend）
 # ============================================================
 
 version: '3.8'
 
 services:
-  # PostgreSQL 数据库
-  postgres:
-    image: postgres:15-alpine
-    container_name: yibao-postgres
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: \${POSTGRES_USER:-yibao}
-      POSTGRES_PASSWORD: \${POSTGRES_PASSWORD:-yibao123456}
-      POSTGRES_DB: \${POSTGRES_DB:-yibao}
-    volumes:
-      - ./data/postgres:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U \${POSTGRES_USER:-yibao}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - yibao-network
-
-  # 后端服务
-  backend:
-    image: ${BACKEND_IMAGE}:\${IMAGE_TAG:-latest}
-    container_name: yibao-backend
-    restart: unless-stopped
-    depends_on:
-      postgres:
-        condition: service_healthy
-    environment:
-      NODE_ENV: production
-      DATABASE_URL: postgres://\${POSTGRES_USER:-yibao}:\${POSTGRES_PASSWORD:-yibao123456}@postgres:5432/\${POSTGRES_DB:-yibao}
-      ADMIN_EMAIL: \${ADMIN_EMAIL:-wangbo@knet.cn}
-      ADMIN_PASSWORD: \${ADMIN_PASSWORD:-123456}
-      ADMIN_NAME: \${ADMIN_NAME:-王波}
-      ADMIN_DEPARTMENT: \${ADMIN_DEPARTMENT:-管理部}
-    ports:
-      - "3000:3000"
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
-      interval: 30s
-      timeout: 10s
-      start_period: 60s
-      retries: 3
-    networks:
-      - yibao-network
-
   # 前端服务
   frontend:
     image: ${FRONTEND_IMAGE}:\${IMAGE_TAG:-latest}
     container_name: yibao-frontend
     restart: unless-stopped
-    depends_on:
-      - backend
     ports:
-      - "80:80"
-    networks:
-      - yibao-network
-
-volumes:
-  postgres_data:
+      - "80:8080"
+    environment:
+      - VITE_SUPABASE_URL=\${VITE_SUPABASE_URL}
+      - VITE_SUPABASE_ANON_KEY=\${VITE_SUPABASE_ANON_KEY}
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 10s
+      retries: 3
 
 networks:
-  yibao-network:
+  default:
     driver: bridge
 EOF
 
@@ -168,25 +124,18 @@ if [ ! -f ".env" ]; then
     info "生成环境变量配置..."
     cat > .env << 'EOF'
 # ============================================================
-# 易报销 Pro - 环境变量配置
+# 易报销 Pro - 环境变量配置（Supabase Cloud Backend）
 # ============================================================
 
 # 镜像版本
 IMAGE_TAG=latest
 
-# 数据库配置
-POSTGRES_USER=yibao
-POSTGRES_PASSWORD=yibao123456
-POSTGRES_DB=yibao
-
-# 管理员配置
-ADMIN_EMAIL=wangbo@knet.cn
-ADMIN_PASSWORD=123456
-ADMIN_NAME=王波
-ADMIN_DEPARTMENT=管理部
+# Supabase 配置（请修改为您的 Supabase 项目配置）
+VITE_SUPABASE_URL=https://your-project.supabase.co
+VITE_SUPABASE_ANON_KEY=your-anon-key
 EOF
     success ".env 配置文件已生成"
-    warn "请根据需要修改 .env 文件中的配置"
+    warn "请修改 .env 文件中的 Supabase 配置"
 else
     info ".env 文件已存在，跳过生成"
 fi
@@ -233,11 +182,10 @@ SERVER_IP=$(curl -s ifconfig.me 2>/dev/null || hostname -I | awk '{print $1}')
 
 success "部署目录: $DEPLOY_DIR"
 success "前端地址: http://${SERVER_IP}:80"
-success "后端地址: http://${SERVER_IP}:3000"
 echo ""
-echo "默认管理员账号："
-echo "  邮箱: wangbo@knet.cn"
-echo "  密码: 123456"
+echo "后端服务: Supabase Cloud"
+echo ""
+echo "请使用您的 Supabase 账号登录系统"
 echo ""
 echo "============================================"
 echo "  📋 常用命令"

@@ -2,7 +2,7 @@
 # ============================================================
 # 易报销 Pro - 本地构建并推送到 Docker Hub
 # ============================================================
-# 
+#
 # 使用方法：
 #   ./scripts/build-and-push.sh [DOCKER_USERNAME]
 #
@@ -47,16 +47,15 @@ if [ -z "$DOCKER_USERNAME" ]; then
     fi
 fi
 
-BACKEND_IMAGE="${DOCKER_USERNAME}/yibao-backend"
 FRONTEND_IMAGE="${DOCKER_USERNAME}/yibao-frontend"
 
 echo ""
 echo "============================================"
 echo "  易报销 Pro - 本地构建并推送"
+echo "  后端: Supabase Cloud"
 echo "============================================"
 echo ""
 info "Docker 用户名: $DOCKER_USERNAME"
-info "后端镜像: $BACKEND_IMAGE:$IMAGE_TAG"
 info "前端镜像: $FRONTEND_IMAGE:$IMAGE_TAG"
 echo ""
 
@@ -92,23 +91,18 @@ fi
 docker buildx use yibao-builder
 success "构建器准备就绪"
 
-# ==================== 构建后端镜像 ====================
-echo ""
-info "开始构建后端镜像（linux/amd64）..."
-info "这可能需要 5-10 分钟..."
+# ==================== 读取环境变量 ====================
+info "读取 Supabase 配置..."
 
 cd "$(dirname "$0")/.."
 
-docker buildx build \
-    --platform linux/amd64 \
-    --file Dockerfile.backend \
-    --tag "${BACKEND_IMAGE}:${IMAGE_TAG}" \
-    --tag "${BACKEND_IMAGE}:latest" \
-    --push \
-    --progress=plain \
-    .
-
-success "后端镜像构建并推送完成！"
+# 从 frontend/.env 读取配置
+if [ -f "frontend/.env" ]; then
+    export $(grep -v '^#' frontend/.env | xargs)
+    info "Supabase URL: ${VITE_SUPABASE_URL}"
+else
+    warn "未找到 frontend/.env 文件，请确保在构建时传递环境变量"
+fi
 
 # ==================== 构建前端镜像 ====================
 echo ""
@@ -118,6 +112,8 @@ info "这可能需要 3-5 分钟..."
 docker buildx build \
     --platform linux/amd64 \
     --file Dockerfile.frontend \
+    --build-arg VITE_SUPABASE_URL="${VITE_SUPABASE_URL}" \
+    --build-arg VITE_SUPABASE_ANON_KEY="${VITE_SUPABASE_ANON_KEY}" \
     --tag "${FRONTEND_IMAGE}:${IMAGE_TAG}" \
     --tag "${FRONTEND_IMAGE}:latest" \
     --push \
@@ -132,8 +128,9 @@ echo "============================================"
 echo "  🎉 构建完成！"
 echo "============================================"
 echo ""
-success "后端镜像: ${BACKEND_IMAGE}:${IMAGE_TAG}"
 success "前端镜像: ${FRONTEND_IMAGE}:${IMAGE_TAG}"
+echo ""
+echo "后端服务: Supabase Cloud"
 echo ""
 echo "============================================"
 echo "  📋 服务器部署步骤"
@@ -141,15 +138,14 @@ echo "============================================"
 echo ""
 echo "1. 将以下文件上传到服务器："
 echo "   - docker-compose.hub.yml"
-echo "   - .env.production（从 .env.production.example 复制并修改）"
+echo "   - .env（配置 Supabase URL 和 Key）"
 echo ""
 echo "2. 在服务器上执行："
 echo "   docker-compose -f docker-compose.hub.yml pull"
 echo "   docker-compose -f docker-compose.hub.yml up -d"
 echo ""
 echo "3. 访问："
-echo "   - 前端: http://服务器IP:80"
-echo "   - 后端: http://服务器IP:3000"
+echo "   前端: http://服务器IP:80"
 echo ""
 echo "============================================"
 
@@ -158,128 +154,38 @@ info "生成服务器部署配置..."
 
 cat > docker-compose.hub.yml << EOF
 # ============================================================
-# 易报销 Pro - Docker Hub 部署配置
+# 易报销 Pro - Docker Hub 部署配置（Supabase Cloud Backend）
 # ============================================================
-# 
+#
 # 使用方法：
-#   1. 复制 .env.production.example 为 .env.production
-#   2. 修改 .env.production 中的配置
-#   3. 运行: docker-compose -f docker-compose.hub.yml up -d
+#   1. 创建 .env 文件配置 Supabase
+#   2. 运行: docker-compose -f docker-compose.hub.yml up -d
 #
 # ============================================================
 
 version: '3.8'
 
 services:
-  # PostgreSQL 数据库
-  postgres:
-    image: postgres:15-alpine
-    container_name: yibao-postgres
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: \${POSTGRES_USER:-yibao}
-      POSTGRES_PASSWORD: \${POSTGRES_PASSWORD:-yibao123456}
-      POSTGRES_DB: \${POSTGRES_DB:-yibao}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U \${POSTGRES_USER:-yibao}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - yibao-network
-
-  # 后端服务
-  backend:
-    image: ${BACKEND_IMAGE}:\${IMAGE_TAG:-latest}
-    container_name: yibao-backend
-    restart: unless-stopped
-    depends_on:
-      postgres:
-        condition: service_healthy
-    environment:
-      NODE_ENV: production
-      DATABASE_URL: postgres://\${POSTGRES_USER:-yibao}:\${POSTGRES_PASSWORD:-yibao123456}@postgres:5432/\${POSTGRES_DB:-yibao}
-      ADMIN_EMAIL: \${ADMIN_EMAIL:-wangbo@knet.cn}
-      ADMIN_PASSWORD: \${ADMIN_PASSWORD:-123456}
-      ADMIN_NAME: \${ADMIN_NAME:-王波}
-      ADMIN_DEPARTMENT: \${ADMIN_DEPARTMENT:-管理部}
-    ports:
-      - "3000:3000"
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
-      interval: 30s
-      timeout: 10s
-      start_period: 60s
-      retries: 3
-    networks:
-      - yibao-network
-
   # 前端服务
   frontend:
     image: ${FRONTEND_IMAGE}:\${IMAGE_TAG:-latest}
     container_name: yibao-frontend
     restart: unless-stopped
-    depends_on:
-      - backend
     ports:
-      - "80:80"
-    networks:
-      - yibao-network
-
-volumes:
-  postgres_data:
-    driver: local
+      - "80:8080"
+    environment:
+      - VITE_SUPABASE_URL=\${VITE_SUPABASE_URL}
+      - VITE_SUPABASE_ANON_KEY=\${VITE_SUPABASE_ANON_KEY}
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 10s
+      retries: 3
 
 networks:
-  yibao-network:
+  default:
     driver: bridge
 EOF
 
 success "docker-compose.hub.yml 已生成"
-
-# 生成环境变量模板
-cat > .env.production.example << 'EOF'
-# ============================================================
-# 易报销 Pro - 生产环境配置
-# ============================================================
-# 
-# 使用方法：
-#   1. 复制此文件为 .env.production
-#   2. 修改下面的配置值
-#   3. 运行: docker-compose -f docker-compose.hub.yml --env-file .env.production up -d
-#
-# ============================================================
-
-# ==================== 镜像版本 ====================
-IMAGE_TAG=latest
-
-# ==================== 数据库配置 ====================
-POSTGRES_USER=yibao
-POSTGRES_PASSWORD=yibao123456
-POSTGRES_DB=yibao
-
-# ==================== 管理员配置 ====================
-ADMIN_EMAIL=wangbo@knet.cn
-ADMIN_PASSWORD=123456
-ADMIN_NAME=王波
-ADMIN_DEPARTMENT=管理部
-
-# ==================== AI 配置（可选）====================
-# 在系统设置中配置 AI 服务
-EOF
-
-success ".env.production.example 已生成"
-echo ""
-
-
-
-
-
-
-
-
-
-
-

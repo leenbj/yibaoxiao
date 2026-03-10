@@ -797,9 +797,9 @@ export async function createPayee(params: {
 /**
  * 更新收款人
  */
-export async function updatePayee(payeeId: string, params: any) {
+export async function updatePayee(payeeId: string, userId: string, params: any) {
   const updates: Partial<PaymentAccount> = {}
-  
+
   if (params.bankName !== undefined) updates.bank_name = params.bankName
   if (params.bankBranch !== undefined) updates.bank_branch = params.bankBranch
   if (params.accountNumber !== undefined) updates.account_number = params.accountNumber
@@ -810,6 +810,7 @@ export async function updatePayee(payeeId: string, params: any) {
     .from('payment_accounts')
     .update(updates)
     .eq('id', payeeId)
+    .eq('user_id', userId)
     .select()
     .single()
 
@@ -892,9 +893,9 @@ export async function createProject(params: {
 /**
  * 更新预算项目
  */
-export async function updateProject(projectId: string, params: any) {
+export async function updateProject(projectId: string, userId: string, params: any) {
   const updates: Partial<BudgetProject> = {}
-  
+
   if (params.name !== undefined) updates.name = params.name
   if (params.code !== undefined) updates.code = params.code
   if (params.isDefault !== undefined) updates.is_default = params.isDefault
@@ -903,6 +904,7 @@ export async function updateProject(projectId: string, params: any) {
     .from('budget_projects')
     .update(updates)
     .eq('id', projectId)
+    .eq('user_id', userId)
     .select()
     .single()
 

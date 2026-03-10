@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================
-# 易报销 Pro - 快速部署脚本
+# 易报销 Pro - 快速部署脚本（Supabase Cloud Backend）
 # ============================================================
 #
 # 用途：在服务器上快速部署易报销 Pro
@@ -39,6 +39,7 @@ print_header() {
     echo ""
     echo "============================================"
     echo "  🚀 易报销 Pro - 快速部署脚本"
+    echo "  后端: Supabase Cloud"
     echo "============================================"
     echo ""
 }
@@ -79,24 +80,30 @@ check_config() {
     if [ ! -f ".env" ]; then
         log_warning ".env 文件不存在"
 
-        if [ -f ".env.production.example" ]; then
-            log_info "发现 .env.production.example，正在复制..."
-            cp .env.production.example .env
-            log_success "已创建 .env 文件"
-            log_warning "⚠️  请编辑 .env 文件，修改数据库密码和管理员配置！"
-            log_info "编辑命令: nano .env 或 vim .env"
+        log_info "创建 .env 文件..."
+        cat > .env << 'EOF'
+# ============================================================
+# 易报销 Pro - 环境变量配置（Supabase Cloud Backend）
+# ============================================================
 
-            read -p "是否现在编辑配置文件？(y/n) " -n 1 -r
-            echo
-            if [[ $REPLY =~ ^[Yy]$ ]]; then
-                ${EDITOR:-nano} .env
-            else
-                log_warning "请稍后手动编辑 .env 文件"
-                exit 0
-            fi
+# 镜像版本
+IMAGE_TAG=latest
+
+# Supabase 配置（请修改为您的 Supabase 项目配置）
+VITE_SUPABASE_URL=https://your-project.supabase.co
+VITE_SUPABASE_ANON_KEY=your-anon-key
+EOF
+        log_success "已创建 .env 文件"
+        log_warning "⚠️  请编辑 .env 文件，配置您的 Supabase 项目信息！"
+        log_info "编辑命令: nano .env 或 vim .env"
+
+        read -p "是否现在编辑配置文件？(y/n) " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            ${EDITOR:-nano} .env
         else
-            log_error "未找到配置文件模板"
-            exit 1
+            log_warning "请稍后手动编辑 .env 文件"
+            exit 0
         fi
     else
         log_success ".env 文件存在"
@@ -107,29 +114,25 @@ check_config() {
 pull_images() {
     log_info "拉取 Docker 镜像..."
 
-    if docker-compose -f docker-compose.prod.yml pull; then
-        log_success "镜像拉取成功"
+    if [ -f "docker-compose.hub.yml" ]; then
+        docker-compose -f docker-compose.hub.yml pull
     else
-        log_error "镜像拉取失败"
-        log_info "可能原因："
-        log_info "  1. 网络连接问题"
-        log_info "  2. 镜像仓库权限问题（私有镜像需要登录）"
-        log_info "  3. 镜像名称错误"
-        exit 1
+        log_warning "未找到 docker-compose.hub.yml，尝试从源码构建..."
     fi
+    log_success "镜像准备完成"
 }
 
 # 启动服务
 start_services() {
     log_info "启动服务..."
 
-    if docker-compose -f docker-compose.prod.yml up -d; then
-        log_success "服务启动成功"
+    if [ -f "docker-compose.hub.yml" ]; then
+        docker-compose -f docker-compose.hub.yml up -d
     else
-        log_error "服务启动失败"
-        log_info "查看日志: docker-compose -f docker-compose.prod.yml logs"
+        log_error "未找到 docker-compose.hub.yml"
         exit 1
     fi
+    log_success "服务启动成功"
 }
 
 # 等待服务就绪
@@ -140,8 +143,8 @@ wait_for_services() {
     local attempt=0
 
     while [ $attempt -lt $max_attempts ]; do
-        if curl -f http://localhost:3000/api/health &> /dev/null; then
-            log_success "后端服务就绪"
+        if curl -f http://localhost:8080/health &> /dev/null; then
+            log_success "前端服务就绪"
             break
         fi
 
@@ -151,8 +154,8 @@ wait_for_services() {
     done
 
     if [ $attempt -eq $max_attempts ]; then
-        log_warning "后端服务启动超时"
-        log_info "检查日志: docker-compose -f docker-compose.prod.yml logs backend"
+        log_warning "服务启动超时"
+        log_info "检查日志: docker-compose -f docker-compose.hub.yml logs"
     fi
 
     echo ""
@@ -162,7 +165,7 @@ wait_for_services() {
 show_status() {
     log_info "服务状态："
     echo ""
-    docker-compose -f docker-compose.prod.yml ps
+    docker-compose -f docker-compose.hub.yml ps
     echo ""
 }
 
@@ -175,31 +178,28 @@ show_access_info() {
     echo "============================================"
     echo ""
     echo "🌐 前端地址: http://localhost"
-    echo "🔧 后端地址: http://localhost:3000"
-    echo "📊 健康检查: http://localhost:3000/api/health"
     echo ""
-    echo "👤 默认管理员账号："
-    echo "   邮箱：查看 .env 文件中的 ADMIN_EMAIL"
-    echo "   密码：查看 .env 文件中的 ADMIN_PASSWORD"
+    echo "☁️  后端服务: Supabase Cloud"
     echo ""
-    echo "⚠️  首次登录后请立即修改密码！"
+    echo "👤 登录方式："
+    echo "   请使用您在 Supabase 注册的账号登录"
     echo ""
     echo "============================================"
     echo "  🔧 常用命令"
     echo "============================================"
     echo ""
     echo "查看日志："
-    echo "  docker-compose -f docker-compose.prod.yml logs -f"
+    echo "  docker-compose -f docker-compose.hub.yml logs -f"
     echo ""
     echo "重启服务："
-    echo "  docker-compose -f docker-compose.prod.yml restart"
+    echo "  docker-compose -f docker-compose.hub.yml restart"
     echo ""
     echo "停止服务："
-    echo "  docker-compose -f docker-compose.prod.yml down"
+    echo "  docker-compose -f docker-compose.hub.yml down"
     echo ""
     echo "更新服务："
-    echo "  docker-compose -f docker-compose.prod.yml pull"
-    echo "  docker-compose -f docker-compose.prod.yml up -d"
+    echo "  docker-compose -f docker-compose.hub.yml pull"
+    echo "  docker-compose -f docker-compose.hub.yml up -d"
     echo ""
 }
 
@@ -208,9 +208,9 @@ main() {
     print_header
 
     # 检查是否在项目根目录
-    if [ ! -f "docker-compose.prod.yml" ]; then
-        log_error "未找到 docker-compose.prod.yml"
-        log_info "请在项目根目录运行此脚本"
+    if [ ! -f "docker-compose.hub.yml" ]; then
+        log_error "未找到 docker-compose.hub.yml"
+        log_info "请先运行 ./scripts/build-and-push.sh 生成部署配置"
         exit 1
     fi
 

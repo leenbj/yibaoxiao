@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================
-# 易报销 Pro - 本地 Docker 构建脚本
+# 易报销 Pro - 本地 Docker 构建脚本（Supabase Cloud Backend）
 # ============================================================
 #
 # 用法：
@@ -12,7 +12,7 @@
 #   down     - 停止服务
 #   restart  - 重启服务
 #   logs     - 查看日志
-#   clean    - 清理镜像和数据
+#   clean    - 清理镜像
 #   status   - 查看状态
 #   help     - 显示帮助
 #
@@ -45,39 +45,79 @@ check_docker() {
     fi
 }
 
+# 读取环境变量
+load_env() {
+    if [ -f "$PROJECT_DIR/frontend/.env" ]; then
+        export $(grep -v '^#' "$PROJECT_DIR/frontend/.env" | xargs)
+    fi
+}
+
+# 生成 docker-compose.local.yml
+generate_compose_file() {
+    load_env
+
+    cat > "$COMPOSE_FILE" << EOF
+# ============================================================
+# 易报销 Pro - 本地 Docker Compose 配置
+# ============================================================
+
+version: '3.8'
+
+services:
+  frontend:
+    build:
+      context: $PROJECT_DIR
+      dockerfile: Dockerfile.frontend
+      args:
+        VITE_SUPABASE_URL: ${VITE_SUPABASE_URL}
+        VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY}
+    image: yibao-frontend:local-latest
+    container_name: yibao-frontend
+    ports:
+      - "8080:8080"
+    environment:
+      - VITE_SUPABASE_URL=${VITE_SUPABASE_URL}
+      - VITE_SUPABASE_ANON_KEY=${VITE_SUPABASE_ANON_KEY}
+    restart: unless-stopped
+
+networks:
+  default:
+    driver: bridge
+EOF
+}
+
 # 构建镜像
 cmd_build() {
     info "开始构建本地 Docker 镜像..."
     check_docker
-    
+
     cd "$PROJECT_DIR"
-    
-    info "构建后端镜像..."
-    docker-compose -f "$COMPOSE_FILE" build backend
-    
+    generate_compose_file
+
     info "构建前端镜像..."
     docker-compose -f "$COMPOSE_FILE" build frontend
-    
+
     success "镜像构建完成！"
     echo ""
     info "构建的镜像："
-    docker images | grep "yibao.*local-latest" || true
+    docker images | grep "yibao-frontend.*local-latest" || true
 }
 
 # 启动服务
 cmd_up() {
     info "启动本地 Docker 服务..."
     check_docker
-    
+
     cd "$PROJECT_DIR"
+    generate_compose_file
     docker-compose -f "$COMPOSE_FILE" up -d
-    
+
     success "服务启动完成！"
     echo ""
     info "访问地址："
     echo "  - 前端：http://localhost:8080"
-    echo "  - 后端：http://localhost:3001"
-    echo "  - 数据库：localhost:5433"
+    echo ""
+    info "后端服务：Supabase Cloud"
     echo ""
     info "查看日志：./scripts/local-build.sh logs"
 }
@@ -86,10 +126,10 @@ cmd_up() {
 cmd_down() {
     info "停止本地 Docker 服务..."
     check_docker
-    
+
     cd "$PROJECT_DIR"
-    docker-compose -f "$COMPOSE_FILE" down
-    
+    docker-compose -f "$COMPOSE_FILE" down 2>/dev/null || true
+
     success "服务已停止"
 }
 
@@ -104,27 +144,26 @@ cmd_restart() {
 cmd_logs() {
     info "查看服务日志..."
     check_docker
-    
+
     cd "$PROJECT_DIR"
     docker-compose -f "$COMPOSE_FILE" logs -f --tail=100
 }
 
-# 清理镜像和数据
+# 清理镜像
 cmd_clean() {
-    warn "这将删除本地构建的镜像和数据卷！"
+    warn "这将删除本地构建的镜像！"
     read -p "确认继续？(y/N): " confirm
-    
+
     if [[ "$confirm" =~ ^[Yy]$ ]]; then
         info "停止服务..."
         check_docker
-        
+
         cd "$PROJECT_DIR"
-        docker-compose -f "$COMPOSE_FILE" down -v --rmi local
-        
+        docker-compose -f "$COMPOSE_FILE" down -v --rmi local 2>/dev/null || true
+
         info "清理镜像..."
-        docker rmi yibao-backend:local-latest 2>/dev/null || true
         docker rmi yibao-frontend:local-latest 2>/dev/null || true
-        
+
         success "清理完成"
     else
         info "已取消"
@@ -135,10 +174,10 @@ cmd_clean() {
 cmd_status() {
     info "服务状态："
     check_docker
-    
+
     cd "$PROJECT_DIR"
-    docker-compose -f "$COMPOSE_FILE" ps
-    
+    docker-compose -f "$COMPOSE_FILE" ps 2>/dev/null || echo "  (服务未启动)"
+
     echo ""
     info "本地镜像："
     docker images | grep "yibao.*local-latest" || echo "  (无本地镜像)"
@@ -148,6 +187,7 @@ cmd_status() {
 cmd_help() {
     echo "============================================================"
     echo "  易报销 Pro - 本地 Docker 构建脚本"
+    echo "  后端: Supabase Cloud"
     echo "============================================================"
     echo ""
     echo "用法："
@@ -159,19 +199,18 @@ cmd_help() {
     echo "  down     - 停止服务"
     echo "  restart  - 重启服务"
     echo "  logs     - 查看日志"
-    echo "  clean    - 清理镜像和数据"
+    echo "  clean    - 清理镜像"
     echo "  status   - 查看状态"
     echo "  help     - 显示帮助"
     echo ""
-    echo "端口映射（避免与本地开发冲突）："
-    echo "  - 前端：8080 -> 80"
-    echo "  - 后端：3001 -> 3000"
-    echo "  - 数据库：5433 -> 5432"
+    echo "端口映射："
+    echo "  - 前端：8080"
     echo ""
     echo "快速开始："
-    echo "  1. ./scripts/local-build.sh build  # 构建镜像"
-    echo "  2. ./scripts/local-build.sh up     # 启动服务"
-    echo "  3. 访问 http://localhost:8080"
+    echo "  1. 配置 frontend/.env 文件（Supabase URL 和 Key）"
+    echo "  2. ./scripts/local-build.sh build  # 构建镜像"
+    echo "  3. ./scripts/local-build.sh up     # 启动服务"
+    echo "  4. 访问 http://localhost:8080"
     echo ""
 }
 
@@ -190,6 +229,3 @@ main() {
 }
 
 main "$@"
-
-
-
