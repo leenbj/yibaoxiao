@@ -9,7 +9,7 @@ import {
   Check, Landmark, User, Info, ChevronRight, ChevronLeft, Loader
 } from 'lucide-react';
 import type { AppUser, PaymentAccount, BudgetProject, UserSettings, ViewType } from '../../types';
-import { apiRequest } from '../../utils/api';
+import { register as supabaseRegister } from '../../api/supabase-client';
 
 // 模型定价信息 (2025年11月最新)
 const MODEL_PRICING: Record<string, { name: string; inputPrice: number; outputPrice: number; isFree: boolean }> = {
@@ -67,18 +67,22 @@ export const SettingsView = ({ settings, onUpdate, onNavigate }: SettingsViewPro
             }
 
             try {
-                // 调用后端 API 注册用户
-                await apiRequest('/api/auth/register', {
-                    method: 'POST',
-                    body: JSON.stringify(newUser),
+                // 调用 Supabase 注册用户
+                await supabaseRegister({
+                    name: newUser.name,
+                    email: newUser.email,
+                    password: newUser.password,
+                    department: newUser.department,
                 });
 
                 // 更新本地状态
                 const user = {
                     id: `user_${Date.now()}`,
-                    ...newUser,
+                    name: newUser.name,
+                    email: newUser.email,
+                    department: newUser.department,
+                    role: newUser.role,
                 };
-                delete (user as any).password;
 
                 onUpdate({
                     ...settings,

@@ -8,3 +8,6 @@ healthcheckPath = "/health"
 healthcheckTimeout = 300
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 3
+
+# Railway 会自动注入这些环境变量作为 build-args
+# 需要在 Railway Dashboard 中设置 VITE_SUPABASE_URL 和 VITE_SUPABASE_ANON_KEY

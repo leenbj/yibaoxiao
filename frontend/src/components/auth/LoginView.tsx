@@ -6,8 +6,8 @@
 import { useState } from 'react';
 import { AlertCircle, Loader2 } from 'lucide-react';
 import type { LoginViewProps } from '../../types';
-import { apiRequest } from '../../utils/api';
 import { AppLogo } from '../shared/AppLogo';
+import { register as supabaseRegister, login as supabaseLogin } from '../../api/supabase-client';
 
 /**
  * 登录/注册视图组件
@@ -37,16 +37,18 @@ export const LoginView = ({ onLogin }: LoginViewProps) => {
     try {
       if (isRegister) {
         // 注册
-        await apiRequest('/api/auth/register', {
-          method: 'POST',
-          body: JSON.stringify(form),
+        await supabaseRegister({
+          name: form.name,
+          email: form.email,
+          password: form.password,
+          department: form.department,
         });
       }
 
       // 登录
-      const result = await apiRequest('/api/auth/login', {
-        method: 'POST',
-        body: JSON.stringify({ email: form.email, password: form.password }),
+      const result = await supabaseLogin({
+        email: form.email,
+        password: form.password,
       });
 
       onLogin(result.user, result.token);
