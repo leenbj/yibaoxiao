@@ -50,10 +50,51 @@ export async function register(params: {
     throw new Error(authError.message)
   }
 
-  // 用户资料会自动通过触发器创建
+  // 检查用户是否创建成功
+  if (!authData.user) {
+    throw new Error('注册失败：无法创建用户')
+  }
+
+  // 如果邮箱需要验证，返回提示信息
+  if (authData.user.identities && authData.user.identities.length === 0) {
+    return {
+      success: true,
+      user: authData.user,
+      message: '注册成功，请检查邮箱完成验证',
+      requiresEmailConfirmation: true,
+    }
+  }
+
+  // 等待 profile 触发器创建完成（最多等待3秒）
+  let profile = null
+  let retries = 0
+  const maxRetries = 6
+
+  while (!profile && retries < maxRetries) {
+    const { data } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', authData.user.id)
+      .single()
+
+    if (data) {
+      profile = data
+    } else {
+      retries++
+      await new Promise(resolve => setTimeout(resolve, 500))
+    }
+  }
+
+  if (!profile) {
+    console.warn('Profile 创建超时，可能触发器执行延迟')
+  }
+
   return {
     success: true,
     user: authData.user,
+    profile,
+    message: '注册成功',
+    requiresEmailConfirmation: false,
   }
 }
 
@@ -70,17 +111,42 @@ export async function login(params: { email: string; password: string }) {
     throw new Error(error.message)
   }
 
+  if (!data.user) {
+    throw new Error('登录失败：无法获取用户信息')
+  }
+
+  if (!data.session) {
+    throw new Error('登录失败：无法创建会话')
+  }
+
   // 获取完整的用户资料
-  const { data: profile } = await supabase
+  const { data: profile, error: profileError } = await supabase
     .from('profiles')
     .select('*')
     .eq('id', data.user.id)
     .single()
 
+  if (profileError) {
+    console.error('获取用户资料失败:', profileError)
+    // 登录成功但获取 profile 失败，返回基本用户信息
+    return {
+      success: true,
+      user: {
+        id: data.user.id,
+        email: data.user.email,
+        name: data.user.user_metadata?.name || '',
+        department: data.user.user_metadata?.department || '',
+      },
+      token: data.session.access_token,
+      profileError: true,
+    }
+  }
+
   return {
     success: true,
     user: profile,
-    token: data.session?.access_token,
+    token: data.session.access_token,
+    profileError: false,
   }
 }
 

@@ -37,23 +37,52 @@ export const LoginView = ({ onLogin }: LoginViewProps) => {
     try {
       if (isRegister) {
         // 注册
-        await supabaseRegister({
+        const registerResult = await supabaseRegister({
           name: form.name,
           email: form.email,
           password: form.password,
           department: form.department,
         });
+
+        // 如果邮箱需要验证，显示提示信息
+        if (registerResult.requiresEmailConfirmation) {
+          setError('注册成功！请检查您的邮箱完成验证后再登录。');
+          setLoading(false);
+          return;
+        }
+
+        // 注册成功后自动登录
+        const loginResult = await supabaseLogin({
+          email: form.email,
+          password: form.password,
+        });
+
+        onLogin(loginResult.user, loginResult.token);
+      } else {
+        // 登录
+        const result = await supabaseLogin({
+          email: form.email,
+          password: form.password,
+        });
+
+        onLogin(result.user, result.token);
+      }
+    } catch (err: any) {
+      // 提供更友好的错误信息
+      let errorMessage = err.message || '操作失败';
+
+      // 处理常见错误
+      if (errorMessage.includes('Database error saving new user')) {
+        errorMessage = '注册失败：数据库错误，可能是邮箱已被注册或数据库触发器执行失败';
+      } else if (errorMessage.includes('User already registered')) {
+        errorMessage = '该邮箱已被注册，请直接登录';
+      } else if (errorMessage.includes('Invalid login credentials')) {
+        errorMessage = '邮箱或密码错误';
+      } else if (errorMessage.includes('Email not confirmed')) {
+        errorMessage = '邮箱未验证，请检查邮箱完成验证';
       }
 
-      // 登录
-      const result = await supabaseLogin({
-        email: form.email,
-        password: form.password,
-      });
-
-      onLogin(result.user, result.token);
-    } catch (err: any) {
-      setError(err.message || '操作失败');
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
