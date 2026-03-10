@@ -16,7 +16,7 @@ import type {
   AppUser, UserSettings, ExpenseItem, Report, LoanRecord, ViewType, ReportStatus
 } from './types';
 import { DEFAULT_USER_ID, INITIAL_SETTINGS } from './constants';
-import { apiRequest } from './utils/api';
+import * as api from './api/supabase-client';
 import { debounce } from './utils/debounce';
 import { initPerformanceMonitoring, markPerformance, type PerformanceMetrics } from './utils/performance';
 
@@ -145,79 +145,67 @@ const MainApp = ({ user, onLogout }: { user: AppUser; onLogout: () => void }) =>
       try {
         // 并行加载所有数据
         const [expensesRes, reportsRes, loansRes, payeesRes, projectsRes] = await Promise.all([
-          apiRequest(`/api/expenses?userId=${userId}`).catch((e) => {
+          api.getExpenses(userId).catch((e) => {
             console.error('[数据加载] 加载费用失败:', e);
-            return { expenses: null };
+            return { expenses: [] };
           }),
-          apiRequest(`/api/reports?userId=${userId}`).catch((e) => {
+          api.getReports(userId).catch((e) => {
             console.error('[数据加载] 加载报销单失败:', e);
-            return { reports: null };
+            return { reports: [] };
           }),
-          apiRequest(`/api/loans?userId=${userId}`).catch((e) => {
+          api.getLoans(userId).catch((e) => {
             console.error('[数据加载] 加载借款单失败:', e);
-            return { loans: null };
+            return { loans: [] };
           }),
-          apiRequest(`/api/settings/payees?userId=${userId}`).catch(() => ({ payees: [] })),
-          apiRequest(`/api/settings/projects?userId=${userId}`).catch(() => ({ projects: [] })),
+          api.getPayees(userId).catch(() => ({ paymentAccounts: [] })),
+          api.getProjects(userId).catch(() => ({ budgetProjects: [] })),
         ]);
 
         // API 返回的数据
-        const apiExpenses = (expensesRes as any).expenses;
-        const apiReports = (reportsRes as any).reports;
-        const apiLoans = (loansRes as any).loans;
+        const apiExpenses = expensesRes.expenses;
+        const apiReports = reportsRes.reports;
+        const apiLoans = loansRes.loans;
         
-        console.log('[数据加载] API 返回: expenses=' + (apiExpenses?.length ?? 'null') + ', reports=' + (apiReports?.length ?? 'null') + ', loans=' + (apiLoans?.length ?? 'null'));
+        console.log('[数据加载] API 返回: expenses=' + apiExpenses.length + ', reports=' + apiReports.length + ', loans=' + apiLoans.length);
 
         // ============ 智能数据合并逻辑 ============
         // 策略: API成功时使用API数据,但保留本地新创建未同步的记录
 
         // Expenses: 简单策略(无创建时间,直接使用API数据)
-        if (apiExpenses !== null) {
-          setExpenses(apiExpenses);
-        } else {
-          console.warn('[数据加载] Expenses API失败,保留本地缓存');
-        }
+        setExpenses(apiExpenses);
 
         // Reports: 智能合并策略
-        if (apiReports !== null) {
-          // 查找本地有但API没有的最近记录(可能尚未同步)
-          const localOnlyReports = reports.filter(r =>
-            !apiReports.some((ar: Report) => ar.id === r.id) &&
-            isRecentlyCreated(r)
-          );
+        // 查找本地有但API没有的最近记录(可能尚未同步)
+        const localOnlyReports = reports.filter(r =>
+          !apiReports.some((ar: Report) => ar.id === r.id) &&
+          isRecentlyCreated(r)
+        );
 
-          // 合并: API数据 + 本地待同步数据
-          setReports([...apiReports, ...localOnlyReports]);
+        // 合并: API数据 + 本地待同步数据
+        setReports([...apiReports, ...localOnlyReports]);
 
-          if (localOnlyReports.length > 0) {
-            console.warn('[数据加载] 发现', localOnlyReports.length, '条待同步报销单');
-          }
-        } else {
-          console.warn('[数据加载] Reports API失败,保留本地缓存');
+        if (localOnlyReports.length > 0) {
+          console.warn('[数据加载] 发现', localOnlyReports.length, '条待同步报销单');
         }
 
         // Loans: 智能合并策略
-        if (apiLoans !== null) {
-          // 查找本地有但API没有的最近记录(可能尚未同步)
-          const localOnlyLoans = loans.filter(l =>
-            !apiLoans.some((al: LoanRecord) => al.id === l.id) &&
-            isRecentlyCreated(l)
-          );
+        // 查找本地有但API没有的最近记录(可能尚未同步)
+        const localOnlyLoans = loans.filter(l =>
+          !apiLoans.some((al: LoanRecord) => al.id === l.id) &&
+          isRecentlyCreated(l)
+        );
 
-          // 合并: API数据 + 本地待同步数据
-          setLoans([...apiLoans, ...localOnlyLoans]);
+        // 合并: API数据 + 本地待同步数据
+        setLoans([...apiLoans, ...localOnlyLoans]);
 
-          if (localOnlyLoans.length > 0) {
-            console.warn('[数据加载] 发现', localOnlyLoans.length, '条待同步借款单');
-          }
-        } else {
-          console.warn('[数据加载] Loans API失败,保留本地缓存');
+        if (localOnlyLoans.length > 0) {
+          console.warn('[数据加载] 发现', localOnlyLoans.length, '条待同步借款单');
         }
 
         setSettings(prev => ({
           ...prev,
-          payees: (payeesRes as any).payees || prev.payees,
-          projects: (projectsRes as any).projects || prev.projects,
+          payees: payeesRes.paymentAccounts || prev.payees,
+          projects: projectsRes.budgetProjects || prev.projects,
         }));
       } catch (error) {
         console.error('[数据加载] 数据加载失败:', error);
@@ -296,11 +284,14 @@ const MainApp = ({ user, onLogout }: { user: AppUser; onLogout: () => void }) =>
   const addExpense = async (expense: ExpenseItem) => {
     const userId = getUserId(user);
     try {
-      const result = await apiRequest('/api/expenses', {
-        method: 'POST',
-        body: JSON.stringify({ ...expense, userId }),
-      }) as { expense: ExpenseItem };
-      setExpenses((prev) => [result.expense || { ...expense, userId: DEFAULT_USER_ID }, ...prev]);
+      const result = await api.createExpense({ 
+        userId,
+        amount: expense.amount,
+        description: expense.description,
+        date: expense.date,
+        category: expense.category || '其他'
+      });
+      setExpenses((prev) => [result.expense, ...prev]);
     } catch (error) {
       console.error('创建费用失败:', error);
       setExpenses((prev) => [expense, ...prev]);
@@ -314,10 +305,7 @@ const MainApp = ({ user, onLogout }: { user: AppUser; onLogout: () => void }) =>
     try {
       const userId = getUserId(user);
       await Promise.all(ids.map(id =>
-        apiRequest(`/api/expenses/${id}`, {
-          method: 'PUT',
-          body: JSON.stringify({ status, userId }),
-        })
+        api.updateExpense(id, { userId, status })
       ));
     } catch (error) {
       console.error('更新费用状态失败:', error);
@@ -332,59 +320,49 @@ const MainApp = ({ user, onLogout }: { user: AppUser; onLogout: () => void }) =>
     const newReport: Report = { ...report, status };
     let savedReport: Report = newReport;
 
-    console.warn('[保存报销单] 开始保存, action:', action, 'userId:', userId);
-    console.warn('[保存报销单] userSnapshot:', JSON.stringify(newReport.userSnapshot));
+    console.warn('[保存报销单] 开始保存，action:', action, 'userId:', userId);
 
     try {
-      const requestBody = { ...newReport, userId };
-      const bodySize = JSON.stringify(requestBody).length;
-      console.warn('[保存报销单] 请求体大小:', bodySize, '字节', `(${(bodySize / 1024 / 1024).toFixed(2)} MB)`);
+      const result = await api.createReport({
+        userId,
+        title: newReport.title,
+        status,
+        totalAmount: newReport.totalAmount,
+        prepaidAmount: newReport.prepaidAmount,
+        payableAmount: newReport.payableAmount,
+        items: newReport.items,
+        approvalNumber: newReport.approvalNumber,
+        budgetProject: newReport.budgetProject,
+        paymentAccount: newReport.paymentAccount,
+        attachments: newReport.attachments,
+        userSnapshot: newReport.userSnapshot,
+        invoiceCount: newReport.invoiceCount,
+        isTravel: newReport.isTravel,
+        tripReason: newReport.tripReason,
+        tripLegs: newReport.tripLegs,
+        taxiDetails: newReport.taxiDetails,
+        aiRecognitionData: newReport.aiRecognitionData,
+      });
 
-      // 检查请求体大小，超过 90MB 时警告
-      if (bodySize > 90 * 1024 * 1024) {
-        console.error('[保存报销单] 请求体过大，可能导致保存失败');
-        alert(`报销单数据过大（${(bodySize / 1024 / 1024).toFixed(1)} MB），请减少附件数量或压缩图片后重试`);
-        return;
-      }
-
-      const result = await apiRequest('/api/reports', {
-        method: 'POST',
-        body: JSON.stringify(requestBody),
-      }) as { report: Report };
-
-      console.warn('[保存报销单] 保存成功, id:', result.report?.id);
+      console.warn('[保存报销单] 保存成功，id:', result.report?.id);
       savedReport = result.report || newReport;
       setReports(prev => [savedReport, ...prev]);
     } catch (error: any) {
       console.error('[保存报销单] 创建失败:', error?.message || error);
-      console.error('[保存报销单] 错误详情:', JSON.stringify(error));
-
-      // 显示用户友好的错误提示
-      const errorMsg = error?.message || '未知错误';
-      if (errorMsg.includes('413') || errorMsg.includes('too large') || errorMsg.includes('payload')) {
-        alert('报销单数据过大，请减少附件数量或压缩图片后重试');
-      } else if (errorMsg.includes('timeout') || errorMsg.includes('超时')) {
-        alert('保存超时，请检查网络后重试');
-      } else {
-        alert(`保存失败: ${errorMsg}\n\n请检查网络连接后重试`);
-      }
-      // 不再将失败的数据添加到本地列表，避免用户误以为保存成功
+      alert(`保存失败：${error?.message || '请检查网络连接后重试'}`);
       return;
     }
 
-    // 更新关联的费用项状态
     const linkedExpenseIds = (report as any).linkedExpenseIds || (report as any).aiRecognitionData?.linkedExpenseIds || [];
     if (linkedExpenseIds.length > 0) {
       updateExpensesStatus(linkedExpenseIds, expenseStatus);
     }
 
     if (action === 'print') {
-      // 打印模式：跳转到报销单详情页面，自动触发打印
       setSelectedId(savedReport.id);
       setAutoPrint(true);
       setView('report-detail');
     } else {
-      // 保存模式：跳转到历史记录
       setView('history');
     }
   };
@@ -396,51 +374,35 @@ const MainApp = ({ user, onLogout }: { user: AppUser; onLogout: () => void }) =>
     const newLoan: LoanRecord = { ...loan, status };
     let savedLoan: LoanRecord = newLoan;
 
-    console.warn('[保存借款单] 开始保存, action:', action, 'userId:', userId);
-    console.warn('[保存借款单] userSnapshot:', JSON.stringify(newLoan.userSnapshot));
+    console.warn('[保存借款单] 开始保存，action:', action, 'userId:', userId);
 
     try {
-      const requestBody = { ...newLoan, userId };
-      const bodySize = JSON.stringify(requestBody).length;
-      console.warn('[保存借款单] 请求体大小:', bodySize, '字节', `(${(bodySize / 1024 / 1024).toFixed(2)} MB)`);
+      const result = await api.createLoan({
+        userId,
+        amount: newLoan.amount,
+        reason: newLoan.reason,
+        date: newLoan.date,
+        status,
+        approvalNumber: newLoan.approvalNumber,
+        budgetProject: newLoan.budgetProject,
+        payeeInfo: newLoan.payeeInfo,
+        userSnapshot: newLoan.userSnapshot,
+      });
 
-      // 检查请求体大小，如果过大提前警告
-      if (bodySize > 90 * 1024 * 1024) {
-        console.error('[保存借款单] 请求体过大，可能导致保存失败');
-        alert(`借款单数据过大（${(bodySize / 1024 / 1024).toFixed(1)} MB），请减少附件数量或压缩图片后重试`);
-        return;
-      }
-
-      const result = await apiRequest('/api/loans', {
-        method: 'POST',
-        body: JSON.stringify(requestBody),
-      }) as { loan: LoanRecord };
-
-      console.warn('[保存借款单] 保存成功, id:', result.loan?.id);
+      console.warn('[保存借款单] 保存成功，id:', result.loan?.id);
       savedLoan = result.loan || newLoan;
       setLoans(prev => [savedLoan, ...prev]);
     } catch (error: any) {
       console.error('[保存借款单] 创建失败:', error?.message || error);
-      // 保存失败时显示错误信息，不添加到本地状态
-      const errorMsg = error?.message || '未知错误';
-      if (errorMsg.includes('413') || errorMsg.includes('too large') || errorMsg.includes('payload')) {
-        alert('借款单数据过大，请减少附件数量或压缩图片后重试');
-      } else if (errorMsg.includes('timeout') || errorMsg.includes('超时')) {
-        alert('保存超时，请检查网络后重试');
-      } else {
-        alert(`保存失败: ${errorMsg}\n\n请检查网络连接后重试`);
-      }
-      // 保存失败，不添加到本地状态，直接返回
+      alert(`保存失败：${error?.message || '请检查网络连接后重试'}`);
       return;
     }
 
     if (action === 'print') {
-      // 打印模式：跳转到借款单详情页面
       setSelectedId(savedLoan.id);
       setAutoPrint(true);
       setView('loan-detail');
     } else {
-      // 保存模式：跳转到历史记录
       setView('history');
     }
   };
@@ -450,29 +412,25 @@ const MainApp = ({ user, onLogout }: { user: AppUser; onLogout: () => void }) =>
     console.warn(`[删除记录] 开始删除, id: ${id}, type: ${type}, userId: ${userId}`);
 
     if (type === 'report') {
-      // 先保存当前记录，以便删除失败时恢复
       const originalReports = [...reports];
       setReports(prev => prev.filter(r => r.id !== id));
       try {
-        await apiRequest(`/api/reports/${id}?userId=${userId}`, { method: 'DELETE' });
+        await api.deleteReport(id, userId);
         console.warn('[删除记录] 报销单删除成功');
       } catch (error) {
         console.error('[删除记录] 删除报销单失败:', error);
-        // 删除失败时恢复本地状态
         setReports(originalReports);
         alert('删除失败，请重试');
         return;
       }
     } else {
-      // 先保存当前记录，以便删除失败时恢复
       const originalLoans = [...loans];
       setLoans(prev => prev.filter(l => l.id !== id));
       try {
-        await apiRequest(`/api/loans/${id}?userId=${userId}`, { method: 'DELETE' });
+        await api.deleteLoan(id, userId);
         console.warn('[删除记录] 借款单删除成功');
       } catch (error) {
         console.error('[删除记录] 删除借款失败:', error);
-        // 删除失败时恢复本地状态
         setLoans(originalLoans);
         alert('删除失败，请重试');
         return;
@@ -489,29 +447,22 @@ const MainApp = ({ user, onLogout }: { user: AppUser; onLogout: () => void }) =>
       setReports(prev => prev.map(r => r.id === id ? { ...r, status: 'paid' } : r));
       const report = reports.find((r: any) => r.id === id);
       if (report) {
-        // 优先使用 aiRecognitionData 中存储的关联记账本 ID
         const linkedExpenseIds = (report as any).aiRecognitionData?.linkedExpenseIds || [];
         if (linkedExpenseIds.length > 0) {
           updateExpensesStatus(linkedExpenseIds, 'done');
         }
       }
       try {
-        const result = await apiRequest(`/api/reports/${id}/status`, {
-          method: 'PATCH',
-          body: JSON.stringify({ userId, status: 'paid' }),
-        });
-        console.warn('[完成报销] 报销单状态更新成功:', result);
+        await api.updateReportStatus(id, { userId, status: 'paid' });
+        console.warn('[完成报销] 报销单状态更新成功');
       } catch (error) {
         console.error('[完成报销] 更新报销单状态失败:', error);
       }
     } else {
       setLoans(prev => prev.map(l => l.id === id ? { ...l, status: 'paid' } : l));
       try {
-        const result = await apiRequest(`/api/loans/${id}/status`, {
-          method: 'PATCH',
-          body: JSON.stringify({ userId, status: 'paid' }),
-        });
-        console.warn('[完成报销] 借款状态更新成功:', result);
+        await api.updateLoanStatus(id, { userId, status: 'paid' });
+        console.warn('[完成报销] 借款状态更新成功');
       } catch (error) {
         console.error('[完成报销] 更新借款状态失败:', error);
       }

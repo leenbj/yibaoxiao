@@ -1,6 +1,6 @@
 # 易报销 Pro - AI 驱动的财务报销系统
 
-一个使用 **Motia 框架** 构建的智能财务报销系统，支持 AI 自动识别发票、审批单，简化报销流程。
+一个使用 **Supabase Cloud** 作为后端的智能财务报销系统，支持 AI 自动识别发票、审批单，简化报销流程。
 
 ## 功能特性
 
@@ -15,377 +15,131 @@
 
 ## 技术栈
 
-- **后端**: Motia 框架 (Node.js + TypeScript)
+- **后端**: Supabase Cloud (PostgreSQL + Auth + Storage)
 - **前端**: React + Vite + Tailwind CSS
-- **数据库**: PostgreSQL
 - **AI**: 支持多种 AI 模型 (Gemini, DeepSeek, 豆包, GLM 等)
-- **部署**: Docker + Docker Compose
+- **部署**: Docker + GitHub Actions
 
-## 📦 项目结构
+## 项目结构
 
 ```
-yibao/
+yibaoxiao/
 ├── frontend/               # 前端代码
-│   ├── index.html
-│   ├── index.tsx           # React 应用入口
-│   └── src/
-│       └── api/
-│           └── client.ts   # API 客户端
+│   ├── src/
+│   │   ├── api/           # Supabase API 客户端
+│   │   ├── components/    # React 组件
+│   │   ├── hooks/         # React Hooks
+│   │   └── lib/           # 工具库
+│   └── package.json
 │
-├── steps/                  # Motia Steps (后端 API)
-│   └── reimbursement/      # 报销系统模块
-│       ├── types/          # 类型定义
-│       ├── auth/           # 用户认证
-│       ├── user/           # 用户管理
-│       ├── expenses/       # 费用记账
-│       ├── reports/        # 报销单
-│       ├── loans/          # 借款
-│       ├── settings/       # 系统设置
-│       │   ├── payees/     # 收款人
-│       │   └── projects/   # 预算项目
-│       ├── ai/             # AI 识别
-│       └── statistics/     # 统计
+├── supabase/              # Supabase 配置
+│   ├── migrations/        # 数据库迁移
+│   └── config.toml        # Supabase 配置
 │
-├── middlewares/            # 中间件
-├── motia.config.ts         # Motia 配置
+├── docs/                  # 文档
+├── scripts/               # 部署脚本
 └── package.json
 ```
 
-## 🚀 快速开始
+## 快速开始
 
-### 1. 安装依赖
+### 1. 克隆项目
 
 ```bash
+git clone https://github.com/leenbj/yibaoxiao.git
+cd yibaoxiao
+```
+
+### 2. 安装前端依赖
+
+```bash
+cd frontend
 npm install
 ```
 
-### 2. 启动后端服务
+### 3. 配置环境变量
 
 ```bash
-npm run dev
-```
-
-后端服务启动后：
-- API 服务: http://localhost:3000
-- Motia Workbench: http://localhost:3000 (可视化工作流)
-
-### 3. 启动前端（可选）
-
-前端目前使用独立运行模式，直接在浏览器打开 `frontend/index.html` 即可使用。
-
-如果需要连接后端 API，请确保后端服务已启动。
-
-## 📡 API 接口列表
-
-### 用户认证
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| POST | `/api/auth/register` | 用户注册 |
-| POST | `/api/auth/login` | 用户登录 |
-
-### 用户管理
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/api/user/profile?userId=xxx` | 获取用户配置 |
-| PUT | `/api/user/profile` | 更新用户信息 |
-
-### 费用记账
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/api/expenses?userId=xxx` | 获取费用列表 |
-| POST | `/api/expenses` | 创建费用记录 |
-| PUT | `/api/expenses/:id` | 更新费用记录 |
-| DELETE | `/api/expenses/:id?userId=xxx` | 删除费用记录 |
-
-### 报销单
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/api/reports?userId=xxx` | 获取报销单列表 |
-| POST | `/api/reports` | 创建报销单 |
-| GET | `/api/reports/:id?userId=xxx` | 获取报销单详情 |
-| PUT | `/api/reports/:id` | 更新报销单 |
-| PATCH | `/api/reports/:id/status` | 更新报销单状态 |
-
-### 借款
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/api/loans?userId=xxx` | 获取借款列表 |
-| POST | `/api/loans` | 创建借款申请 |
-| GET | `/api/loans/:id?userId=xxx` | 获取借款详情 |
-| PATCH | `/api/loans/:id/status` | 更新借款状态 |
-
-### 收款人设置
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/api/settings/payees?userId=xxx` | 获取收款人列表 |
-| POST | `/api/settings/payees` | 创建收款人 |
-| PUT | `/api/settings/payees/:id` | 更新收款人 |
-| DELETE | `/api/settings/payees/:id?userId=xxx` | 删除收款人 |
-
-### 预算项目设置
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/api/settings/projects?userId=xxx` | 获取预算项目列表 |
-| POST | `/api/settings/projects` | 创建预算项目 |
-| PUT | `/api/settings/projects/:id` | 更新预算项目 |
-| DELETE | `/api/settings/projects/:id?userId=xxx` | 删除预算项目 |
-
-### AI 识别
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| POST | `/api/ai/recognize` | AI 识别发票/审批单 |
-
-### 统计
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/api/statistics/overview?userId=xxx&period=6m` | 获取统计概览 |
-
-## 🔧 开发命令
-
-```bash
-# 启动开发服务器
-npm run dev
-
-# 生成 TypeScript 类型
-npm run generate-types
-
-# 构建生产版本
-npm run build
-
-# 清理项目
-npm run clean
-```
-
-## 🤖 配置 AI 识别
-
-系统支持使用 Google Gemini API 进行智能发票/审批单识别。
-
-### 获取 API Key
-
-1. 访问 https://makersuite.google.com/app/apikey
-2. 登录 Google 账号
-3. 创建 API Key
-
-### 配置 API Key
-
-在项目根目录创建 `.env` 文件：
-
-```bash
-# Google Gemini API Key
-GEMINI_API_KEY=your_api_key_here
-```
-
-然后重启后端服务：
-
-```bash
-npm run dev
-```
-
-> **注意**: 如果没有配置 API Key，AI 识别功能会返回模拟数据，不影响其他功能使用。
-
-## 🔗 前后端集成
-
-### 前端 API 调用
-
-前端通过 `frontend/src/api/` 目录下的文件调用后端 API：
-
-- `client.ts` - 基础 API 客户端，封装所有接口调用
-- `hooks.ts` - React Hooks，提供响应式数据管理
-
-### 使用示例
-
-```typescript
-import { useAuth, useExpenses } from './src/api/hooks'
-
-function MyComponent() {
-  // 用户认证
-  const { user, login, logout } = useAuth()
-  
-  // 费用管理（自动获取当前用户的费用）
-  const { expenses, add, delete: deleteExpense } = useExpenses(user?.id)
-  
-  // 添加费用
-  const handleAdd = async () => {
-    await add({
-      amount: 100,
-      description: '午餐',
-      date: new Date().toISOString(),
-      category: '餐饮'
-    })
-  }
-  
-  return (
-    <div>
-      {/* 渲染费用列表 */}
-      {expenses.map(e => <div key={e.id}>{e.description}: ¥{e.amount}</div>)}
-    </div>
-  )
-}
-```
-
-### 集成版前端入口
-
-查看 `frontend/app.tsx` 获取完整的前后端集成示例，包括：
-
-- 用户登录/注册
-- 费用记录管理
-- 统计数据展示
-- AI 识别测试
-
-## 🚀 服务器部署
-
-### 系统架构
-
-```
-┌─────────────────────────────────────────────────────────┐
-│                       服务器                             │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────┐  │
-│  │  Frontend   │  │   Backend   │  │   PostgreSQL    │  │
-│  │  (Nginx)    │──│   (Motia)   │──│   (Database)    │  │
-│  │  :80        │  │   :3000     │  │   :5432         │  │
-│  └─────────────┘  └─────────────┘  └─────────────────┘  │
-└─────────────────────────────────────────────────────────┘
-```
-
-### 部署步骤
-
-**步骤 1：创建目录**
-
-```bash
-mkdir -p /root/yibaoxiao && cd /root/yibaoxiao
-```
-
-**步骤 2：下载配置文件**
-
-```bash
-curl -O https://raw.githubusercontent.com/leenbj/yibaoxiao/main/docker-compose.prod.yml
-curl -O https://raw.githubusercontent.com/leenbj/yibaoxiao/main/.env.production
-mv docker-compose.prod.yml docker-compose.yml
-mv .env.production .env
-```
-
-**步骤 3：编辑配置**
-
-```bash
-nano .env
-```
-
-修改以下配置项：
-- `POSTGRES_PASSWORD` - 数据库密码
-- `ADMIN_EMAIL` - 管理员邮箱
-- `ADMIN_PASSWORD` - 管理员密码
-- `DEFAULT_AI_API_KEY` - AI API密钥（可选）
-
-**步骤 4：拉取镜像**
-
-```bash
-docker-compose pull
-```
-
-**步骤 5：启动服务**
-
-```bash
-docker-compose up -d
-```
-
-**步骤 6：查看启动进度**
-
-```bash
-docker-compose logs -f backend
-```
-
-等待看到 `🚀 Server ready and listening on port 3000` 表示启动成功。
-
-**首次启动需要 3-5 分钟**（Motia 运行时构建），后续重启只需几秒钟。
-
-**步骤 7：初始化数据库（首次部署必须执行）**
-
-```bash
-# 创建数据库表
-docker-compose exec backend npx drizzle-kit push
-
-# 创建超级管理员（使用 .env 中配置的账号密码）
-docker-compose exec backend npx ts-node -e "
-require('./src/db/init-admin').initializeAdmin().then(() => process.exit(0))
-"
-```
-
-> 💡 **提示**：新版本镜像会自动执行上述初始化，如果日志中看到 `[2/4] 同步数据库表结构...` 则无需手动执行。
-
-### 访问系统
-
-- 访问地址：`http://服务器IP`（或 `http://服务器IP:81` 如果 80 端口被占用）
-- **管理员账号**：`.env` 文件中配置的 `ADMIN_EMAIL`（默认：`admin@example.com`）
-- **管理员密码**：`.env` 文件中配置的 `ADMIN_PASSWORD`（默认：`admin123456`）
-
-> ⚠️ **安全提示**：首次登录后请立即修改默认密码！
-
-### 常用命令
-
-```bash
-cd /root/yibaoxiao
-
-# 查看服务状态
-docker-compose ps
-
-# 查看日志
-docker-compose logs -f
-
-# 查看后端日志
-docker-compose logs -f backend
-
-# 重启服务
-docker-compose restart
-
-# 停止服务
-docker-compose down
-
-# 更新到最新版本
-docker-compose pull && docker-compose up -d
-```
-
-### 数据备份
-
-```bash
-# 备份数据库
-docker-compose exec postgres pg_dump -U yibao yibao > backup_$(date +%Y%m%d).sql
-
-# 恢复数据库
-cat backup.sql | docker-compose exec -T postgres psql -U yibao -d yibao
-```
-
-详细部署说明请查看 [DEPLOY.md](DEPLOY.md)
-
-## 注意事项
-
-1. **数据存储**: 使用 PostgreSQL 数据库存储数据，支持 Docker 容器化部署。
-
-2. **AI 识别**: 支持多种 AI 模型，在系统设置中配置 API Key 即可使用。
-
-3. **用户认证**: 当前使用简化的 Token 认证。生产环境建议使用 JWT。
-
-4. **跨域访问**: 生产环境通过 Nginx 反向代理，开发环境使用 Vite 代理。
-
-## 快速体验 (本地开发)
-
-```bash
-# 1. 安装依赖
-npm install
-cd frontend && npm install && cd ..
-
-# 2. 配置数据库连接
 cp .env.example .env
-# 编辑 .env 配置 DATABASE_URL
+```
 
-# 3. 启动后端
+编辑 `.env` 文件：
+
+```env
+VITE_SUPABASE_URL=https://your-project.supabase.co
+VITE_SUPABASE_ANON_KEY=your-anon-key
+```
+
+### 4. 启动开发服务器
+
+```bash
 npm run dev
+```
 
-# 4. 启动前端（另一个终端）
+访问 http://localhost:5173
+
+## 部署
+
+### GitHub Actions 自动部署
+
+1. 在 GitHub 仓库 Settings → Secrets 中配置：
+   - `VITE_SUPABASE_URL`
+   - `VITE_SUPABASE_ANON_KEY`
+   - `DEPLOY_HOST`、`DEPLOY_USER`、`DEPLOY_SSH_KEY`（服务器部署）
+
+2. 推送代码到 main 分支自动触发构建
+
+### Docker 部署
+
+```bash
+docker build \
+  --build-arg VITE_SUPABASE_URL=https://xxx.supabase.co \
+  --build-arg VITE_SUPABASE_ANON_KEY=eyJ... \
+  -f Dockerfile.frontend \
+  -t yibaoxiao-frontend .
+```
+
+## Supabase 配置
+
+详细配置说明请查看 [docs/SUPABASE_DEPLOYMENT_GUIDE.md](docs/SUPABASE_DEPLOYMENT_GUIDE.md)
+
+### 数据库迁移
+
+```bash
+# 链接项目
+npx supabase link --project-ref your-project-id
+
+# 推送数据库 Schema
+npx supabase db push
+```
+
+## API 概览
+
+前端通过 `supabase-client.ts` 直接调用 Supabase API：
+
+| 功能 | 函数 |
+|------|------|
+| 用户注册 | `register(email, password, name, department)` |
+| 用户登录 | `login(email, password)` |
+| 费用管理 | `getExpenses()`, `createExpense()`, `updateExpense()` |
+| 报销单 | `getReports()`, `createReport()`, `updateReportStatus()` |
+| 借款 | `getLoans()`, `createLoan()`, `updateLoanStatus()` |
+| 文件上传 | `supabase.storage.from('attachments').upload()` |
+
+## 开发命令
+
+```bash
+# 前端开发
 cd frontend && npm run dev
 
-# 5. 访问
-# 前端: http://localhost:5173
-# 后端: http://localhost:3000
+# 构建生产版本
+cd frontend && npm run build
+
+# 数据库迁移
+npx supabase db push
+
+# 查看数据库差异
+npx supabase db diff
 ```
 
 ## 许可证
@@ -395,4 +149,3 @@ MIT License
 ---
 
 **易报销 Pro** - 让报销更简单！
-
