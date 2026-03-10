@@ -1,6 +1,7 @@
 {
-  "name": "yibao",
-  "description": "易报销 Pro - 智能报销管理系统",
+  "name": "yibaoxiao-pro",
+  "version": "2.0.0",
+  "description": "易报销 Pro - 智能报销管理系统 (Supabase Cloud Backend)",
   "scripts": {
     "postinstall": "motia install || true",
     "dev": "motia dev",

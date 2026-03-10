@@ -1,7 +1,7 @@
 {
-  "name": "易报销pro-2",
+  "name": "yibaoxiao-pro",
   "private": true,
-  "version": "0.0.0",
+  "version": "2.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@google/genai": "^1.30.0",
+    "@supabase/supabase-js": "^2.98.0",
     "browser-image-compression": "^2.0.2",
     "html2canvas": "^1.4.1",
     "jspdf": "^3.0.4",

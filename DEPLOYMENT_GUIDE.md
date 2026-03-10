@@ -8,6 +8,28 @@
 
 ## 📋 部署前准备
 
+### GitHub Actions 一键部署需要的 Secrets
+
+在 GitHub 仓库的 `Settings -> Secrets and variables -> Actions` 中配置以下 Secrets：
+
+- `VITE_SUPABASE_URL`: Supabase 项目 URL，用于前端静态构建
+- `VITE_SUPABASE_ANON_KEY`: Supabase 匿名公钥，用于前端静态构建
+- `DEPLOY_HOST`: 目标服务器 IP 或域名
+- `DEPLOY_PORT`: SSH 端口，通常为 `22`
+- `DEPLOY_USER`: SSH 登录用户
+- `DEPLOY_SSH_KEY`: 部署私钥内容
+- `DEPLOY_PATH`: 服务器部署目录，例如 `/opt/yibaoxiao`
+- `DEPLOY_ENV_FILE`: 服务器 `.env` 文件完整内容，多行文本
+- `GHCR_USERNAME`: 具有 GHCR 拉取权限的用户名
+- `GHCR_TOKEN`: 具有 `read:packages` 权限的令牌
+
+配置完成后，推送到 `main` 分支会自动执行以下流程：
+
+1. 构建后端 Docker 镜像并推送到 GHCR
+2. 构建前端 Docker 镜像并注入 Supabase 构建参数
+3. 通过 SSH 上传 `docker-compose.prod.yml` 到服务器
+4. 在服务器写入 `.env`、登录 GHCR、拉取新镜像并执行 `docker compose up -d`
+
 ### 1. 服务器要求
 
 - **操作系统**：CentOS 7+, Ubuntu 18.04+, Debian 10+
