@@ -9,7 +9,13 @@ import {
   Check, Landmark, User, Info, ChevronRight, ChevronLeft, Loader
 } from 'lucide-react';
 import type { AppUser, PaymentAccount, BudgetProject, UserSettings, ViewType } from '../../types';
-import { register as supabaseRegister } from '../../api/supabase-client';
+import {
+  register as supabaseRegister,
+  getAIConfigs,
+  saveAIConfig,
+  deleteAIConfig,
+  testAIConfig,
+} from '../../api/supabase-client';
 
 // 模型定价信息 (2025年11月最新)
 const MODEL_PRICING: Record<string, { name: string; inputPrice: number; outputPrice: number; isFree: boolean }> = {
@@ -424,7 +430,7 @@ export const SettingsView = ({ settings, onUpdate, onNavigate }: SettingsViewPro
         const loadConfigs = async () => {
             setLoading(true);
             try {
-                const data = await apiRequest(`/api/settings/ai-config?userId=${settings.currentUser?.id || 'default'}`);
+                const data = await getAIConfigs(settings.currentUser?.id || '');
                 setConfigs(data?.configs || []);
             } catch (e) {
                 console.error('加载配置失败', e);
@@ -447,16 +453,14 @@ export const SettingsView = ({ settings, onUpdate, onNavigate }: SettingsViewPro
                 const selectedModel = providerInfo?.needsEndpointId
                     ? formData.endpointId
                     : (formData.model || getDefaultModel(formData.provider));
-                await apiRequest('/api/settings/ai-config', {
-                    method: 'POST',
-                    body: JSON.stringify({
-                        userId: settings.currentUser?.id || 'default',
-                        ...formData,
-                        model: selectedModel,
-                        displayModel: formData.model,
-                        name: formData.name || providerInfo?.name || formData.provider,
-                        apiUrl: formData.apiUrl || providerInfo?.baseUrl || '',
-                    }),
+                await saveAIConfig({
+                    userId: settings.currentUser?.id || '',
+                    provider: formData.provider,
+                    name: formData.name || providerInfo?.name || formData.provider,
+                    apiKey: formData.apiKey,
+                    apiUrl: formData.apiUrl || providerInfo?.baseUrl || '',
+                    model: selectedModel,
+                    isDefault: formData.isActive,
                 });
                 await loadConfigs();
                 setShowForm(false);
@@ -479,15 +483,12 @@ export const SettingsView = ({ settings, onUpdate, onNavigate }: SettingsViewPro
                 const selectedModel = providerInfo?.needsEndpointId
                     ? formData.endpointId
                     : (formData.model || getDefaultModel(formData.provider));
-                const data = await apiRequest('/api/settings/ai-config/test', {
-                    method: 'POST',
-                    body: JSON.stringify({
-                        userId: settings.currentUser?.id || 'default',
-                        provider: formData.provider,
-                        apiKey: formData.apiKey,
-                        model: selectedModel,
-                        baseUrl: providerInfo?.baseUrl || '',
-                    }),
+                const data = await testAIConfig({
+                    userId: settings.currentUser?.id || '',
+                    provider: formData.provider,
+                    apiKey: formData.apiKey,
+                    apiUrl: providerInfo?.baseUrl || '',
+                    model: selectedModel,
                 });
                 setTestResult(data);
             } catch (e: any) {
@@ -500,7 +501,7 @@ export const SettingsView = ({ settings, onUpdate, onNavigate }: SettingsViewPro
         const handleDelete = async (id: string) => {
             if (!confirm('确定删除该配置？')) return;
             try {
-                await fetch(`/api/settings/ai-config/${id}?userId=${settings.currentUser.id}`, { method: 'DELETE' });
+                await deleteAIConfig(id, settings.currentUser.id);
                 await loadConfigs();
             } catch (e) {
                 alert('删除失败');
@@ -509,14 +510,15 @@ export const SettingsView = ({ settings, onUpdate, onNavigate }: SettingsViewPro
 
         const handleSetActive = async (config: any) => {
             try {
-                await fetch('/api/settings/ai-config', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        ...config,
-                        userId: settings.currentUser.id,
-                        isActive: true,
-                    }),
+                await saveAIConfig({
+                    userId: settings.currentUser.id,
+                    id: config.id,
+                    provider: config.provider,
+                    name: config.name,
+                    apiKey: config.api_key,
+                    apiUrl: config.api_url,
+                    model: config.model,
+                    isDefault: true,
                 });
                 await loadConfigs();
             } catch (e) {
@@ -952,20 +954,9 @@ const UsageStats = ({ settings }: { settings: UserSettings }) => {
 
     const fetchStats = async () => {
         setLoading(true);
-        try {
-            const data = await apiRequest(`/api/settings/token-stats?userId=${userId}&period=${period}`);
-            console.log('Token 统计数据:', data);
-            if (data && data.summary) {
-                setStats(data);
-            } else {
-                setStats({ summary: { totalTokens: 0, totalCost: 0, usageCount: 0 }, byProvider: [], recentUsages: [] });
-            }
-        } catch (error) {
-            console.error('获取统计数据失败:', error);
-            setStats({ summary: { totalTokens: 0, totalCost: 0, usageCount: 0 }, byProvider: [], recentUsages: [] });
-        } finally {
-            setLoading(false);
-        }
+        // Token 统计暂未接入 Supabase，显示空数据
+        setStats({ summary: { totalTokens: 0, totalCost: 0, usageCount: 0 }, byProvider: [], recentUsages: [] });
+        setLoading(false);
     };
 
     const formatTokens = (tokens: number) => {

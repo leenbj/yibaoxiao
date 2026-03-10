@@ -4,7 +4,7 @@
  */
 
 import { useState } from 'react';
-import { apiRequest } from '../utils/api';
+import { aiRecognize } from '../api/supabase-client';
 import { Attachment, TripLeg } from '../types';
 import { getRecommendedLoans, MatchedLoan } from '../utils/loanMatcher';
 
@@ -29,6 +29,7 @@ interface UseTravelAnalysisParams {
   loans: any[];
   settings: any;
   form: any;
+  userId: string;
 }
 
 interface UseTravelAnalysisReturn {
@@ -73,6 +74,7 @@ export const useTravelAnalysis = ({
   loans,
   settings,
   form,
+  userId,
 }: UseTravelAnalysisParams): UseTravelAnalysisReturn => {
   const [analyzing, setAnalyzing] = useState(false);
   const [aiTicketResult, setAiTicketResult] = useState<any>(null);
@@ -403,59 +405,44 @@ export const useTravelAnalysis = ({
 
       // 创建 5 并行请求（仅对有图片的类型发送请求）
       const ticketPromise = ticketImages.length > 0
-        ? apiRequest('/api/ai/recognize', {
-            method: 'POST',
-            body: JSON.stringify({
-              type: 'ticket',
-              images: ticketImages,
-              mimeType: 'image/jpeg',
-            }),
+        ? aiRecognize({
+            type: 'travel',
+            images: ticketImages,
+            userId,
           })
         : Promise.resolve({ result: {} });
 
       const hotelPromise = hotelImages.length > 0
-        ? apiRequest('/api/ai/recognize', {
-          method: 'POST',
-          body: JSON.stringify({
-            type: 'hotel',
-            images: hotelImages,
-            mimeType: 'image/jpeg',
-          }),
+        ? aiRecognize({
+          type: 'travel',
+          images: hotelImages,
+          userId,
         })
         : Promise.resolve({ result: {} });
 
       // 打车发票识别 - 包含 projectName（货物或应税劳务名称）
       const taxiInvoicePromise = taxiInvoiceImages.length > 0
-        ? apiRequest('/api/ai/recognize', {
-          method: 'POST',
-          body: JSON.stringify({
-            type: 'taxi',
-            images: taxiInvoiceImages,
-            mimeType: 'image/jpeg',
-          }),
+        ? aiRecognize({
+          type: 'travel',
+          images: taxiInvoiceImages,
+          userId,
         })
         : Promise.resolve({ result: { details: [] } });
 
       // 打车行程单识别 - 只有路线信息
       const taxiTripPromise = taxiTripImages.length > 0
-        ? apiRequest('/api/ai/recognize', {
-          method: 'POST',
-          body: JSON.stringify({
-            type: 'taxi',
-            images: taxiTripImages,
-            mimeType: 'image/jpeg',
-          }),
+        ? aiRecognize({
+          type: 'travel',
+          images: taxiTripImages,
+          userId,
         })
         : Promise.resolve({ result: { details: [] } });
 
       const approvalPromise = approvalImages.length > 0
-        ? apiRequest('/api/ai/recognize', {
-          method: 'POST',
-          body: JSON.stringify({
-            type: 'approval',
-            images: approvalImages,
-            mimeType: 'image/jpeg',
-          }),
+        ? aiRecognize({
+          type: 'approval',
+          images: approvalImages,
+          userId,
         })
         : Promise.resolve({ result: {} });
 

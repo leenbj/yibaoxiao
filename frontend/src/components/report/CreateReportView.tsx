@@ -90,7 +90,8 @@ export const CreateReportView = ({
     settings,
     pendingExpenses: expenses.filter((e: any) => e.status === 'pending'),
     form,
-    mergeInvoices: true, // 初始值
+    mergeInvoices: true,
+    userId: settings.currentUser?.id || '',
   });
 
   // ============ 发票选择 Hook ============

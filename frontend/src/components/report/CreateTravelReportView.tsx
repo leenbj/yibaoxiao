@@ -90,6 +90,7 @@ export const CreateTravelReportView = ({
     loans,
     settings,
     form,
+    userId: settings.currentUser?.id || '',
   });
 
   // ============ 动态缩放计算 ============

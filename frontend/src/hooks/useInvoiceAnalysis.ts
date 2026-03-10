@@ -4,7 +4,7 @@
  */
 
 import { useState } from 'react';
-import { apiRequest } from '../utils/api';
+import { aiRecognize } from '../api/supabase-client';
 import { Attachment, ExpenseItem } from '../types';
 import { getRecommendedLoans, MatchedLoan } from '../utils/loanMatcher';
 
@@ -25,6 +25,7 @@ interface UseInvoiceAnalysisParams {
   pendingExpenses: any[];
   form: any;
   mergeInvoices: boolean;
+  userId: string;
 }
 
 interface UseInvoiceAnalysisReturn {
@@ -64,6 +65,7 @@ export const useInvoiceAnalysis = ({
   pendingExpenses,
   form,
   mergeInvoices,
+  userId,
 }: UseInvoiceAnalysisParams): UseInvoiceAnalysisReturn => {
   const [analyzing, setAnalyzing] = useState(false);
   const [aiInvoiceResult, setAiInvoiceResult] = useState<any>(null);
@@ -336,13 +338,10 @@ export const useInvoiceAnalysis = ({
       // 修改：每张发票单独发送识别请求，然后合并结果
       const invoicePromises = invoiceImages.map((image, idx) => {
         console.log(`[AI] 发送第 ${idx + 1} 张发票识别请求`);
-        return apiRequest('/api/ai/recognize', {
-          method: 'POST',
-          body: JSON.stringify({
-            type: 'invoice',
-            images: [image],  // 单张发票
-            mimeType: 'image/jpeg',
-          }),
+        return aiRecognize({
+          type: 'invoice',
+          images: [image],  // 单张发票
+          userId,
         }).then(response => {
           console.log(`[AI] 第 ${idx + 1} 张发票识别完成:`, JSON.stringify(response, null, 2).substring(0, 500));
           return response;
@@ -353,13 +352,10 @@ export const useInvoiceAnalysis = ({
       });
 
       const approvalPromise = approvalImages.length > 0
-        ? apiRequest('/api/ai/recognize', {
-          method: 'POST',
-          body: JSON.stringify({
-            type: 'approval',
-            images: approvalImages,
-            mimeType: 'image/jpeg',
-          }),
+        ? aiRecognize({
+          type: 'approval',
+          images: approvalImages,
+          userId,
         })
         : Promise.resolve({ result: {} });
 

@@ -6,7 +6,7 @@
 import { useState, useRef } from 'react';
 import { ChevronRight, ChevronLeft, FileCheck, Upload, Plus, X, Loader2, Save, Download, Edit2 } from 'lucide-react';
 import type { LoanViewProps, Attachment, LoanRecord } from '../../types';
-import { apiRequest } from '../../utils/api';
+import { aiRecognize } from '../../api/supabase-client';
 import { fileToBase64, pdfToImage } from '../../utils/image';
 import { digitToChinese } from '../../utils/format';
 import { LoanFormSheet } from './LoanFormSheet';
@@ -66,15 +66,12 @@ export const LoanView = ({ settings, onAction, onBack }: LoanViewProps) => {
             const cleanB64 = (d: string) => d.split(',')[1];
             const images = approvalFiles.map(f => cleanB64(f.data));
 
-            // 调用后端 AI 识别 API
-            const response = await apiRequest('/api/ai/recognize', {
-                method: 'POST',
-                body: JSON.stringify({
-                    type: 'approval',
-                    images: images,
-                    mimeType: 'image/jpeg',
-                }),
-            }) as any;
+            // 调用 Supabase AI 识别
+            const response = await aiRecognize({
+                type: 'approval',
+                images: images,
+                userId: settings.currentUser?.id || 'unknown',
+            });
 
             const data = response.result || {};
             console.warn('[AI] 审批单识别结果:', JSON.stringify(data, null, 2));
