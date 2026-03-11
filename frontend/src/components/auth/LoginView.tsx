@@ -4,7 +4,7 @@
  */
 
 import { useState } from 'react';
-import { AlertCircle, Loader2 } from 'lucide-react';
+import { AlertCircle, Loader2, Mail, CheckCircle } from 'lucide-react';
 import type { LoginViewProps } from '../../types';
 import { AppLogo } from '../shared/AppLogo';
 import { register as supabaseRegister, login as supabaseLogin } from '../../api/supabase-client';
@@ -17,11 +17,13 @@ import { register as supabaseRegister, login as supabaseLogin } from '../../api/
  * - 表单验证和提交
  * - 错误提示和加载状态
  * - 双栏响应式布局
+ * - 注册成功提示页面
  */
 export const LoginView = ({ onLogin }: LoginViewProps) => {
   const [isRegister, setIsRegister] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [registeredEmail, setRegisteredEmail] = useState<string | null>(null);
   const [form, setForm] = useState({
     name: '',
     email: '',
@@ -44,20 +46,10 @@ export const LoginView = ({ onLogin }: LoginViewProps) => {
           department: form.department,
         });
 
-        // 如果邮箱需要验证，显示提示信息
-        if (registerResult.requiresEmailConfirmation) {
-          setError('注册成功！请检查您的邮箱完成验证后再登录。');
-          setLoading(false);
-          return;
-        }
-
-        // 注册成功后自动登录
-        const loginResult = await supabaseLogin({
-          email: form.email,
-          password: form.password,
-        });
-
-        onLogin(loginResult.user, loginResult.token);
+        // 注册成功，显示邮箱验证提示页面
+        setRegisteredEmail(form.email);
+        setLoading(false);
+        return;
       } else {
         // 登录
         const result = await supabaseLogin({
@@ -134,6 +126,49 @@ export const LoginView = ({ onLogin }: LoginViewProps) => {
       {/* 右侧 - 登录表单 (50%) */}
       <div className="flex-1 lg:w-1/2 lg:flex-none flex items-center justify-center p-8 bg-white">
         <div className="w-full max-w-sm">
+          {/* 注册成功提示页面 */}
+          {registeredEmail ? (
+            <div className="text-center">
+              {/* 成功图标 */}
+              <div className="w-16 h-16 mx-auto mb-6 bg-emerald-100 rounded-full flex items-center justify-center">
+                <CheckCircle className="w-8 h-8 text-emerald-600" />
+              </div>
+
+              {/* 标题 */}
+              <h2 className="text-2xl font-bold text-slate-900 mb-3">
+                注册申请已提交
+              </h2>
+
+              {/* 提示信息 */}
+              <p className="text-slate-600 mb-6 leading-relaxed">
+                我们已向 <span className="font-medium text-slate-900">{registeredEmail}</span> 发送了一封验证邮件，请打开邮箱查看邮件并点击激活链接即可使用。
+              </p>
+
+              {/* 邮箱图标提示 */}
+              <div className="flex items-center justify-center gap-2 text-sm text-slate-500 mb-6">
+                <Mail className="w-4 h-4" />
+                <span>请检查您的收件箱和垃圾邮件文件夹</span>
+              </div>
+
+              {/* 返回登录按钮 */}
+              <button
+                onClick={() => {
+                  setRegisteredEmail(null);
+                  setIsRegister(false);
+                  setForm({ name: '', email: '', password: '', department: '' });
+                }}
+                className="w-full bg-slate-900 text-white py-3 rounded-lg font-medium hover:bg-indigo-600 transition-all"
+              >
+                返回登录
+              </button>
+
+              {/* 底部提示 */}
+              <p className="mt-6 text-xs text-slate-400">
+                没有收到邮件？请检查邮箱地址是否正确，或联系管理员
+              </p>
+            </div>
+          ) : (
+            <>
           {/* 移动端 Logo */}
           <div className="lg:hidden flex items-center justify-center gap-3 mb-8">
             <AppLogo className="w-10 h-10" />
@@ -246,6 +281,8 @@ export const LoginView = ({ onLogin }: LoginViewProps) => {
             {' '}和{' '}
             <a href="#" className="text-slate-600 hover:underline">隐私政策</a>
           </p>
+            </>
+          )}
         </div>
       </div>
     </div>
