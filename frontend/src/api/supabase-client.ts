@@ -968,10 +968,16 @@ export async function getAIConfigs(userId: string) {
     throw new Error(error.message)
   }
 
-  // 隐藏 API Key
+  // 隐藏 API Key 并转换字段名（snake_case -> camelCase）
   const configs = (data || []).map(config => ({
     ...config,
     api_key: '***',
+    apiKey: '***',
+    isActive: config.is_active,
+    apiUrl: config.api_url,
+    createdAt: config.created_at,
+    updatedAt: config.updated_at,
+    userId: config.user_id,
   }))
 
   return {

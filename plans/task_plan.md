@@ -1,6 +1,29 @@
 # 易报销系统 Bug 修复计划
 
-## 当前任务：Bug 修复 Sprint 4 (2026-03-13) ✅ 已完成
+## 当前任务：Bug 修复 Sprint 5 (2026-03-13) ✅ 已完成
+
+### 修复的 Bug
+
+#### Bug: AI 配置"设为默认"不生效
+- **现象**: 点击"设为默认"按钮没有任何提示，AI 识别仍然失败
+- **根因**: 前端使用 `config.isActive`（camelCase）读取状态，但数据库字段是 `is_active`（snake_case），`getAIConfigs` 函数没有做字段名转换
+- **修复内容**:
+  - 修改 `getAIConfigs` 函数，添加字段名转换：
+    - `is_active` → `isActive`
+    - `api_key` → `apiKey`
+    - `api_url` → `apiUrl`
+    - `created_at` → `createdAt`
+    - `updated_at` → `updatedAt`
+    - `user_id` → `userId`
+
+### 修改文件清单
+```
+modified:   frontend/src/api/supabase-client.ts
+```
+
+---
+
+## 历史任务：Bug 修复 Sprint 4 (2026-03-13) ✅ 已完成
 
 ### 修复的 Bug 列表
 
