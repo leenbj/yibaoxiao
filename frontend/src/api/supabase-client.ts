@@ -944,7 +944,7 @@ export async function deleteProject(projectId: string, userId: string) {
  */
 export interface AIConfigType {
   id: string
-  provider: 'gemini' | 'deepseek' | 'minimax' | 'glm' | 'openai' | 'claude' | 'qwen'
+  provider: 'gemini' | 'deepseek' | 'minimax' | 'glm' | 'openai' | 'claude' | 'qwen' | 'moonshot' | 'doubao' | 'volcengine'
   name: string
   apiKey: string
   apiUrl?: string
@@ -1190,34 +1190,341 @@ export async function testAIConfig(params: {
 // ==================== AI 识别 API ====================
 
 /**
+ * 获取用户活跃的 AI 配置（包含 API Key，用于 AI 识别）
+ */
+export async function getActiveAIConfig(userId: string): Promise<AIConfigType | null> {
+  const { data, error } = await supabase
+    .from('ai_configs')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('is_active', true)
+    .single()
+
+  if (error || !data) {
+    return null
+  }
+
+  return {
+    id: data.id,
+    provider: data.provider as any,
+    name: data.provider,
+    apiKey: data.api_key,
+    apiUrl: data.api_url || undefined,
+    model: data.model || undefined,
+  }
+}
+
+/**
  * AI 识别发票/审批单
+ * 直接从前端调用 AI API（不需要 Edge Function）
  */
 export async function aiRecognize(params: {
   images: string[]
   type: 'invoice' | 'approval' | 'travel'
   userId: string
 }) {
-  // 调用 Supabase Edge Function
-  const { data: session } = await supabase.auth.getSession()
-  
-  const response = await fetch(
-    `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai/recognize`,
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${session.session?.access_token}`,
-      },
-      body: JSON.stringify(params),
-    }
-  )
+  // 获取用户配置的 AI
+  const config = await getActiveAIConfig(params.userId)
 
-  if (!response.ok) {
-    const error = await response.json()
-    throw new Error(error.message || 'AI 识别失败')
+  if (!config) {
+    throw new Error('请先在系统设置中配置 AI 模型')
   }
 
-  return response.json()
+  // 构建识别提示词
+  const prompts: Record<string, string> = {
+    invoice: `请识别这张发票图片，提取以下信息并以 JSON 格式返回：
+{
+  "projectName": "项目名称或费用事由",
+  "totalAmount": 金额数字,
+  "invoiceDate": "开票日期 YYYY-MM-DD",
+  "invoiceNumber": "发票号码",
+  "seller": "销售方名称",
+  "items": [{"name": "项目名称", "amount": 金额}]
+}
+
+如果是多张发票，返回数组格式：[{...}, {...}]
+请只返回 JSON，不要有其他说明文字。`,
+    approval: `请识别这张审批单/申请单图片，提取以下信息并以 JSON 格式返回：
+{
+  "approvalNumber": "审批单号",
+  "eventSummary": "事由摘要",
+  "applicant": "申请人",
+  "approvalAmount": 批准金额数字,
+  "budgetProject": "预算项目名称",
+  "budgetCode": "预算项目编码"
+}
+请只返回 JSON，不要有其他说明文字。`,
+    travel: `请识别这张差旅相关票据图片，提取以下信息并以 JSON 格式返回：
+{
+  "type": "交通/住宿/餐饮",
+  "from": "出发地",
+  "to": "目的地",
+  "date": "日期 YYYY-MM-DD",
+  "amount": 金额数字,
+  "description": "描述"
+}
+请只返回 JSON，不要有其他说明文字。`
+  }
+
+  const systemPrompt = prompts[params.type] || prompts.invoice
+  const userMessage = params.type === 'travel'
+    ? '请识别这张差旅票据'
+    : params.type === 'approval'
+      ? '请识别这张审批单'
+      : '请识别这张发票'
+
+  // 构建 API 请求
+  let apiUrl: string
+  let requestBody: any
+  let headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  }
+
+  switch (config.provider) {
+    case 'doubao':
+    case 'volcengine':
+      // 火山引擎：model 参数使用 Endpoint ID
+      apiUrl = `${config.apiUrl || 'https://ark.cn-beijing.volces.com/api/v3'}/chat/completions`
+      headers['Authorization'] = `Bearer ${config.apiKey}`
+      requestBody = {
+        model: config.model,
+        messages: [
+          {
+            role: 'system',
+            content: systemPrompt
+          },
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: userMessage },
+              ...params.images.map(img => ({
+                type: 'image_url',
+                image_url: { url: img }
+              }))
+            ]
+          }
+        ],
+        max_tokens: 2000,
+      }
+      break
+
+    case 'openai':
+      apiUrl = `${config.apiUrl || 'https://api.openai.com/v1'}/chat/completions`
+      headers['Authorization'] = `Bearer ${config.apiKey}`
+      requestBody = {
+        model: config.model || 'gpt-4o-mini',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: userMessage },
+              ...params.images.map(img => ({
+                type: 'image_url',
+                image_url: { url: img }
+              }))
+            ]
+          }
+        ],
+        max_tokens: 2000,
+      }
+      break
+
+    case 'deepseek':
+      apiUrl = `${config.apiUrl || 'https://api.deepseek.com/v1'}/chat/completions`
+      headers['Authorization'] = `Bearer ${config.apiKey}`
+      requestBody = {
+        model: config.model || 'deepseek-chat',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: userMessage },
+              ...params.images.map(img => ({
+                type: 'image_url',
+                image_url: { url: img }
+              }))
+            ]
+          }
+        ],
+        max_tokens: 2000,
+      }
+      break
+
+    case 'qwen':
+      apiUrl = `${config.apiUrl || 'https://dashscope.aliyuncs.com/compatible-mode/v1'}/chat/completions`
+      headers['Authorization'] = `Bearer ${config.apiKey}`
+      requestBody = {
+        model: config.model || 'qwen-vl-plus',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: userMessage },
+              ...params.images.map(img => ({
+                type: 'image_url',
+                image_url: { url: img }
+              }))
+            ]
+          }
+        ],
+        max_tokens: 2000,
+      }
+      break
+
+    case 'glm':
+      apiUrl = `${config.apiUrl || 'https://open.bigmodel.cn/api/paas/v4'}/chat/completions`
+      headers['Authorization'] = `Bearer ${config.apiKey}`
+      requestBody = {
+        model: config.model || 'glm-4v-flash',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: userMessage },
+              ...params.images.map(img => ({
+                type: 'image_url',
+                image_url: { url: img }
+              }))
+            ]
+          }
+        ],
+        max_tokens: 2000,
+      }
+      break
+
+    case 'gemini':
+      // Gemini 使用不同的 API 格式
+      apiUrl = `${config.apiUrl || 'https://generativelanguage.googleapis.com/v1beta'}/models/${config.model || 'gemini-2.0-flash'}:generateContent?key=${config.apiKey}`
+      requestBody = {
+        contents: [
+          {
+            parts: [
+              { text: systemPrompt },
+              { text: userMessage },
+              ...params.images.map(img => {
+                // 从 data URL 提取 base64 数据
+                const match = img.match(/^data:([^;]+);base64,(.+)$/)
+                if (match) {
+                  return {
+                    inlineData: {
+                      mimeType: match[1],
+                      data: match[2]
+                    }
+                  }
+                }
+                return { text: img }
+              })
+            ]
+          }
+        ],
+        generationConfig: {
+          maxOutputTokens: 2000,
+        }
+      }
+      break
+
+    default:
+      // 通用 OpenAI 兼容格式
+      apiUrl = `${config.apiUrl}/chat/completions`
+      headers['Authorization'] = `Bearer ${config.apiKey}`
+      requestBody = {
+        model: config.model,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: userMessage },
+              ...params.images.map(img => ({
+                type: 'image_url',
+                image_url: { url: img }
+              }))
+            ]
+          }
+        ],
+        max_tokens: 2000,
+      }
+  }
+
+  console.log(`[AI] 调用 ${config.provider} API:`, apiUrl)
+
+  const response = await fetch(apiUrl, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(requestBody),
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    console.error('[AI] API 错误:', response.status, errorText)
+    throw new Error(`AI API 错误: ${response.status} - ${errorText.substring(0, 200)}`)
+  }
+
+  const data = await response.json()
+
+  // 解析响应
+  let result: any = {}
+
+  if (config.provider === 'gemini') {
+    // Gemini 响应格式
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || ''
+    result = parseAIResponse(text)
+  } else {
+    // OpenAI 兼容格式
+    const text = data.choices?.[0]?.message?.content || ''
+    result = parseAIResponse(text)
+  }
+
+  console.log('[AI] 识别结果:', JSON.stringify(result).substring(0, 500))
+
+  return { result }
+}
+
+/**
+ * 解析 AI 响应文本为 JSON
+ */
+function parseAIResponse(text: string): any {
+  // 尝试直接解析
+  try {
+    return JSON.parse(text)
+  } catch {
+    // 尝试提取 JSON 代码块
+    const jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/)
+    if (jsonMatch) {
+      try {
+        return JSON.parse(jsonMatch[1].trim())
+      } catch {
+        // 继续
+      }
+    }
+
+    // 尝试提取 {} 或 [] 包裹的内容
+    const objectMatch = text.match(/\{[\s\S]*\}/)
+    const arrayMatch = text.match(/\[[\s\S]*\]/)
+
+    if (objectMatch) {
+      try {
+        return JSON.parse(objectMatch[0])
+      } catch {
+        // 继续
+      }
+    }
+
+    if (arrayMatch) {
+      try {
+        return JSON.parse(arrayMatch[0])
+      } catch {
+        // 继续
+      }
+    }
+
+    // 返回空对象
+    return {}
+  }
 }
 
 // ==================== 统计 API ====================
@@ -1334,6 +1641,7 @@ export const api = {
   deleteProject,
   // AI 识别
   aiRecognize,
+  getActiveAIConfig,
   // AI 配置
   getAIConfigs,
   saveAIConfig,
