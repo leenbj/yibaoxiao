@@ -15,6 +15,12 @@ import {
   saveAIConfig,
   deleteAIConfig,
   testAIConfig,
+  createPayee,
+  updatePayee,
+  deletePayee,
+  createProject,
+  updateProject,
+  deleteProject,
 } from '../../api/supabase-client';
 
 // 模型定价信息 (2025年11月最新)
@@ -757,25 +763,54 @@ export const SettingsView = ({ settings, onUpdate, onNavigate }: SettingsViewPro
     const PaymentSettings = () => {
         const [isAdding, setIsAdding] = useState(false);
         const [newCard, setNewCard] = useState<PaymentAccount>({ id: '', bankName: '', bankBranch: '', accountNumber: '', accountName: '', isDefault: false });
+        const [isLoading, setIsLoading] = useState(false);
 
-        const handleAdd = () => {
+        const handleAdd = async () => {
             if(!newCard.accountNumber || !newCard.bankName || !newCard.accountName) return alert("信息不完整");
-            const account = { ...newCard, id: `pay-${Date.now()}` };
-            const updatedAccounts = settings.paymentAccounts.map((a:any) => account.isDefault ? { ...a, isDefault: false } : a);
-            onUpdate({ ...settings, paymentAccounts: [...updatedAccounts, account] });
-            setIsAdding(false);
-            setNewCard({ id: '', bankName: '', bankBranch: '', accountNumber: '', accountName: '', isDefault: false });
+            setIsLoading(true);
+            try {
+                const result = await createPayee({
+                    userId: settings.currentUser?.id || '',
+                    bankName: newCard.bankName,
+                    bankBranch: newCard.bankBranch,
+                    accountNumber: newCard.accountNumber,
+                    accountName: newCard.accountName,
+                    isDefault: newCard.isDefault,
+                });
+                // 更新本地状态
+                const account = { ...newCard, id: result.paymentAccount.id };
+                const updatedAccounts = newCard.isDefault
+                    ? settings.paymentAccounts.map((a:any) => ({ ...a, isDefault: false }))
+                    : settings.paymentAccounts;
+                onUpdate({ ...settings, paymentAccounts: [...updatedAccounts, account] });
+                setIsAdding(false);
+                setNewCard({ id: '', bankName: '', bankBranch: '', accountNumber: '', accountName: '', isDefault: false });
+            } catch (error: any) {
+                alert(error.message || '添加失败');
+            } finally {
+                setIsLoading(false);
+            }
         };
 
-        const deleteAccount = (id: string) => {
+        const deleteAccount = async (id: string) => {
              if(confirm("确定删除该收款账户吗？")) {
-                 onUpdate({ ...settings, paymentAccounts: settings.paymentAccounts.filter((a:any) => a.id !== id) });
+                 try {
+                     await deletePayee(id, settings.currentUser?.id || '');
+                     onUpdate({ ...settings, paymentAccounts: settings.paymentAccounts.filter((a:any) => a.id !== id) });
+                 } catch (error: any) {
+                     alert(error.message || '删除失败');
+                 }
              }
         };
 
-        const setDefault = (id: string) => {
-            const updated = settings.paymentAccounts.map((a:any) => ({ ...a, isDefault: a.id === id }));
-            onUpdate({ ...settings, paymentAccounts: updated });
+        const setDefault = async (id: string) => {
+            try {
+                await updatePayee(id, settings.currentUser?.id || '', { isDefault: true });
+                const updated = settings.paymentAccounts.map((a:any) => ({ ...a, isDefault: a.id === id }));
+                onUpdate({ ...settings, paymentAccounts: updated });
+            } catch (error: any) {
+                alert(error.message || '设置默认账户失败');
+            }
         };
 
         return (
@@ -836,24 +871,50 @@ export const SettingsView = ({ settings, onUpdate, onNavigate }: SettingsViewPro
     // 预算项目管理
     const BudgetSettings = () => {
         const [newProj, setNewProj] = useState<BudgetProject>({ id: '', name: '', code: '' });
+        const [isLoading, setIsLoading] = useState(false);
 
-        const addProject = () => {
+        const addProject = async () => {
             if(!newProj.name || !newProj.code) return alert("请填写完整");
-            const project = { ...newProj, id: `proj-${Date.now()}` };
-             const updatedProjs = settings.budgetProjects.map((p:any) => newProj.isDefault ? { ...p, isDefault: false } : p);
-            onUpdate({ ...settings, budgetProjects: [...updatedProjs, project] });
-            setNewProj({ id: '', name: '', code: '' });
+            setIsLoading(true);
+            try {
+                const result = await createProject({
+                    userId: settings.currentUser?.id || '',
+                    name: newProj.name,
+                    code: newProj.code,
+                    isDefault: newProj.isDefault,
+                });
+                const project = { ...newProj, id: result.budgetProject.id };
+                const updatedProjs = newProj.isDefault
+                    ? settings.budgetProjects.map((p:any) => ({ ...p, isDefault: false }))
+                    : settings.budgetProjects;
+                onUpdate({ ...settings, budgetProjects: [...updatedProjs, project] });
+                setNewProj({ id: '', name: '', code: '' });
+            } catch (error: any) {
+                alert(error.message || '添加失败');
+            } finally {
+                setIsLoading(false);
+            }
         };
 
-        const deleteProject = (id: string) => {
+        const handleDeleteProject = async (id: string) => {
              if(confirm("确定删除该预算项目吗？")) {
-                 onUpdate({ ...settings, budgetProjects: settings.budgetProjects.filter((p:any) => p.id !== id) });
+                 try {
+                     await deleteProject(id, settings.currentUser?.id || '');
+                     onUpdate({ ...settings, budgetProjects: settings.budgetProjects.filter((p:any) => p.id !== id) });
+                 } catch (error: any) {
+                     alert(error.message || '删除失败');
+                 }
              }
         };
 
-        const setDefault = (id: string) => {
-             const updated = settings.budgetProjects.map((p:any) => ({ ...p, isDefault: p.id === id }));
-             onUpdate({ ...settings, budgetProjects: updated });
+        const setDefault = async (id: string) => {
+            try {
+                await updateProject(id, settings.currentUser?.id || '', { isDefault: true });
+                const updated = settings.budgetProjects.map((p:any) => ({ ...p, isDefault: p.id === id }));
+                onUpdate({ ...settings, budgetProjects: updated });
+            } catch (error: any) {
+                alert(error.message || '设置默认项目失败');
+            }
         };
 
         return (
@@ -887,7 +948,7 @@ export const SettingsView = ({ settings, onUpdate, onNavigate }: SettingsViewPro
                                      <td className="p-3 font-medium">{p.name}</td>
                                      <td className="p-3 font-mono text-slate-500">{p.code}</td>
                                      <td className="p-3 text-right">
-                                         <button onClick={() => deleteProject(p.id)} className="text-slate-400 hover:text-red-500"><Trash2 size={16}/></button>
+                                         <button onClick={() => handleDeleteProject(p.id)} className="text-slate-400 hover:text-red-500"><Trash2 size={16}/></button>
                                      </td>
                                  </tr>
                              ))}
