@@ -235,6 +235,7 @@ export type ViewType = 'dashboard' | 'ledger' | 'record' | 'create' | 'create-tr
 export interface LedgerViewProps {
   expenses: ExpenseItem[];
   setExpenses: React.Dispatch<React.SetStateAction<ExpenseItem[]>>;
+  userId: string;
   onAdd?: (expense: ExpenseItem) => Promise<void>;
   onBack?: () => void;
 }

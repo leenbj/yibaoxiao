@@ -350,17 +350,22 @@ export async function updateExpense(
  * 删除费用记录
  */
 export async function deleteExpense(expenseId: string, userId: string) {
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('expenses')
     .delete()
     .eq('id', expenseId)
     .eq('user_id', userId)
+    .select('id')
 
   if (error) {
     throw new Error(error.message)
   }
 
-  return { success: true }
+  if (!data || data.length === 0) {
+    throw new Error('记录不存在或无权删除')
+  }
+
+  return { success: true, deletedId: data[0].id }
 }
 
 // ==================== 报销单 API ====================

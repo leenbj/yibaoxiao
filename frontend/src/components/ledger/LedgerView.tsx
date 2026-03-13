@@ -7,25 +7,65 @@ import { useState } from 'react';
 import { Briefcase, Trash2, ChevronRight } from 'lucide-react';
 import type { LedgerViewProps, ExpenseStatus } from '../../types';
 import { formatDateTime } from '../../utils/format';
+import { deleteExpense } from '../../api/supabase-client';
 
 /**
  * 账本视图组件
  *
  * 功能:
  * - 表格展示所有费用记录
- * - 多选删除
+ * - 多选删除（同步到数据库）
  * - 状态更新(未报销/报销中/已报销)
  * - 空状态提示
  */
-export const LedgerView = ({ expenses, setExpenses }: LedgerViewProps) => {
+export const LedgerView = ({ expenses, setExpenses, userId }: LedgerViewProps) => {
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
+    const [isDeleting, setIsDeleting] = useState(false);
 
-    const handleDelete = () => {
-        if(confirm(`确定删除选中的 ${selectedIds.length} 条记录吗？`)) {
-            setExpenses((prev: any[]) => prev.filter(e => !selectedIds.includes(e.id)));
-            setSelectedIds([]);
+    const handleDelete = async () => {
+        if (selectedIds.length === 0) return;
+        if (!confirm(`确定删除选中的 ${selectedIds.length} 条记录吗？`)) return;
+
+        setIsDeleting(true);
+        const idsToDelete = [...selectedIds]; // 保存当前选中项快照
+
+        try {
+            // 使用 Promise.allSettled 处理部分成功的情况
+            const results = await Promise.allSettled(
+                idsToDelete.map(id => deleteExpense(id, userId))
+            );
+
+            // 收集成功和失败的 ID
+            const successIds: string[] = [];
+            const failedIds: string[] = [];
+
+            results.forEach((result, index) => {
+                if (result.status === 'fulfilled') {
+                    successIds.push(idsToDelete[index]);
+                } else {
+                    failedIds.push(idsToDelete[index]);
+                }
+            });
+
+            // 只移除成功删除的记录
+            if (successIds.length > 0) {
+                setExpenses((prev: any[]) => prev.filter(e => !successIds.includes(e.id)));
+            }
+
+            // 更新选中状态
+            setSelectedIds(failedIds);
+
+            // 提示用户结果
+            if (failedIds.length > 0) {
+                alert(`${successIds.length} 条记录删除成功，${failedIds.length} 条删除失败，请稍后重试`);
+            }
+        } catch (error) {
+            console.error('删除费用记录失败:', error);
+            alert(error instanceof Error ? error.message : '删除失败，请稍后重试');
+        } finally {
+            setIsDeleting(false);
         }
-    }
+    };
 
     const updateStatus = (id: string, newStatus: ExpenseStatus) => {
         setExpenses((prev: any[]) => prev.map(e => e.id === id ? { ...e, status: newStatus } : e));
@@ -49,8 +89,16 @@ export const LedgerView = ({ expenses, setExpenses }: LedgerViewProps) => {
             <div className="flex justify-between items-center">
                 <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Briefcase size={18} className="text-slate-600"/> 记账本</h2>
                 {selectedIds.length > 0 && (
-                    <button onClick={handleDelete} className="bg-red-50 text-red-600 px-3 py-1.5 rounded-lg font-medium text-xs flex items-center gap-1.5 hover:bg-red-100">
-                        <Trash2 size={14}/> 删除 ({selectedIds.length})
+                    <button
+                        onClick={handleDelete}
+                        disabled={isDeleting}
+                        className={`px-3 py-1.5 rounded-lg font-medium text-xs flex items-center gap-1.5 ${
+                            isDeleting
+                                ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                                : 'bg-red-50 text-red-600 hover:bg-red-100'
+                        }`}
+                    >
+                        <Trash2 size={14}/> {isDeleting ? '删除中...' : `删除 (${selectedIds.length})`}
                     </button>
                 )}
             </div>
@@ -61,7 +109,13 @@ export const LedgerView = ({ expenses, setExpenses }: LedgerViewProps) => {
                         <thead className="bg-slate-50 sticky top-0 z-10 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
                             <tr>
                                 <th className="px-3 py-2.5 w-10 text-center">
-                                    <input type="checkbox" className="w-3.5 h-3.5" onChange={(e) => setSelectedIds(e.target.checked ? expenses.map((e:any) => e.id) : [])} checked={selectedIds.length === expenses.length && expenses.length > 0} />
+                                    <input
+                                        type="checkbox"
+                                        className="w-3.5 h-3.5"
+                                        onChange={(e) => setSelectedIds(e.target.checked ? expenses.map((e:any) => e.id) : [])}
+                                        checked={selectedIds.length === expenses.length && expenses.length > 0}
+                                        disabled={isDeleting}
+                                    />
                                 </th>
                                 <th className="px-3 py-2.5 w-28">日期</th>
                                 <th className="px-3 py-2.5">描述</th>
@@ -77,7 +131,13 @@ export const LedgerView = ({ expenses, setExpenses }: LedgerViewProps) => {
                             {expenses.map((e: any) => (
                                 <tr key={e.id} className="hover:bg-slate-50 transition-colors group">
                                     <td className="px-3 py-2 text-center">
-                                        <input type="checkbox" className="w-3.5 h-3.5" checked={selectedIds.includes(e.id)} onChange={() => toggleSelect(e.id)} />
+                                        <input
+                                            type="checkbox"
+                                            className="w-3.5 h-3.5"
+                                            checked={selectedIds.includes(e.id)}
+                                            onChange={() => toggleSelect(e.id)}
+                                            disabled={isDeleting}
+                                        />
                                     </td>
                                     <td className="px-3 py-2 font-mono text-xs text-slate-500">{formatDateTime(e.date)}</td>
                                     <td className="px-3 py-2">

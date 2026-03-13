@@ -608,7 +608,7 @@ const MainApp = ({ user, onLogout }: { user: AppUser; onLogout: () => void }) =>
             ) : (
               <>
                 {view === "dashboard" && <OverviewView expenses={expenses} reports={reports} loans={loans} onNavigate={setView} />}
-                {view === "ledger" && <LedgerView expenses={expenses} setExpenses={setExpenses} />}
+                {view === "ledger" && <LedgerView expenses={expenses} setExpenses={setExpenses} userId={getUserId(user)} />}
                 {view === "record" && <RecordView onSave={addExpense} onBack={() => setView("dashboard")} />}
                 {view === "create" && (
                   <CreateReportView
