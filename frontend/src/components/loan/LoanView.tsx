@@ -110,9 +110,11 @@ export const LoanView = ({ settings, onAction, onBack }: LoanViewProps) => {
             }
 
             setStep(2);
-        } catch (e) {
-            console.error(e);
-            alert("AI 识别失败，请检查网络或重试");
+        } catch (e: any) {
+            console.error('[AI] 审批单识别失败:', e);
+            // 显示具体的错误消息
+            const errorMessage = e?.message || 'AI 识别失败，请检查网络或重试';
+            alert(errorMessage);
         } finally {
             setAnalyzing(false);
         }

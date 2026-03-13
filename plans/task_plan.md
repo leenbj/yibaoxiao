@@ -1,26 +1,69 @@
 # 易报销系统 Bug 修复计划
 
-## 当前任务：Bug 修复 Sprint 2 (2026-03-13) ✅ 已完成
+## 当前任务：Bug 修复 Sprint 4 (2026-03-13) ✅ 已完成
+
+### 修复的 Bug 列表
+
+#### Bug 1: AI 分析失败错误提示不明确 ✅ 已修复
+- **现象**: 报销提交资料后提醒"AI 分析失败，请检查网络或重试"，无法知道具体原因
+- **根因**: 错误处理只显示通用消息，没有显示实际的错误内容
+- **修复内容**:
+  - `useInvoiceAnalysis.ts`: 改为显示具体错误消息
+  - `LoanView.tsx`: 改为显示具体错误消息
+  - `useTravelAnalysis.ts`: 已有完善的错误提示（无需修改）
+
+#### Bug 2: AI 配置自动激活问题 ✅ 已修复
+- **现象**: 用户添加第一个 AI 配置后，配置未被激活，导致 AI 识别失败
+- **根因**: `saveAIConfig` 函数中，`is_active` 默认为 `false`，用户第一次添加配置时没有激活
+- **修复内容**:
+  - 修改 `saveAIConfig` 函数逻辑：
+    - 如果设置为默认，则激活此配置并取消其他配置的激活状态
+    - 如果用户没有任何激活的配置（无论是新建还是编辑），自动激活此配置
+  - 修改 `deleteAIConfig` 函数逻辑：
+    - 如果删除的是激活配置，自动激活剩余的第一个配置
+
+#### Bug 3: 记账本状态更新不持久化 ✅ 已修复
+- **现象**: 在记账本中更改费用状态后刷新页面状态恢复
+- **根因**: `updateStatus` 函数只更新本地状态，没有同步到数据库
+- **修复内容**:
+  - 导入 `updateExpense` API
+  - 修改 `updateStatus` 函数，使用乐观更新策略：
+    - 先保存原始状态
+    - 乐观更新本地状态
+    - 同步到数据库
+    - 失败时正确回滚到原始状态
+
+### 修改文件清单
+```
+modified:   frontend/src/api/supabase-client.ts
+modified:   frontend/src/components/ledger/LedgerView.tsx
+modified:   frontend/src/components/loan/LoanView.tsx
+modified:   frontend/src/hooks/useInvoiceAnalysis.ts
+modified:   plans/task_plan.md
+```
+
+### 验证结果
+- [x] TypeScript 类型检查通过
+- [ ] 需要部署到 Supabase 进行实际验证
+- [ ] 需要用户测试 AI 识别功能
+
+---
+
+## 历史任务：Bug 修复 Sprint 3 (2026-03-13) ✅ 已完成
 
 ### 修复的 Bug 列表
 
 #### Bug 1: 记账本删除数据失败 ✅ 已修复
 - **现象**: 记账本添加的记账信息，删除后刷新页面数据恢复
 - **根因**: `LedgerView.tsx` 的 `handleDelete` 只更新本地状态，未调用 API
-- **修复内容**:
-  - `frontend/src/types/index.ts`: 添加 `userId` 到 `LedgerViewProps`
-  - `frontend/src/components/ledger/LedgerView.tsx`: 添加 `deleteExpense` API 调用
-  - `frontend/src/index.tsx`: 传递 `userId` 给 `LedgerView`
-  - 改进: 使用 `Promise.allSettled` 处理批量删除部分成功的情况
-  - 改进: 添加删除中的 loading 状态和禁用勾选框
 
 #### Bug 2: 系统设置缺失管理入口 ✅ 已修复
 - **现象**: 系统设置中找不到 AI 大模型配置和用户管理入口
 - **根因**: 功能已存在，但需要管理员账户才能看到入口
-- **修复内容**:
-  - 创建 `supabase/migrations/006_seed_default_super_admin.sql`
-  - 默认超级管理员账户: `wangbo@knet.cn` / `68719929`
-  - 该账户具有 `admin` 角色，可访问用户管理和 AI 配置
+
+#### Bug 3: 豆包模型连接失败 ✅ 已修复
+- **现象**: 测试豆包模型连接失败
+- **根因**: `testAIConfig` 函数未处理 doubao/volcengine 提供商
 
 ---
 

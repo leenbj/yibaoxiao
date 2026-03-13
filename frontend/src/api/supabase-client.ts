@@ -993,13 +993,33 @@ export async function saveAIConfig(params: {
   model?: string
   isDefault?: boolean
 }) {
+  // 检查用户是否有激活的配置
+  const { data: existingConfigs } = await supabase
+    .from('ai_configs')
+    .select('id, is_active')
+    .eq('user_id', params.userId)
+
+  const hasActiveConfig = existingConfigs?.some((c: any) => c.is_active && c.id !== params.id) || false
+
+  // 如果设置为默认，或者用户没有任何激活的配置，则激活此配置
+  // 注意：无论是新建还是编辑，只要没有其他激活配置，都应该激活此配置
+  const shouldBeActive = params.isDefault || !hasActiveConfig
+
   const configData = {
     user_id: params.userId,
     provider: params.provider as any,
     api_key: params.apiKey,
     api_url: params.apiUrl || null,
     model: params.model || null,
-    is_active: params.isDefault || false,
+    is_active: shouldBeActive,
+  }
+
+  // 如果设置为默认，先取消其他配置的激活状态
+  if (params.isDefault) {
+    await supabase
+      .from('ai_configs')
+      .update({ is_active: false })
+      .eq('user_id', params.userId)
   }
 
   if (params.id) {
@@ -1037,6 +1057,15 @@ export async function saveAIConfig(params: {
  * 删除 AI 配置
  */
 export async function deleteAIConfig(configId: string, userId: string) {
+  // 检查要删除的配置是否是激活状态
+  const { data: configToDelete } = await supabase
+    .from('ai_configs')
+    .select('is_active')
+    .eq('id', configId)
+    .eq('user_id', userId)
+    .single()
+
+  // 删除配置
   const { error } = await supabase
     .from('ai_configs')
     .delete()
@@ -1045,6 +1074,22 @@ export async function deleteAIConfig(configId: string, userId: string) {
 
   if (error) {
     throw new Error(error.message)
+  }
+
+  // 如果删除的是激活配置，自动激活另一个配置
+  if (configToDelete?.is_active) {
+    const { data: remainingConfigs } = await supabase
+      .from('ai_configs')
+      .select('id')
+      .eq('user_id', userId)
+      .limit(1)
+
+    if (remainingConfigs && remainingConfigs.length > 0) {
+      await supabase
+        .from('ai_configs')
+        .update({ is_active: true })
+        .eq('id', remainingConfigs[0].id)
+    }
   }
 
   return { success: true }

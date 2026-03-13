@@ -7,7 +7,7 @@ import { useState } from 'react';
 import { Briefcase, Trash2, ChevronRight } from 'lucide-react';
 import type { LedgerViewProps, ExpenseStatus } from '../../types';
 import { formatDateTime } from '../../utils/format';
-import { deleteExpense } from '../../api/supabase-client';
+import { deleteExpense, updateExpense } from '../../api/supabase-client';
 
 /**
  * 账本视图组件
@@ -67,8 +67,25 @@ export const LedgerView = ({ expenses, setExpenses, userId }: LedgerViewProps) =
         }
     };
 
-    const updateStatus = (id: string, newStatus: ExpenseStatus) => {
+    const updateStatus = async (id: string, newStatus: ExpenseStatus) => {
+        // 先获取当前状态用于回滚
+        const currentExpense = expenses.find((e: any) => e.id === id);
+        const originalStatus = currentExpense?.status;
+
+        // 乐观更新本地状态
         setExpenses((prev: any[]) => prev.map(e => e.id === id ? { ...e, status: newStatus } : e));
+
+        // 同步到数据库
+        try {
+            await updateExpense(id, { userId, status: newStatus });
+        } catch (error) {
+            console.error('更新费用状态失败:', error);
+            // 回滚到原始状态
+            if (originalStatus) {
+                setExpenses((prev: any[]) => prev.map(e => e.id === id ? { ...e, status: originalStatus } : e));
+            }
+            alert('更新状态失败，请稍后重试');
+        }
     }
 
     const toggleSelect = (id: string) => {

@@ -484,9 +484,11 @@ export const useInvoiceAnalysis = ({
         approvalNumber: approvalData?.approvalNumber || '',
       };
 
-    } catch (e) {
+    } catch (e: any) {
       console.error('[AI] 识别失败:', e);
-      alert("AI 分析失败，请检查网络或重试");
+      // 显示具体的错误消息
+      const errorMessage = e?.message || 'AI 分析失败，请检查网络或重试';
+      alert(errorMessage);
       return {
         success: false,
         invoiceDetails: [],
