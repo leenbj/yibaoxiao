@@ -415,7 +415,8 @@ export const SettingsView = ({ settings, onUpdate, onNavigate }: SettingsViewPro
                 baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
                 needsEndpointId: true,
                 models: [
-                    { id: 'doubao-seed-1.6-vision', name: 'Doubao Seed 1.6 Vision (推荐)', vision: true },
+                    { id: 'doubao-seed-2-0-mini', name: 'Doubao Seed 2.0 Mini (推荐)', vision: true },
+                    { id: 'doubao-seed-1.6-vision', name: 'Doubao Seed 1.6 Vision', vision: true },
                     { id: 'doubao-1.5-vision-pro-250328', name: 'Doubao 1.5 Vision Pro', vision: true },
                     { id: 'doubao-seed-1.6', name: 'Doubao Seed 1.6' },
                 ]
