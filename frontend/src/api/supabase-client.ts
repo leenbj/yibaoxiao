@@ -1261,272 +1261,40 @@ export async function getActiveAIConfig(userId: string): Promise<AIConfigType | 
 
 /**
  * AI 识别发票/审批单
- * 直接从前端调用 AI API（不需要 Edge Function）
+ * 通过 Supabase Edge Function 调用 AI API（解决 CORS 问题）
  */
 export async function aiRecognize(params: {
   images: string[]
   type: 'invoice' | 'approval' | 'travel'
   userId: string
 }) {
-  // 获取用户配置的 AI
-  const config = await getActiveAIConfig(params.userId)
-
-  if (!config) {
-    throw new Error('请先在系统设置中配置 AI 模型')
+  // 获取 Supabase URL
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+  if (!supabaseUrl) {
+    throw new Error('Supabase 配置缺失')
   }
 
-  // 构建识别提示词
-  const prompts: Record<string, string> = {
-    invoice: `请识别这张发票图片，提取以下信息并以 JSON 格式返回：
-{
-  "projectName": "项目名称或费用事由",
-  "totalAmount": 金额数字,
-  "invoiceDate": "开票日期 YYYY-MM-DD",
-  "invoiceNumber": "发票号码",
-  "seller": "销售方名称",
-  "items": [{"name": "项目名称", "amount": 金额}]
-}
-
-如果是多张发票，返回数组格式：[{...}, {...}]
-请只返回 JSON，不要有其他说明文字。`,
-    approval: `请识别这张审批单/申请单图片，提取以下信息并以 JSON 格式返回：
-{
-  "approvalNumber": "审批单号",
-  "eventSummary": "事由摘要",
-  "applicant": "申请人",
-  "approvalAmount": 批准金额数字,
-  "budgetProject": "预算项目名称",
-  "budgetCode": "预算项目编码"
-}
-请只返回 JSON，不要有其他说明文字。`,
-    travel: `请识别这张差旅相关票据图片，提取以下信息并以 JSON 格式返回：
-{
-  "type": "交通/住宿/餐饮",
-  "from": "出发地",
-  "to": "目的地",
-  "date": "日期 YYYY-MM-DD",
-  "amount": 金额数字,
-  "description": "描述"
-}
-请只返回 JSON，不要有其他说明文字。`
-  }
-
-  const systemPrompt = prompts[params.type] || prompts.invoice
-  const userMessage = params.type === 'travel'
-    ? '请识别这张差旅票据'
-    : params.type === 'approval'
-      ? '请识别这张审批单'
-      : '请识别这张发票'
-
-  // 构建 API 请求
-  let apiUrl: string
-  let requestBody: any
-  let headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-  }
-
-  switch (config.provider) {
-    case 'doubao':
-    case 'volcengine':
-      // 火山引擎：model 参数使用 Endpoint ID
-      apiUrl = `${config.apiUrl || 'https://ark.cn-beijing.volces.com/api/v3'}/chat/completions`
-      headers['Authorization'] = `Bearer ${config.apiKey}`
-      requestBody = {
-        model: config.model,
-        messages: [
-          {
-            role: 'system',
-            content: systemPrompt
-          },
-          {
-            role: 'user',
-            content: [
-              { type: 'text', text: userMessage },
-              ...params.images.map(img => ({
-                type: 'image_url',
-                image_url: { url: img }
-              }))
-            ]
-          }
-        ],
-        max_tokens: 2000,
-      }
-      break
-
-    case 'openai':
-      apiUrl = `${config.apiUrl || 'https://api.openai.com/v1'}/chat/completions`
-      headers['Authorization'] = `Bearer ${config.apiKey}`
-      requestBody = {
-        model: config.model || 'gpt-4o-mini',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          {
-            role: 'user',
-            content: [
-              { type: 'text', text: userMessage },
-              ...params.images.map(img => ({
-                type: 'image_url',
-                image_url: { url: img }
-              }))
-            ]
-          }
-        ],
-        max_tokens: 2000,
-      }
-      break
-
-    case 'deepseek':
-      apiUrl = `${config.apiUrl || 'https://api.deepseek.com/v1'}/chat/completions`
-      headers['Authorization'] = `Bearer ${config.apiKey}`
-      requestBody = {
-        model: config.model || 'deepseek-chat',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          {
-            role: 'user',
-            content: [
-              { type: 'text', text: userMessage },
-              ...params.images.map(img => ({
-                type: 'image_url',
-                image_url: { url: img }
-              }))
-            ]
-          }
-        ],
-        max_tokens: 2000,
-      }
-      break
-
-    case 'qwen':
-      apiUrl = `${config.apiUrl || 'https://dashscope.aliyuncs.com/compatible-mode/v1'}/chat/completions`
-      headers['Authorization'] = `Bearer ${config.apiKey}`
-      requestBody = {
-        model: config.model || 'qwen-vl-plus',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          {
-            role: 'user',
-            content: [
-              { type: 'text', text: userMessage },
-              ...params.images.map(img => ({
-                type: 'image_url',
-                image_url: { url: img }
-              }))
-            ]
-          }
-        ],
-        max_tokens: 2000,
-      }
-      break
-
-    case 'glm':
-      apiUrl = `${config.apiUrl || 'https://open.bigmodel.cn/api/paas/v4'}/chat/completions`
-      headers['Authorization'] = `Bearer ${config.apiKey}`
-      requestBody = {
-        model: config.model || 'glm-4v-flash',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          {
-            role: 'user',
-            content: [
-              { type: 'text', text: userMessage },
-              ...params.images.map(img => ({
-                type: 'image_url',
-                image_url: { url: img }
-              }))
-            ]
-          }
-        ],
-        max_tokens: 2000,
-      }
-      break
-
-    case 'gemini':
-      // Gemini 使用不同的 API 格式
-      apiUrl = `${config.apiUrl || 'https://generativelanguage.googleapis.com/v1beta'}/models/${config.model || 'gemini-2.0-flash'}:generateContent?key=${config.apiKey}`
-      requestBody = {
-        contents: [
-          {
-            parts: [
-              { text: systemPrompt },
-              { text: userMessage },
-              ...params.images.map(img => {
-                // 从 data URL 提取 base64 数据
-                const match = img.match(/^data:([^;]+);base64,(.+)$/)
-                if (match) {
-                  return {
-                    inlineData: {
-                      mimeType: match[1],
-                      data: match[2]
-                    }
-                  }
-                }
-                return { text: img }
-              })
-            ]
-          }
-        ],
-        generationConfig: {
-          maxOutputTokens: 2000,
-        }
-      }
-      break
-
-    default:
-      // 通用 OpenAI 兼容格式
-      apiUrl = `${config.apiUrl}/chat/completions`
-      headers['Authorization'] = `Bearer ${config.apiKey}`
-      requestBody = {
-        model: config.model,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          {
-            role: 'user',
-            content: [
-              { type: 'text', text: userMessage },
-              ...params.images.map(img => ({
-                type: 'image_url',
-                image_url: { url: img }
-              }))
-            ]
-          }
-        ],
-        max_tokens: 2000,
-      }
-  }
-
-  console.log(`[AI] 调用 ${config.provider} API:`, apiUrl)
-
-  const response = await fetch(apiUrl, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(requestBody),
+  // 调用 Edge Function
+  const { data, error } = await supabase.functions.invoke('ai-recognize', {
+    body: {
+      images: params.images,
+      type: params.type,
+      userId: params.userId,
+    },
   })
 
-  if (!response.ok) {
-    const errorText = await response.text()
-    console.error('[AI] API 错误:', response.status, errorText)
-    throw new Error(`AI API 错误: ${response.status} - ${errorText.substring(0, 200)}`)
+  if (error) {
+    console.error('[AI] Edge Function 错误:', error)
+    throw new Error(error.message || 'AI 识别请求失败')
   }
 
-  const data = await response.json()
-
-  // 解析响应
-  let result: any = {}
-
-  if (config.provider === 'gemini') {
-    // Gemini 响应格式
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || ''
-    result = parseAIResponse(text)
-  } else {
-    // OpenAI 兼容格式
-    const text = data.choices?.[0]?.message?.content || ''
-    result = parseAIResponse(text)
+  if (data?.error) {
+    throw new Error(data.error)
   }
 
-  console.log('[AI] 识别结果:', JSON.stringify(result).substring(0, 500))
+  console.log('[AI] 识别结果:', JSON.stringify(data?.result).substring(0, 500))
 
-  return { result }
+  return { result: data?.result || {} }
 }
 
 /**
