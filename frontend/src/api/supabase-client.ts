@@ -1061,7 +1061,7 @@ export async function testAIConfig(params: {
   model?: string
 }) {
   const startTime = Date.now()
-  
+
   try {
     // 根据提供商构建测试请求
     let testUrl = params.apiUrl || ''
@@ -1080,6 +1080,17 @@ export async function testAIConfig(params: {
           max_tokens: 5,
         }
         break
+      case 'doubao':
+      case 'volcengine':
+        // 火山引擎方舟 API (OpenAI 兼容格式)
+        // model 参数使用 Endpoint ID
+        testUrl = `${params.apiUrl || 'https://ark.cn-beijing.volces.com/api/v3'}/chat/completions`
+        testBody = {
+          model: params.model, // Endpoint ID，如 ep-20260313144701-fpdq6
+          messages: [{ role: 'user', content: 'Hello' }],
+          max_tokens: 5,
+        }
+        break
       case 'gemini':
         testUrl = `${params.apiUrl || 'https://generativelanguage.googleapis.com/v1beta'}/models/${params.model || 'gemini-pro'}:generateContent`
         testBody = {
@@ -1087,10 +1098,54 @@ export async function testAIConfig(params: {
         }
         headers = { 'Content-Type': 'application/json' }
         break
+      case 'deepseek':
+        testUrl = `${params.apiUrl || 'https://api.deepseek.com/v1'}/chat/completions`
+        testBody = {
+          model: params.model || 'deepseek-chat',
+          messages: [{ role: 'user', content: 'Hello' }],
+          max_tokens: 5,
+        }
+        break
+      case 'qwen':
+        testUrl = `${params.apiUrl || 'https://dashscope.aliyuncs.com/compatible-mode/v1'}/chat/completions`
+        testBody = {
+          model: params.model || 'qwen-turbo',
+          messages: [{ role: 'user', content: 'Hello' }],
+          max_tokens: 5,
+        }
+        break
+      case 'glm':
+        testUrl = `${params.apiUrl || 'https://open.bigmodel.cn/api/paas/v4'}/chat/completions`
+        testBody = {
+          model: params.model || 'glm-4-flash',
+          messages: [{ role: 'user', content: 'Hello' }],
+          max_tokens: 5,
+        }
+        break
+      case 'moonshot':
+        testUrl = `${params.apiUrl || 'https://api.moonshot.cn/v1'}/chat/completions`
+        testBody = {
+          model: params.model || 'moonshot-v1-8k',
+          messages: [{ role: 'user', content: 'Hello' }],
+          max_tokens: 5,
+        }
+        break
+      case 'minimax':
+        testUrl = `${params.apiUrl || 'https://api.minimax.chat/v1'}/chat/completions`
+        testBody = {
+          model: params.model || 'abab6.5-chat',
+          messages: [{ role: 'user', content: 'Hello' }],
+          max_tokens: 5,
+        }
+        break
       default:
-        // 通用测试
-        testUrl = params.apiUrl || ''
-        testBody = { test: true }
+        // 通用 OpenAI 兼容格式测试
+        testUrl = `${params.apiUrl}/chat/completions`
+        testBody = {
+          model: params.model,
+          messages: [{ role: 'user', content: 'Hello' }],
+          max_tokens: 5,
+        }
     }
 
     const response = await fetch(testUrl, {
@@ -1111,7 +1166,15 @@ export async function testAIConfig(params: {
         },
       }
     } else {
-      throw new Error(`API 返回错误: ${response.status}`)
+      const errorText = await response.text()
+      let errorMessage = `API 返回错误: ${response.status}`
+      try {
+        const errorJson = JSON.parse(errorText)
+        errorMessage = errorJson.error?.message || errorJson.message || errorMessage
+      } catch {
+        // 非 JSON 错误，使用默认消息
+      }
+      throw new Error(errorMessage)
     }
   } catch (error: any) {
     return {
