@@ -31,7 +31,12 @@ async function getActiveAIConfig(supabase: any, userId: string): Promise<AIConfi
     .eq('is_active', true)
     .single()
 
-  if (error || !data) {
+  if (error) {
+    console.error('[AI] 获取配置失败:', error)
+    return null
+  }
+
+  if (!data) {
     return null
   }
 
@@ -235,7 +240,9 @@ function buildAIRequest(config: AIConfig, images: string[], type: string) {
       break
 
     default:
-      // 通用 OpenAI 兼容格式
+      if (!config.api_url) {
+        throw new Error('未知提供商且未配置 API URL')
+      }
       apiUrl = `${config.api_url}/chat/completions`
       headers['Authorization'] = `Bearer ${config.api_key}`
       requestBody = {
@@ -300,12 +307,17 @@ serve(async (req) => {
   try {
     // 初始化 Supabase 客户端
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
+    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 
-    const supabase = createClient(supabaseUrl, supabaseServiceKey)
+    // 使用 service role key 以绕过 RLS
+    const supabase = createClient(supabaseUrl, supabaseServiceKey || supabaseAnonKey)
 
     // 解析请求
-    const { images, type, userId }: RecognizeRequest = await req.json()
+    const body = await req.json()
+    const { images, type, userId }: RecognizeRequest = body
+
+    console.log('[AI] 收到请求:', { type, userId, imageCount: images?.length })
 
     if (!images || images.length === 0) {
       return new Response(
@@ -348,7 +360,7 @@ serve(async (req) => {
       const errorText = await response.text()
       console.error('[AI] API 错误:', response.status, errorText)
       return new Response(
-        JSON.stringify({ error: `AI API 错误: ${response.status}` }),
+        JSON.stringify({ error: `AI API 错误: ${response.status} - ${errorText.substring(0, 200)}` }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
